@@ -1,0 +1,1 @@
+Cafe skin trial from 素材/png. Slot map:\ncup=继续 shelf=书架(甜品柜) notes=笔记 records=记录\nsettings=设定 health=网关 duration=时长 decor=装饰 treat=短笺\n

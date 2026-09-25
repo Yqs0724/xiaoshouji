@@ -1,0 +1,7 @@
+{
+  "name": "coread-cabin",
+  "private": true,
+  "scripts": {
+    "start": "node gateway/server.js"
+  }
+}
