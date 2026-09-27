@@ -1,14 +1,24 @@
 /**
- * 最小自检：拉起 MCP、列工具、调三个只读工具。
+ * 最小自检：列工具 + 只读工具 + notes + start/end 一轮。
  * 用法：node gateway/mcp-check.mjs
+ * 若本机锁门，自检期间临时开门，结束时还原。
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 const serverPath = path.join(root, "gateway", "mcp-server.mjs");
+const require = createRequire(import.meta.url);
+const { readSettings, patchSettings } = require("./settings.js");
+
+function parseTool(res) {
+  const text = res.content && res.content[0] && res.content[0].text;
+  if (!text) throw new Error("empty tool result");
+  return JSON.parse(text);
+}
 
 async function main() {
   const transport = new StdioClientTransport({
@@ -17,22 +27,191 @@ async function main() {
     cwd: root,
     stderr: "pipe",
   });
-  const client = new Client({ name: "coread-mcp-check", version: "0.0.1" });
+  const client = new Client({ name: "coread-mcp-check", version: "0.0.3" });
   await client.connect(transport);
 
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
-  const need = ["get_last_session", "health_check", "list_bookshelf"];
+  const need = [
+    "end_coread",
+    "get_last_session",
+    "get_progress",
+    "get_session_summary",
+    "health_check",
+    "list_bookshelf",
+    "list_notes",
+    "search_notes",
+    "set_budget",
+    "set_door_lock",
+    "set_mode",
+    "start_coread",
+    "sync_bookshelf",
+  ];
   for (const n of need) {
     if (!names.includes(n)) throw new Error("missing tool " + n);
   }
 
-  for (const name of need) {
-    const res = await client.callTool({ name, arguments: {} });
-    const text = res.content && res.content[0] && res.content[0].text;
-    if (!text) throw new Error(name + " empty");
-    const data = JSON.parse(text);
-    if (!data.ok) throw new Error(name + " not ok");
+  const health = parseTool(await client.callTool({ name: "health_check", arguments: {} }));
+  if (!health.ok) throw new Error("health_check not ok");
+  const wasLocked = !!health.door_locked;
+  if (wasLocked) {
+    const unlocked = parseTool(
+      await client.callTool({ name: "set_door_lock", arguments: { locked: false } })
+    );
+    if (!unlocked.ok) throw new Error("unlock for check failed");
+  }
+
+  try {
+    for (const name of ["list_bookshelf", "get_last_session", "list_notes"]) {
+      const data = parseTool(await client.callTool({ name, arguments: {} }));
+      if (!data.ok) throw new Error(name + " not ok: " + JSON.stringify(data));
+    }
+
+    {
+      const empty = parseTool(
+        await client.callTool({ name: "search_notes", arguments: { query: "" } })
+      );
+      if (empty.ok || empty.error !== "bad_query") {
+        throw new Error("search_notes empty should bad_query: " + JSON.stringify(empty));
+      }
+      const searched = parseTool(
+        await client.callTool({
+          name: "search_notes",
+          arguments: { query: "___no_such_token_xyz___" },
+        })
+      );
+      if (!searched.ok || searched.mode !== "search" || searched.hits.length !== 0) {
+        throw new Error("search_notes miss: " + JSON.stringify(searched));
+      }
+    }
+
+    {
+      const noOpen = parseTool(
+        await client.callTool({ name: "set_mode", arguments: { mode: "ideas" } })
+      );
+      if (noOpen.ok || noOpen.error !== "no_open_session") {
+        await client.callTool({ name: "end_coread", arguments: {} });
+        const again = parseTool(
+          await client.callTool({ name: "set_mode", arguments: { mode: "ideas" } })
+        );
+        if (again.ok || again.error !== "no_open_session") {
+          throw new Error("set_mode without open should fail: " + JSON.stringify(again));
+        }
+      }
+    }
+
+    {
+      const sync = parseTool(await client.callTool({ name: "sync_bookshelf", arguments: {} }));
+      if (sync.ok) {
+        if (typeof sync.synced !== "number") throw new Error("sync missing synced count");
+      } else if (sync.error !== "weread_key_missing") {
+        if (!sync.error) throw new Error("sync_bookshelf bad: " + JSON.stringify(sync));
+      }
+    }
+
+    const shelf = parseTool(await client.callTool({ name: "list_bookshelf", arguments: {} }));
+    const book =
+      (shelf.books || []).find((b) => b.id && b.id !== "seed-placeholder") ||
+      (shelf.books || [])[0];
+    if (!book) throw new Error("no book for start/end check");
+
+    const prog = parseTool(
+      await client.callTool({ name: "get_progress", arguments: { book_id: book.id } })
+    );
+    if (!prog.ok || !prog.book || prog.book.id !== book.id) {
+      throw new Error("get_progress failed: " + JSON.stringify(prog));
+    }
+
+    {
+      const cleared = parseTool(await client.callTool({ name: "end_coread", arguments: {} }));
+      if (!cleared.ok && cleared.error !== "no_open_session") {
+        throw new Error("pre-end failed: " + JSON.stringify(cleared));
+      }
+    }
+
+    const started = parseTool(
+      await client.callTool({ name: "start_coread", arguments: { book_id: book.id } })
+    );
+    if (!started.ok || !started.open) {
+      throw new Error("start_coread failed: " + JSON.stringify(started));
+    }
+
+    const modeSet = parseTool(
+      await client.callTool({ name: "set_mode", arguments: { mode: "ideas" } })
+    );
+    if (!modeSet.ok || modeSet.open.follow_mode !== "ideas") {
+      throw new Error("set_mode failed: " + JSON.stringify(modeSet));
+    }
+
+    const budSet = parseTool(
+      await client.callTool({ name: "set_budget", arguments: { rmb: 5 } })
+    );
+    if (!budSet.ok || !(budSet.open.budget_tokens > 0)) {
+      throw new Error("set_budget failed: " + JSON.stringify(budSet));
+    }
+
+    const resumed = parseTool(
+      await client.callTool({ name: "start_coread", arguments: { book_id: book.id } })
+    );
+    if (!resumed.ok || !resumed.resumed) throw new Error("resume expected");
+    if (resumed.open.follow_mode !== "ideas") throw new Error("mode not persisted on resume");
+
+    const ended = parseTool(await client.callTool({ name: "end_coread", arguments: {} }));
+    if (!ended.ok || !ended.session) throw new Error("end_coread failed");
+    if (ended.lore_written) throw new Error("end without write_lore should not write lore");
+
+    const last = parseTool(await client.callTool({ name: "get_last_session", arguments: {} }));
+    if (!last.session || last.session.id !== ended.session.id) {
+      throw new Error("get_last_session mismatch");
+    }
+
+    const byOmit = parseTool(
+      await client.callTool({ name: "get_session_summary", arguments: {} })
+    );
+    if (!byOmit.session || byOmit.session.id !== ended.session.id) {
+      throw new Error("get_session_summary omit mismatch");
+    }
+    const byId = parseTool(
+      await client.callTool({
+        name: "get_session_summary",
+        arguments: { session_id: ended.session.id },
+      })
+    );
+    if (!byId.session || byId.session.id !== ended.session.id) {
+      throw new Error("get_session_summary by id mismatch");
+    }
+    const miss = parseTool(
+      await client.callTool({
+        name: "get_session_summary",
+        arguments: { session_id: "no-such-session-id" },
+      })
+    );
+    if (miss.ok || miss.error !== "session_not_found") {
+      throw new Error("get_session_summary miss: " + JSON.stringify(miss));
+    }
+
+    {
+      const lorePrev = String(readSettings().lore_summary || "");
+      const started2 = parseTool(
+        await client.callTool({ name: "start_coread", arguments: { book_id: book.id } })
+      );
+      if (!started2.ok) throw new Error("start for lore check failed");
+      const withLore = parseTool(
+        await client.callTool({
+          name: "end_coread",
+          arguments: { write_lore: true },
+        })
+      );
+      if (!withLore.ok || !withLore.lore_written || !String(withLore.lore_summary || "").includes("【本场")) {
+        patchSettings({ lore_summary: lorePrev });
+        throw new Error("end_coread write_lore failed: " + JSON.stringify(withLore));
+      }
+      patchSettings({ lore_summary: lorePrev });
+    }
+  } finally {
+    if (wasLocked) {
+      await client.callTool({ name: "set_door_lock", arguments: { locked: true } });
+    }
   }
 
   await client.close();

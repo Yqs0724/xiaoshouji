@@ -77,6 +77,16 @@
       border-radius: 12px;
       background: rgba(139, 90, 60, .08);
     }
+    .settings .world-entry {
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(200, 180, 160, .45);
+    }
+    .settings .world-entry:last-child {
+      border-bottom: 0;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
     .settings .conn-panel.open { display: block; }
     .settings .conn-panel .hint {
       font-size: 11px;
@@ -110,6 +120,22 @@
       outline: none;
     }
     .settings .field input:focus {
+      border-color: rgba(139, 90, 60, .45);
+    }
+    .settings .field textarea {
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--ink);
+      outline: none;
+      min-height: 72px;
+      resize: vertical;
+      font-family: inherit;
+      line-height: 1.45;
+    }
+    .settings .field textarea:focus {
       border-color: rgba(139, 90, 60, .45);
     }
     .settings .save-row {
@@ -283,6 +309,34 @@
     }
     .r-card .t { font-weight: 700; font-size: 15px; }
     .r-card .s { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .notes-chap-block {
+      margin: 10px 0 4px;
+    }
+    .notes-chap-block:first-of-type { margin-top: 4px; }
+    .notes-chap {
+      list-style: none;
+      cursor: pointer;
+      user-select: none;
+      margin: 0 0 6px;
+      padding: 6px 2px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--ink);
+    }
+    .notes-chap::-webkit-details-marker { display: none; }
+    .notes-chap::before {
+      content: "▸";
+      display: inline-block;
+      width: 1em;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .notes-chap-block[open] > .notes-chap::before { content: "▾"; }
+    .notes-chap .n {
+      font-weight: 500;
+      color: var(--muted);
+      font-size: 12px;
+    }
     .shelf-bar {
       display: flex;
       align-items: center;
@@ -311,6 +365,21 @@
     }
     .shelf-bar .msg.ok { color: var(--ok); }
     .shelf-bar .msg.bad { color: #a33; }
+    .shelf-bar input[type="search"] {
+      flex: 1;
+      min-width: 120px;
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--ink);
+      font-family: inherit;
+    }
+    .shelf-bar input[type="search"]:focus {
+      outline: none;
+      border-color: rgba(106, 158, 142, .8);
+    }
     .r-card .cover img {
       width: 100%;
       height: 100%;
@@ -331,6 +400,9 @@
       border: 0;
       color: #5c4030;
       background: #d5ebe3;
+      cursor: pointer;
+      font-family: inherit;
+      line-height: 1.3;
     }
     .pill-tag.a { background: #e8d5f0; }
     .pill-tag.c { background: #f5e0c8; }
@@ -377,6 +449,27 @@
       gap: 10px;
       margin-bottom: 12px;
     }
+    .stat-period {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .stat-period button {
+      border: 1px solid rgba(168, 201, 188, .55);
+      background: rgba(255, 255, 255, .55);
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .stat-period button.on {
+      background: rgba(168, 201, 188, .45);
+      color: var(--chocolate);
+      border-color: rgba(140, 170, 155, .7);
+      font-weight: 600;
+    }
     .stat-card {
       background: var(--card);
       border: 1px solid rgba(200, 180, 160, .55);
@@ -387,6 +480,82 @@
     }
     .stat-card .lab { font-size: 11px; color: var(--muted); }
     .stat-card .num { font-size: 18px; font-weight: 700; margin-top: 4px; color: #5c4030; }
+    .stat-chart {
+      background: var(--card);
+      border: 1px solid rgba(200, 180, 160, .55);
+      border-radius: 18px;
+      padding: 12px 12px 10px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(90, 70, 50, .07);
+    }
+    .stat-chart .lab {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .stat-chart-bars {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 88px;
+      min-height: 88px;
+    }
+    .stat-chart-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+      gap: 4px;
+    }
+    .stat-chart-track {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .stat-chart-bar {
+      width: 100%;
+      max-width: 28px;
+      border-radius: 6px 6px 3px 3px;
+      background: rgba(168, 201, 188, .75);
+      min-height: 2px;
+      transition: height .2s ease;
+    }
+    .stat-chart-col.empty .stat-chart-bar {
+      background: rgba(200, 180, 160, .28);
+      min-height: 2px;
+      height: 2px !important;
+    }
+    .stat-chart-col .n {
+      font-size: 9px;
+      color: #5c4030;
+      font-weight: 600;
+      line-height: 1;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stat-chart-col .n:empty { display: none; }
+    .stat-chart-col .d {
+      font-size: 9px;
+      color: var(--muted);
+      line-height: 1;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .stat-chart-empty {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      padding: 18px 8px;
+    }
 
     .settings .row {
       display: flex;
@@ -501,6 +670,38 @@
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
+      cursor: pointer;
+      user-select: none;
+    }
+    .cr-filter.paused {
+      background: rgba(200, 180, 160, .45);
+      color: #6a5040;
+    }
+    .cr-presence {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--muted);
+      opacity: .85;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .cr-presence.busy {
+      color: #5a7a6e;
+      opacity: 1;
+    }
+    .cr-offline {
+      display: none;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: #6a5040;
+      background: rgba(210, 180, 150, .4);
+      flex-shrink: 0;
+      text-align: center;
+    }
+    .cr-offline.on { display: block; }
+    .cr-offline.pending:not(.off-net) {
+      background: rgba(168, 201, 188, .45);
+      color: #3d5a4e;
     }
     .msgs {
       flex: 1;
@@ -554,11 +755,118 @@
       height: 32px;
       border-radius: 50%;
       flex-shrink: 0;
+      overflow: hidden;
       background: #e8dfd4;
       box-shadow: 0 0 0 2px rgba(180, 210, 200, .5);
       display: grid;
       place-items: center;
       font-size: 14px;
+    }
+    .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .avatar-pick {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .avatar-pick button {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      overflow: hidden;
+      background: #e8dfd4;
+      cursor: pointer;
+    }
+    .avatar-pick button img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .avatar-pick button.on {
+      border-color: #6a9e8e;
+      box-shadow: 0 0 0 2px rgba(106, 158, 142, .35);
+    }
+    .dialog-sheet .sheet-panel {
+      padding: 14px 16px 10px;
+      text-align: left;
+    }
+    .dialog-sheet .dlg-head {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .dialog-sheet .dlg-hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .dialog-sheet .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .dialog-sheet .field label {
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .dialog-sheet .field label small {
+      font-weight: 400;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .dialog-sheet .field input,
+    .dialog-sheet .field textarea {
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 13px;
+      background: #fff;
+      color: var(--ink);
+      font-family: inherit;
+    }
+    .dialog-sheet .field textarea { resize: vertical; min-height: 64px; }
+    .dialog-sheet .dlg-actions {
+      display: flex;
+      flex-direction: column;
+      margin-top: 6px;
+    }
+    .dialog-sheet .dlg-actions button {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid rgba(200, 180, 160, .35);
+      background: transparent;
+      padding: 14px 8px;
+      font-size: 15px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .dialog-sheet .dlg-actions button:last-child { border-bottom: 0; }
+    .dialog-sheet .dlg-actions button.primary { color: #3a7a68; font-weight: 600; }
+    .dialog-sheet .dlg-actions button.ghost { color: var(--muted); }
+    .dialog-sheet .dlg-msg {
+      font-size: 12px;
+      min-height: 1.2em;
+      margin: 4px 0 0;
+    }
+    .dialog-sheet .dlg-msg.ok { color: #3a7a68; }
+    .dialog-sheet .dlg-msg.bad { color: #a44; }
+    .dialog-sheet .import-preview {
+      max-height: 160px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.45;
+      color: var(--ink);
+      background: rgba(250, 246, 240, .85);
+      border: 1px solid rgba(200, 180, 160, .55);
+      border-radius: 10px;
+      padding: 10px 12px;
     }
     .bubble-wrap { flex: 1; min-width: 0; }
     .bubble-head {
@@ -589,6 +897,18 @@
       cursor: pointer;
       padding: 2px 4px;
       font-size: 13px;
+    }
+    .variant-pager button:disabled { opacity: .35; cursor: default; }
+    .actions button:disabled { opacity: .4; cursor: default; }
+    .msg.regen-pending .bubble {
+      opacity: .55;
+    }
+    .msg.regen-pending [data-regen] {
+      animation: regen-pulse 1s ease-in-out infinite;
+      opacity: 1;
+    }
+    @keyframes regen-pulse {
+      50% { opacity: .35; }
     }
     .quote {
       font-size: 13px;
@@ -655,6 +975,34 @@
       );
       opacity: .88;
     }
+    .reply-chip {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 6px;
+      padding: 6px 8px;
+      background: rgba(168, 201, 188, .28);
+      border-radius: 10px;
+      font-size: 12px;
+      color: var(--chocolate);
+    }
+    .reply-chip[hidden] { display: none !important; }
+    .reply-chip-label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .reply-chip-clear {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      padding: 0 4px;
+    }
     .composer .row-input {
       display: flex;
       align-items: center;
@@ -712,6 +1060,26 @@
       flex-shrink: 0;
       padding: 0;
     }
+    .sheet-panel.chapter-notes-panel {
+      max-height: min(78vh, 640px);
+      display: flex;
+      flex-direction: column;
+      padding-top: 4px;
+    }
+    .chapter-notes-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 0 12px 8px;
+      flex: 1;
+      min-height: 120px;
+    }
+    .chapter-notes-body .r-card {
+      margin-bottom: 8px;
+    }
+    .sheet-panel.chapter-notes-panel > .cancel {
+      border-bottom: 0;
+      flex-shrink: 0;
+    }
     .sheet {
       position: fixed;
       inset: 0;
@@ -739,12 +1107,125 @@
       border-bottom: 1px solid var(--line);
       color: var(--ink);
     }
+    /* 头像预设：别被 sheet 全宽按钮样式拉扁 */
+    .sheet-panel .avatar-pick {
+      padding: 0 4px 6px;
+    }
+    .sheet-panel .avatar-pick button {
+      display: block;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+      border: 2px solid transparent;
+      border-radius: 50%;
+      border-bottom: 0;
+      background: #e8dfd4;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .sheet-panel .avatar-pick button.on {
+      border-color: #6a9e8e;
+      box-shadow: 0 0 0 2px rgba(106, 158, 142, .35);
+    }
+    .sheet-panel .avatar-pick button img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
     .sheet-panel button.danger { color: #a33; }
     .sheet-panel button.selected { font-weight: 600; color: var(--chocolate); }
     .sheet-panel .cancel {
       text-align: center;
       color: var(--muted);
       border: 0;
+    }
+    .sheet-switch {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      user-select: none;
+    }
+    .sheet-switch-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .sheet-switch-text .t {
+      display: block;
+      font-size: 15px;
+      color: var(--ink);
+      font-weight: 500;
+    }
+    .sheet-switch-text small {
+      display: block;
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .sheet-switch input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
+    .sheet-switch-ui {
+      flex-shrink: 0;
+      width: 44px;
+      height: 26px;
+      border-radius: 999px;
+      background: rgba(180, 170, 160, .55);
+      position: relative;
+      transition: background .15s ease;
+    }
+    .sheet-switch-ui::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+      transition: transform .15s ease;
+    }
+    .sheet-switch input:checked + .sheet-switch-ui {
+      background: var(--chocolate, #5c4a3a);
+    }
+    .sheet-switch input:checked + .sheet-switch-ui::after {
+      transform: translateX(18px);
+    }
+    .sheet-switch input:focus-visible + .sheet-switch-ui {
+      outline: 2px solid rgba(106, 158, 142, .7);
+      outline-offset: 2px;
+    }
+    .downvote-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 2px 0 4px;
+    }
+    .downvote-chips button {
+      display: inline-block;
+      width: auto;
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 999px;
+      background: #fff;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--ink);
+      cursor: pointer;
+      border-bottom: 1px solid rgba(200, 180, 160, .7);
+    }
+    .downvote-chips button.on {
+      background: rgba(180, 210, 200, .45);
+      border-color: rgba(106, 158, 142, .8);
+      font-weight: 600;
     }
     .sheet-panel.summary-panel {
       padding: 16px 20px calc(16px + var(--safe-bottom));
@@ -765,6 +1246,35 @@
       color: var(--ink);
       font-weight: 600;
     }
+    .sum-lore-opt {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 12px 0 4px;
+      padding: 10px 12px;
+      border: 1px solid rgba(200, 180, 160, .55);
+      border-radius: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .sum-lore-opt input {
+      width: auto;
+      margin-top: 3px;
+      flex-shrink: 0;
+    }
+    .sum-lore-opt .t {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ink);
+    }
+    .sum-lore-opt small {
+      display: block;
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+    }
     .summary-panel .sum-actions {
       margin-top: 16px;
       display: flex;
@@ -780,9 +1290,90 @@
       border-color: rgba(139, 90, 60, .35);
       background: rgba(255, 252, 247, .95);
     }
+    .session-detail .sum-line {
+      font-size: 13px;
+      color: var(--ink);
+      margin: 4px 0;
+      line-height: 1.45;
+    }
+    .session-detail .export-row,
+    .export-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .session-detail .export-btn,
+    .export-btn {
+      border: 1px solid rgba(200, 180, 160, .7);
+      background: #fff;
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .session-detail .export-btn:active,
+    .export-btn:active {
+      background: rgba(196, 220, 210, .45);
+    }
+    #gateOverlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: rgba(40, 32, 28, .55);
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    #gateOverlay.show { display: flex; }
+    #gateOverlay .gate-card {
+      width: min(360px, 100%);
+      background: #fffaf4;
+      border-radius: 16px;
+      padding: 20px 18px;
+      box-shadow: 0 12px 40px rgba(0,0,0,.2);
+    }
+    #gateOverlay .gate-card h2 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: var(--ink);
+    }
+    #gateOverlay .gate-card p {
+      margin: 0 0 12px;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    #gateOverlay .gate-card input {
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 15px;
+      margin-bottom: 10px;
+      font-family: inherit;
+    }
+    #gateOverlay .gate-card .gate-err {
+      color: #a33;
+      font-size: 12px;
+      min-height: 1.2em;
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
+  <div id="gateOverlay" aria-hidden="true">
+    <div class="gate-card">
+      <h2>小屋上锁了</h2>
+      <p>输入访问密码后继续（与「关门锁」不同，这是进站密码）</p>
+      <input id="gatePassword" type="password" autocomplete="current-password" placeholder="访问密码" />
+      <div class="gate-err" id="gateErr"></div>
+      <button type="button" class="primary" id="btnGateUnlock" style="width:100%;border:0;background:var(--chocolate,#5c4a3a);color:#fff;border-radius:12px;padding:10px;font-size:14px;cursor:pointer">解锁</button>
+    </div>
+  </div>
   <div class="view active" id="view-standby">
     <div class="ambient ok" id="ambient" title="检查连接" role="button" tabindex="0"></div>
     <div class="standby-body">
@@ -807,7 +1398,8 @@
       <div class="cabin-body">
         <div class="tab-panel active" id="tab-shelf" data-title="书架">
           <div class="shelf-bar">
-            <button type="button" id="btnSyncShelf">同步最近 10 本</button>
+            <button type="button" id="btnSyncShelf">同步书架</button>
+            <input id="shelfSearch" type="search" enterkeyhint="search" placeholder="搜书名 / 作者" autocomplete="off" />
             <span class="msg" id="shelfSyncMsg"></span>
           </div>
           <div id="shelfRoot">
@@ -816,26 +1408,37 @@
         </div>
 
         <div class="tab-panel" id="tab-notes" data-title="笔记">
-          <div class="r-card">
-            <div class="t">笔记 · 《三体》</div>
-            <div class="s">按书汇总划线与跟批（假数据）</div>
+          <div class="shelf-bar">
+            <input id="notesSearch" type="search" enterkeyhint="search" placeholder="搜索书名 / 划线 / 想法 / 跟批" autocomplete="off" />
+            <button type="button" id="btnNotesExportAllMd" title="每本书一个 md，打成 zip">全部 MD</button>
+            <button type="button" id="btnNotesExportAllDoc" title="Word/WPS 可开的 .doc，打成 zip">全部 Word</button>
           </div>
-          <div class="r-card">
-            <div class="t">第3章</div>
-            <div class="s">划线 4 · 跟批 3</div>
-          </div>
-          <div class="r-card">
-            <div class="t">第2章</div>
-            <div class="s">划线 2 · 跟批 1</div>
+          <div id="notesRoot">
+            <div class="r-card"><div class="t">加载中…</div></div>
           </div>
         </div>
 
         <div class="tab-panel" id="tab-records" data-title="记录">
+          <div class="stat-period" id="recordsPeriod" role="tablist">
+            <button type="button" class="on" data-period="all">全部</button>
+            <button type="button" data-period="today">今日</button>
+            <button type="button" data-period="week">本周</button>
+            <button type="button" data-period="month">本月</button>
+          </div>
+          <div class="shelf-bar" style="margin-top:8px">
+            <button type="button" id="btnRecordsExportMd" title="按上方时间段打 zip">导出 MD</button>
+            <button type="button" id="btnRecordsExportDoc" title="Word/WPS 可开的 .doc，打 zip">导出 Word</button>
+            <span class="msg" id="recordsExportMsg"></span>
+          </div>
           <div class="stat-grid" id="recordsStats">
             <div class="stat-card"><div class="lab">共读场次</div><div class="num" id="statSessions">0</div></div>
-            <div class="stat-card"><div class="lab">累计时长</div><div class="num" id="statDuration">0分</div></div>
-            <div class="stat-card"><div class="lab">本场划线</div><div class="num" id="statHighlights">0</div></div>
+            <div class="stat-card"><div class="lab">共读时长</div><div class="num" id="statDuration">0分</div></div>
+            <div class="stat-card"><div class="lab">微信阅读</div><div class="num" id="statWeread">0分</div></div>
             <div class="stat-card"><div class="lab">已跟批</div><div class="num" id="statFollows">0</div></div>
+          </div>
+          <div class="stat-chart" id="recordsChart">
+            <div class="lab" id="recordsChartLab">共读时长</div>
+            <div class="stat-chart-bars" id="recordsChartBars"></div>
           </div>
           <div id="recordsList">
             <div class="r-card"><div class="t">还没有场次</div><div class="s">结束一场共读后会出现在这里</div></div>
@@ -872,13 +1475,175 @@
                 <span class="save-msg" id="saveMsg"></span>
               </div>
             </div>
-            <div class="row">
-              <div>人设<small>称呼与语气</small></div>
-              <span class="val">占位</span>
+            <div class="row tap" id="rowPersona" role="button" tabindex="0">
+              <div>人设<small>跟批短设 · 完整卡</small></div>
+              <span class="val" id="personaVal">未设置</span>
+              <span class="chev">›</span>
             </div>
-            <div class="row">
-              <div>跟批默认<small>模式 / 预算</small></div>
-              <span class="val">占位</span>
+            <div class="conn-panel" id="personaPanel">
+              <div class="hint">小屋默认：短人设进跟批；本场可在「对话」里临时改称呼与头像</div>
+              <div class="field">
+                <label for="inPersona">跟批人设（短）<small>称呼与语气，一两句到一小段</small></label>
+                <textarea id="inPersona" rows="3" placeholder="例如：叫我阿州，语气轻松，少说教"></textarea>
+              </div>
+              <div class="field">
+                <label for="inNameUser">你的称呼<small>默认「你」</small></label>
+                <input id="inNameUser" type="text" autocomplete="off" placeholder="你" />
+              </div>
+              <div class="field">
+                <label for="inNameBot">对方称呼<small>默认「熊」</small></label>
+                <input id="inNameBot" type="text" autocomplete="off" placeholder="熊" />
+              </div>
+              <div class="field">
+                <label>你的头像</label>
+                <div class="avatar-pick" id="pickAvatarUser" data-for="user"></div>
+              </div>
+              <div class="field">
+                <label>对方头像</label>
+                <div class="avatar-pick" id="pickAvatarBot" data-for="bot"></div>
+              </div>
+              <div class="field">
+                <label for="inPersonaCard">完整角色卡（长）<small>可贴全文；默认不进跟批，省额度</small></label>
+                <textarea id="inPersonaCard" rows="8" placeholder="粘贴完整人设 / 角色卡…"></textarea>
+              </div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+                <input id="inPersonaCardFollow" type="checkbox" style="width:auto" />
+                <label for="inPersonaCardFollow" style="font-weight:500;margin:0">跟批时也带上长卡<small>会截断到约 4000 字，费额度</small></label>
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSavePersona">保存</button>
+                <button type="button" class="ghost" id="btnClosePersona">关闭</button>
+                <span class="save-msg" id="personaMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowLore" role="button" tabindex="0">
+              <div>剧情摘要<small>跟批时注入</small></div>
+              <span class="val" id="loreVal">空</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="lorePanel">
+              <div class="hint">一层短摘要即可；装配顺序：人设 → 摘要 → 世界书。空则不注入。可从 txt/md 导入。</div>
+              <div class="field">
+                <label for="inLoreSummary">摘要正文<small>跟批注入约 2000 字；存储最多约 8000 字</small></label>
+                <textarea id="inLoreSummary" rows="6" placeholder="例如：正在读《复杂生命的起源》，关心内共生与能量…"></textarea>
+              </div>
+              <div class="field" style="margin-top:8px">
+                <label for="loreFile">从文件导入<small>.txt / .md / .docx</small></label>
+                <input id="loreFile" type="file" accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSaveLore">保存</button>
+                <button type="button" class="ghost" id="btnCloseLore">关闭</button>
+                <span class="save-msg" id="loreMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowWorld" role="button" tabindex="0">
+              <div>世界书<small>关键词静默注入跟批</small></div>
+              <span class="val" id="worldVal">…</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="worldPanel">
+              <div class="hint">命中划线/想法中的关键词时注入跟批；共读界面不展示命中列表。从文件导入会先预览再收下。</div>
+              <div id="worldList"></div>
+              <div class="field" style="margin-top:8px">
+                <label for="worldFile">从文件导入<small>.txt / .md / .docx → 新条目</small></label>
+                <input id="worldFile" type="file" accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+              </div>
+              <div class="save-row" style="margin-top:8px">
+                <button type="button" class="ghost" id="btnWorldAdd">+ 条目</button>
+                <button type="button" class="primary" id="btnSaveWorld">保存</button>
+                <button type="button" class="ghost" id="btnCloseWorld">关闭</button>
+                <span class="save-msg" id="worldMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowFollowDefaults" role="button" tabindex="0">
+              <div>跟批默认<small>新开场用；该书另有默认时优先书</small></div>
+              <span class="val" id="followDefaultsVal">沉浸 · 不限</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="followDefaultsPanel">
+              <div class="hint">只影响之后新开的共读；本场仍可在 ··· 里改</div>
+              <div class="field">
+                <label for="selDefaultMode">默认跟批方式</label>
+                <select id="selDefaultMode" style="border:1px solid rgba(200,180,160,.7);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink)">
+                  <option value="immersive">沉浸评论</option>
+                  <option value="ideas">仅想法</option>
+                  <option value="silent">定义静默</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="selDefaultTone">默认语气<small>该书另有语气时优先书</small></label>
+                <select id="selDefaultTone" style="border:1px solid rgba(200,180,160,.7);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink)">
+                  <option value="">默认（跟人设）</option>
+                  <option value="short">短批</option>
+                  <option value="ask">提问</option>
+                  <option value="empathy">共鸣</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="selDefaultBudget">默认额度</label>
+                <select id="selDefaultBudget" style="border:1px solid rgba(200,180,160,.7);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink)">
+                  <option value="0">不限</option>
+                  <option value="1">约 1 块</option>
+                  <option value="5">约 5 块</option>
+                  <option value="10">约 10 块</option>
+                </select>
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSaveFollowDefaults">保存</button>
+                <button type="button" class="ghost" id="btnCloseFollowDefaults">关闭</button>
+                <span class="save-msg" id="followDefaultsMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowAccessGate" role="button" tabindex="0">
+              <div>访问密码<small>进站门禁 · 部署用</small></div>
+              <span class="val" id="accessGateVal">未设</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="accessGatePanel">
+              <div class="hint" id="accessGateHint">设了之后，打开小屋要先输密码。备份不含密码哈希。</div>
+              <div class="field">
+                <label for="inGatePassword">新密码<small>留空并保存=关闭门禁</small></label>
+                <input id="inGatePassword" type="password" autocomplete="new-password" placeholder="输入新密码" />
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSaveAccessGate">保存</button>
+                <button type="button" class="ghost" id="btnCloseAccessGate">关闭</button>
+                <span class="save-msg" id="accessGateMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowDoorLock" role="button" tabindex="0">
+              <div>关门锁<small>停跟批与短聊；划线仍入库</small></div>
+              <span class="val" id="doorLockVal">已开门</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="row tap" id="rowBackup" role="button" tabindex="0">
+              <div>备份导出<small>单个 JSON · 不含密钥</small></div>
+              <span class="val" id="backupVal">导出</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="backupPanel">
+              <div class="hint">手机用 JSON；恢复前会自动在 data/backups/ 留一份当前快照。密钥不从备份覆盖。</div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnBackupJson">导出 JSON</button>
+                <button type="button" class="ghost" id="btnBackupZip">导出 zip</button>
+              </div>
+              <div class="field" style="margin-top:10px">
+                <label for="backupFile">选择备份 JSON</label>
+                <input id="backupFile" type="file" accept="application/json,.json" />
+              </div>
+              <div class="save-msg" id="backupMsg" style="display:block;margin:6px 0 8px;min-height:1.2em"></div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnBackupRestore" disabled>确认恢复</button>
+                <button type="button" class="ghost" id="btnCloseBackup">关闭</button>
+              </div>
+            </div>
+            <div class="row" style="align-items:center">
+              <div>顶栏时钟<small>共读中显示当前时间</small></div>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin:0">
+                <input id="inShowClock" type="checkbox" style="width:auto;margin:0" checked />
+                开
+              </label>
             </div>
             <div class="row">
               <div>外观 · 主题<small>后做</small></div>
@@ -906,7 +1671,8 @@
       <button type="button" class="more" id="btnMore" aria-label="更多">···</button>
     </div>
     <div class="cr-washi" aria-hidden="true"></div>
-    <div class="cr-filter"><span aria-hidden="true">🫘</span>默认只看本场 · 薄荷巧克力皮</div>
+    <div class="cr-filter" id="crFilter" role="button" tabindex="0" title="点此切换：只看本场 → 本刷 → 全部刷次"><span aria-hidden="true">🫘</span><span id="crFilterText">只看本场 · 薄荷巧克力皮</span><span class="cr-presence" id="crPresence" hidden></span></div>
+    <div class="cr-offline" id="crOffline" role="status">现在离线，划线稍后再同步</div>
     <div class="msgs" id="msgs">
       <span class="msgs-deco tl" aria-hidden="true">✿</span>
       <span class="msgs-deco br" aria-hidden="true">🍪</span>
@@ -914,6 +1680,10 @@
     </div>
     <div class="composer">
       <div class="composer-washi" aria-hidden="true"></div>
+      <div class="reply-chip" id="replyChip" hidden>
+        <span class="reply-chip-label" id="replyChipLabel"></span>
+        <button type="button" class="reply-chip-clear" id="replyChipClear" aria-label="取消续聊">×</button>
+      </div>
       <div class="row-input">
         <input id="chatInput" placeholder="在这里输入…" autocomplete="off" />
       </div>
@@ -928,10 +1698,39 @@
     </div>
   </div>
 
+  <div class="sheet" id="plusSheet">
+    <div class="sheet-panel">
+      <div class="sum-head" style="padding:8px 20px 4px">更多</div>
+      <button type="button" id="plusSummarize">总结刚才</button>
+      <button type="button" id="plusChapterNotes">本章笔记</button>
+      <button type="button" class="cancel" id="plusSheetCancel">取消</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="chapterNotesSheet">
+    <div class="sheet-panel chapter-notes-panel">
+      <div class="sum-head" style="padding:8px 20px 2px" id="chapterNotesTitle">本章笔记</div>
+      <div class="s" style="padding:0 20px 8px" id="chapterNotesSub"></div>
+      <div class="chapter-notes-body" id="chapterNotesBody"></div>
+      <button type="button" class="cancel" id="chapterNotesClose">关闭</button>
+    </div>
+  </div>
+
   <div class="sheet" id="sheet">
     <div class="sheet-panel">
       <button type="button" id="sheetPause">暂停跟批</button>
-      <button type="button" id="sheetMode">改本场模式</button>
+      <label class="sheet-switch" for="sheetLoreInject">
+        <span class="sheet-switch-text">
+          <span class="t">跟批带上剧情/世界书</span>
+          <small>关掉则本场多贴原文，少灌背景</small>
+        </span>
+        <input type="checkbox" id="sheetLoreInject" checked />
+        <span class="sheet-switch-ui" aria-hidden="true"></span>
+      </label>
+      <button type="button" id="sheetLock">关门锁</button>
+      <button type="button" id="sheetMode">跟批方式</button>
+      <button type="button" id="sheetTone">跟批语气</button>
+      <button type="button" id="sheetBudget">跟批额度</button>
       <button type="button" class="danger" id="sheetEnd">结束本场</button>
       <button type="button" class="cancel" id="sheetCancel">取消</button>
     </div>
@@ -943,10 +1742,136 @@
     </div>
   </div>
 
+  <div class="sheet" id="modeSheet">
+    <div class="sheet-panel" id="modeSheetPanel">
+      <button type="button" class="cancel" id="modeSheetCancel">取消</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="toneSheet">
+    <div class="sheet-panel" id="toneSheetPanel">
+      <button type="button" class="cancel" id="toneSheetCancel">取消</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="budgetSheet">
+    <div class="sheet-panel" id="budgetSheetPanel">
+      <button type="button" class="cancel" id="budgetSheetCancel">取消</button>
+    </div>
+  </div>
+
+  <div class="sheet" id="passMoveSheet">
+    <div class="sheet-panel" id="passMoveSheetPanel">
+      <button type="button" class="cancel" id="passMoveSheetCancel">取消</button>
+    </div>
+  </div>
+
+  <div class="sheet dialog-sheet" id="dialogSheet">
+    <div class="sheet-panel">
+      <div class="dlg-head">本场对话</div>
+      <div class="dlg-hint">只覆盖本场称呼、短人设与头像；空着=用小屋默认。不换角色。</div>
+      <div class="field">
+        <label for="dlgPersona">本场短人设<small>空=小屋默认</small></label>
+        <textarea id="dlgPersona" rows="3" placeholder="本场语气 / 称呼微调…"></textarea>
+      </div>
+      <div class="field">
+        <label for="dlgNameUser">你的称呼</label>
+        <input id="dlgNameUser" type="text" autocomplete="off" placeholder="小屋默认" />
+      </div>
+      <div class="field">
+        <label for="dlgNameBot">对方称呼</label>
+        <input id="dlgNameBot" type="text" autocomplete="off" placeholder="小屋默认" />
+      </div>
+      <div class="field">
+        <label>你的头像</label>
+        <div class="avatar-pick" id="dlgPickAvatarUser" data-for="user"></div>
+      </div>
+      <div class="field">
+        <label>对方头像</label>
+        <div class="avatar-pick" id="dlgPickAvatarBot" data-for="bot"></div>
+      </div>
+      <div class="dlg-msg" id="dlgMsg"></div>
+      <div class="dlg-actions">
+        <button type="button" class="primary" id="dlgSave">保存本场</button>
+        <button type="button" id="dlgClear">清除本场覆盖</button>
+        <button type="button" class="ghost" id="dlgCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet dialog-sheet" id="downvoteSheet">
+    <div class="sheet-panel">
+      <div class="dlg-head">踩了，重写一条</div>
+      <div class="dlg-hint">可选填理由；会保留旧文为候选。</div>
+      <div class="field">
+        <label>快捷理由</label>
+        <div class="downvote-chips" id="downvoteChips">
+          <button type="button" data-chip="OOC">OOC</button>
+          <button type="button" data-chip="太说教">太说教</button>
+          <button type="button" data-chip="太长">太长</button>
+          <button type="button" data-chip="跑题">跑题</button>
+          <button type="button" data-chip="不贴原文">不贴原文</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="downvoteReason">理由<small>可空</small></label>
+        <textarea id="downvoteReason" rows="2" placeholder="例如：口吻不像本人…"></textarea>
+      </div>
+      <div class="dlg-msg" id="downvoteMsg"></div>
+      <div class="dlg-actions">
+        <button type="button" class="primary" id="downvoteGo">踩了重写</button>
+        <button type="button" class="ghost" id="downvoteCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet dialog-sheet" id="editFollowSheet">
+    <div class="sheet-panel">
+      <div class="dlg-head">编辑跟批</div>
+      <div class="dlg-hint">直接改当前这条，不会另开候选页。</div>
+      <div class="field">
+        <label for="editFollowBody">正文</label>
+        <textarea id="editFollowBody" rows="6" placeholder="改写跟批…"></textarea>
+      </div>
+      <div class="dlg-msg" id="editFollowMsg"></div>
+      <div class="dlg-actions">
+        <button type="button" class="primary" id="editFollowSave">保存</button>
+        <button type="button" class="ghost" id="editFollowCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="sheet dialog-sheet" id="worldImportSheet">
+    <div class="sheet-panel">
+      <div class="dlg-head">导入世界书</div>
+      <div class="dlg-hint">确认后写入列表，仍需点「保存」才落盘。</div>
+      <div class="field">
+        <label for="worldImportKeys">关键词<small>可用逗号分隔</small></label>
+        <input id="worldImportKeys" type="text" autocomplete="off" placeholder="例如：线粒体,内共生" />
+      </div>
+      <div class="field">
+        <label>正文预览<small id="worldImportPreviewMeta">前约 500 字</small></label>
+        <div class="import-preview" id="worldImportPreview"></div>
+      </div>
+      <div class="dlg-msg" id="worldImportMsg"></div>
+      <div class="dlg-actions">
+        <button type="button" class="primary" id="worldImportConfirm">确认导入</button>
+        <button type="button" class="ghost" id="worldImportCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet" id="summarySheet">
     <div class="sheet-panel summary-panel">
       <div class="sum-head">本场摘要</div>
       <div id="sumBody"></div>
+      <label class="sum-lore-opt" for="sumWriteLore">
+        <input type="checkbox" id="sumWriteLore" />
+        <span>
+          <span class="t">写入剧情摘要</span>
+          <small>追加到设定里的长期摘要；默认不写</small>
+        </span>
+      </label>
       <div class="sum-actions">
         <button type="button" id="sumConfirm">确认结束</button>
         <button type="button" class="cancel" id="sumCancel">继续共读</button>
@@ -962,6 +1887,270 @@
     let modelOptions = ["deepseek-flash", "deepseek-chat"];
     let sessionStartedAt = null;
     let pendingSummary = null;
+    let followPaused = false;
+    /** 在场感：thinking | done | null */
+    let presenceKind = null;
+    let presenceClearTimer = null;
+    /** 共读顶栏时钟（设定可关） */
+    let showClock = true;
+    let clockTimer = null;
+    let loreLight = false;
+    let followMode = "immersive";
+    /** 本场语气："" | short | ask | empathy */
+    let followTone = "";
+    let doorLocked = false;
+    let budgetTokens = 0;
+    let tokensUsed = 0;
+    /** 本场刷次（开场时锁定） */
+    let sessionPassOrdinal = 1;
+    /** 时间线范围：session=本场 · pass=本刷 · all=全部刷次 */
+    let timelineScope = "session";
+    /** 小屋默认称呼/头像（来自设定） */
+    let hutDialogue = {
+      persona: "",
+      name_user: "你",
+      name_bot: "熊",
+      avatar_user: "/assets/cafe/avatar-you.png",
+      avatar_bot: "/assets/cafe/avatar-bot.png",
+    };
+    /** 本场 dialogue 覆盖（open.dialogue 原样；空字段表示未覆盖） */
+    let sessionDialogue = {};
+
+    const AVATAR_PRESETS = [
+      { src: "/assets/cafe/avatar-you.png", label: "猫" },
+      { src: "/assets/cafe/avatar-bot.png", label: "熊" },
+      { src: "/assets/cafe/decor-bear.png", label: "摆件熊" },
+    ];
+
+    const FOLLOW_MODE_LABEL = {
+      immersive: "沉浸评论",
+      ideas: "仅想法",
+      silent: "定义静默",
+    };
+    const FOLLOW_TONE_LABEL = {
+      "": "默认",
+      short: "短批",
+      ask: "提问",
+      empathy: "共鸣",
+    };
+
+    /** 额度按人民币选；底层仍用 token 累加。
+     * 粗算依据：DeepSeek Flash 闲时约 输入1元/M + 输出4元/M，
+     * 跟批按一半进一半出 → 约 2.5 元 / 百万 token（非账单，仅体感）。
+     */
+    const RMB_PER_M_TOKEN = 2.5;
+    const BUDGET_PRESETS = [
+      { rmb: 0, title: "不限", hint: "本场不封顶" },
+      { rmb: 1, title: "约 1 块", hint: "短读 / 省着用" },
+      { rmb: 5, title: "约 5 块", hint: "一场共读很宽裕" },
+      { rmb: 10, title: "约 10 块", hint: "放开跟批" },
+    ];
+
+    function passOfHighlight(h) {
+      const n = Number(h && h.pass_ordinal);
+      return Number.isFinite(n) && n > 0 ? n : 1;
+    }
+
+    /** WeRead createTime 多为秒；跟批/场次为毫秒 */
+    function toMs(t) {
+      const n = Number(t) || 0;
+      if (n <= 0) return 0;
+      return n < 1e12 ? n * 1000 : n;
+    }
+
+    function sessionStartMs() {
+      return toMs(sessionStartedAt) || 0;
+    }
+
+    function inThisSession(t) {
+      const start = sessionStartMs();
+      if (!start) return true;
+      return toMs(t) >= start;
+    }
+
+    function highlightInThisSession(h) {
+      if (inThisSession(h && h.created_at)) return true;
+      if (h && h.follow && inThisSession(h.follow.at)) return true;
+      return false;
+    }
+
+    function viewPassOrdinal() {
+      return Math.max(1, Number(sessionPassOrdinal) || Number(activeBook() && activeBook().active_pass) || 1);
+    }
+
+    function filterHighlightsForView(hls) {
+      if (timelineScope === "all") return hls || [];
+      const p = viewPassOrdinal();
+      const samePass = (hls || []).filter((h) => passOfHighlight(h) === p);
+      if (timelineScope === "pass") return samePass;
+      return samePass.filter(highlightInThisSession);
+    }
+
+    function filterChatsForView(chats) {
+      if (timelineScope === "all") return chats || [];
+      const p = viewPassOrdinal();
+      const samePass = (chats || []).filter((c) => {
+        const n = Number(c && c.pass_ordinal);
+        const cp = Number.isFinite(n) && n > 0 ? n : p;
+        return cp === p;
+      });
+      if (timelineScope === "pass") return samePass;
+      return samePass.filter((c) => inThisSession(c && c.at));
+    }
+
+    function scopeLabel() {
+      if (timelineScope === "all") return "全部刷次";
+      if (timelineScope === "pass") return "只看" + passLabel(viewPassOrdinal());
+      return "只看本场";
+    }
+
+    function toggleTimelineScope() {
+      timelineScope =
+        timelineScope === "session" ? "pass" : timelineScope === "pass" ? "all" : "session";
+      updateFollowUi();
+      renderHighlightStream(highlightCache, null, { scroll: "keep" });
+    }
+
+    function pickStr(overrideVal, hutVal) {
+      if (overrideVal == null) return hutVal;
+      const t = String(overrideVal).trim();
+      return t === "" ? hutVal : t;
+    }
+
+    function normalizeAvatarLocal(src, fallback) {
+      const s = String(src || "").trim();
+      if (AVATAR_PRESETS.some((a) => a.src === s)) return s;
+      return fallback || AVATAR_PRESETS[0].src;
+    }
+
+    function effectiveDialogueLocal() {
+      const d = sessionDialogue || {};
+      const has = (k) => Object.prototype.hasOwnProperty.call(d, k);
+      return {
+        persona: pickStr(has("persona") ? d.persona : null, hutDialogue.persona || ""),
+        name_user: pickStr(has("name_user") ? d.name_user : null, hutDialogue.name_user || "你"),
+        name_bot: pickStr(has("name_bot") ? d.name_bot : null, hutDialogue.name_bot || "熊"),
+        avatar_user: normalizeAvatarLocal(
+          has("avatar_user") ? d.avatar_user : hutDialogue.avatar_user,
+          hutDialogue.avatar_user
+        ),
+        avatar_bot: normalizeAvatarLocal(
+          has("avatar_bot") ? d.avatar_bot : hutDialogue.avatar_bot,
+          hutDialogue.avatar_bot
+        ),
+      };
+    }
+
+    function applyHutDialogue(s) {
+      hutDialogue = {
+        persona: s.persona || "",
+        name_user: (s.name_user || "你").trim() || "你",
+        name_bot: (s.name_bot || "熊").trim() || "熊",
+        avatar_user: normalizeAvatarLocal(s.avatar_user, "/assets/cafe/avatar-you.png"),
+        avatar_bot: normalizeAvatarLocal(s.avatar_bot, "/assets/cafe/avatar-bot.png"),
+      };
+    }
+
+    function applySessionDialogue(open) {
+      sessionDialogue =
+        open && open.dialogue && typeof open.dialogue === "object" ? { ...open.dialogue } : {};
+    }
+
+    function avHtml(side) {
+      const dlg = effectiveDialogueLocal();
+      const src = side === "user" ? dlg.avatar_user : dlg.avatar_bot;
+      const name = side === "user" ? dlg.name_user : dlg.name_bot;
+      return (
+        '<div class="av" title="' +
+        escapeAttr(name) +
+        '"><img src="' +
+        escapeAttr(src) +
+        '" alt="' +
+        escapeAttr(name) +
+        '" /></div>'
+      );
+    }
+
+    function paintAvatarPick(el, selected, onPick) {
+      if (!el) return;
+      el.innerHTML = AVATAR_PRESETS.map((a) => {
+        const on = a.src === selected ? " on" : "";
+        return (
+          '<button type="button" class="' +
+          on.trim() +
+          '" data-src="' +
+          escapeAttr(a.src) +
+          '" title="' +
+          escapeAttr(a.label) +
+          '"><img src="' +
+          escapeAttr(a.src) +
+          '" alt="' +
+          escapeAttr(a.label) +
+          '" /></button>'
+        );
+      }).join("");
+      el.querySelectorAll("button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const src = btn.getAttribute("data-src");
+          onPick(src);
+          paintAvatarPick(el, src, onPick);
+        });
+      });
+    }
+
+    let hutAvatarUser = "/assets/cafe/avatar-you.png";
+    let hutAvatarBot = "/assets/cafe/avatar-bot.png";
+    let dlgAvatarUser = "";
+    let dlgAvatarBot = "";
+
+    function paintHutAvatarPicks() {
+      paintAvatarPick(document.getElementById("pickAvatarUser"), hutAvatarUser, (src) => {
+        hutAvatarUser = src;
+      });
+      paintAvatarPick(document.getElementById("pickAvatarBot"), hutAvatarBot, (src) => {
+        hutAvatarBot = src;
+      });
+    }
+
+    function tokensFromRmb(rmb) {
+      const n = Number(rmb) || 0;
+      if (n <= 0) return 0;
+      return Math.round((n / RMB_PER_M_TOKEN) * 1e6);
+    }
+
+    function rmbFromTokens(tokens) {
+      return ((Number(tokens) || 0) / 1e6) * RMB_PER_M_TOKEN;
+    }
+
+    function formatRmb(n) {
+      const x = Number(n) || 0;
+      if (x <= 0) return "¥0";
+      if (x < 0.005) return "不到半分";
+      if (x < 1) {
+        const fen = Math.round(x * 100);
+        if (fen >= 10 && fen % 10 === 0) return "约 " + fen / 10 + " 毛";
+        return "约 " + fen + " 分";
+      }
+      return "约 ¥" + x.toFixed(2);
+    }
+
+    function budgetExhaustedLocal() {
+      if (!budgetTokens || budgetTokens <= 0) return false;
+      return tokensUsed >= budgetTokens;
+    }
+
+    function budgetHint() {
+      if (!budgetTokens || budgetTokens <= 0) return "";
+      if (budgetExhaustedLocal()) return "额度用尽 · 只收录不跟批";
+      const left = Math.max(0, budgetTokens - tokensUsed);
+      return "还剩 " + formatRmb(rmbFromTokens(left));
+    }
+
+    function budgetPresetSelected(p) {
+      if (p.rmb <= 0) return budgetTokens <= 0;
+      const t = tokensFromRmb(p.rmb);
+      return Math.abs(budgetTokens - t) < t * 0.05 + 1;
+    }
 
     function shortModelLabel(id) {
       const s = String(id || "").trim();
@@ -1005,6 +2194,11 @@
         if (!res.ok) throw new Error("http " + res.status);
         const data = await res.json();
         applyHealth(!!data.ok && data.gateway === "up", healthDetail(data));
+        if (typeof data.door_locked === "boolean") {
+          doorLocked = data.door_locked;
+          updateDoorLockVal();
+          updateFollowUi();
+        }
       } catch (_) {
         applyHealth(false, "网关不可达");
       }
@@ -1019,6 +2213,35 @@
         document.getElementById("inLlmBase").value = s.llm_base || "";
         document.getElementById("inLlmKey").value = s.llm_key || "";
         document.getElementById("inLlmModel").value = s.llm_model || "";
+        document.getElementById("inPersona").value = s.persona || "";
+        document.getElementById("inPersonaCard").value = s.persona_card || "";
+        document.getElementById("inPersonaCardFollow").checked = !!s.persona_card_in_follow;
+        document.getElementById("inNameUser").value = s.name_user || "你";
+        document.getElementById("inNameBot").value = s.name_bot || "熊";
+        document.getElementById("inLoreSummary").value = s.lore_summary || "";
+        updateLoreVal(s.lore_summary || "");
+        hutAvatarUser = normalizeAvatarLocal(s.avatar_user, "/assets/cafe/avatar-you.png");
+        hutAvatarBot = normalizeAvatarLocal(s.avatar_bot, "/assets/cafe/avatar-bot.png");
+        paintHutAvatarPicks();
+        applyHutDialogue(s);
+        updatePersonaVal(s.persona || "", s.persona_card || "");
+        const mode = s.default_follow_mode || "immersive";
+        const tone = s.default_follow_tone || "";
+        const bud = Number(s.default_budget_rmb) || 0;
+        document.getElementById("selDefaultMode").value = mode;
+        document.getElementById("selDefaultTone").value = tone;
+        document.getElementById("selDefaultBudget").value = String(
+          [0, 1, 5, 10].includes(bud) ? bud : 0
+        );
+        updateFollowDefaultsVal(mode, bud, tone);
+        doorLocked = !!s.door_locked;
+        updateDoorLockVal();
+        updateAccessGateVal(!!s.gate_has_password, !!s.gate_enabled);
+        showClock = s.show_clock !== false;
+        const clockCb = document.getElementById("inShowClock");
+        if (clockCb) clockCb.checked = showClock;
+        updateCoreadClock();
+        updateFollowUi();
         defaultModel = (s.llm_model || "").trim();
         updateModelPill();
       } catch (_) {
@@ -1026,6 +2249,172 @@
         msg.textContent = "读取设定失败";
         msg.className = "save-msg bad";
       }
+    }
+
+    function updateDoorLockVal() {
+      const el = document.getElementById("doorLockVal");
+      if (el) el.textContent = doorLocked ? "已锁门" : "已开门";
+      const btn = document.getElementById("sheetLock");
+      if (btn) btn.textContent = doorLocked ? "开门" : "关门锁";
+    }
+
+    function updateAccessGateVal(hasPassword, enabled) {
+      const el = document.getElementById("accessGateVal");
+      if (!el) return;
+      if (enabled && hasPassword) el.textContent = "已设";
+      else if (enabled) el.textContent = "环境变量";
+      else el.textContent = "未设";
+    }
+
+    function collapseAccessGate() {
+      document.getElementById("accessGatePanel").classList.remove("open");
+      document.getElementById("rowAccessGate").classList.remove("open");
+    }
+
+    function expandAccessGate() {
+      document.getElementById("accessGateMsg").textContent = "";
+      document.getElementById("accessGateMsg").className = "save-msg";
+      document.getElementById("inGatePassword").value = "";
+      loadSettings();
+      collapseConn();
+      collapsePersona();
+      collapseLore();
+      collapseWorld();
+      collapseFollowDefaults();
+      document.getElementById("accessGatePanel").classList.add("open");
+      document.getElementById("rowAccessGate").classList.add("open");
+    }
+
+    function toggleAccessGate() {
+      if (document.getElementById("accessGatePanel").classList.contains("open")) {
+        collapseAccessGate();
+      } else expandAccessGate();
+    }
+
+    async function saveAccessGate() {
+      const msg = document.getElementById("accessGateMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      const gate_password = document.getElementById("inGatePassword").value;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ gate_password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || data.error || "http");
+        updateAccessGateVal(!!data.gate_has_password, !!data.gate_enabled);
+        document.getElementById("inGatePassword").value = "";
+        msg.textContent = gate_password ? "已设密码" : "已关闭门禁";
+        msg.className = "save-msg ok";
+        if (!gate_password) hideGateOverlay();
+      } catch (e) {
+        msg.textContent = (e && e.message) || "保存失败";
+        msg.className = "save-msg bad";
+      }
+    }
+
+    function showGateOverlay() {
+      const el = document.getElementById("gateOverlay");
+      el.classList.add("show");
+      el.setAttribute("aria-hidden", "false");
+      document.getElementById("gateErr").textContent = "";
+      document.getElementById("gatePassword").value = "";
+      setTimeout(() => document.getElementById("gatePassword").focus(), 50);
+    }
+
+    function hideGateOverlay() {
+      const el = document.getElementById("gateOverlay");
+      el.classList.remove("show");
+      el.setAttribute("aria-hidden", "true");
+    }
+
+    async function ensureGate() {
+      try {
+        const res = await fetch("/api/v1/gate/status", { cache: "no-store" });
+        const data = await res.json();
+        if (data.enabled && !data.unlocked) {
+          showGateOverlay();
+          return false;
+        }
+        hideGateOverlay();
+        return true;
+      } catch (_) {
+        return true;
+      }
+    }
+
+    async function unlockGate() {
+      const err = document.getElementById("gateErr");
+      err.textContent = "";
+      const password = document.getElementById("gatePassword").value;
+      try {
+        const res = await fetch("/api/v1/gate/unlock", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          err.textContent = data.message || "密码不对";
+          return;
+        }
+        hideGateOverlay();
+        checkHealth();
+        loadSettings();
+        loadBooks();
+      } catch (_) {
+        err.textContent = "解锁失败";
+      }
+    }
+
+    async function setDoorLocked(locked) {
+      doorLocked = !!locked;
+      updateDoorLockVal();
+      updateFollowUi();
+      try {
+        await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ door_locked: doorLocked }),
+        });
+      } catch (_) { /* 本机状态已更新 */ }
+      closeSheet();
+      if (!doorLocked) syncAndLoadHighlights({ retry: true });
+      else syncAndLoadHighlights({ fromPoll: true });
+    }
+
+    function updateFollowDefaultsVal(mode, rmb, tone) {
+      const modeLabel = FOLLOW_MODE_LABEL[mode] || mode || "沉浸评论";
+      const toneLabel = FOLLOW_TONE_LABEL[tone || ""] || "";
+      let budLabel = "不限";
+      const n = Number(rmb) || 0;
+      if (n === 1) budLabel = "约 1 块";
+      else if (n === 5) budLabel = "约 5 块";
+      else if (n === 10) budLabel = "约 10 块";
+      else if (n > 0) budLabel = "约 ¥" + n;
+      document.getElementById("followDefaultsVal").textContent =
+        modeLabel + (toneLabel && tone ? " · " + toneLabel : "") + " · " + budLabel;
+    }
+
+    function updatePersonaVal(shortText, cardText) {
+      const short = String(shortText || "").trim();
+      const card = String(cardText || "").trim();
+      const el = document.getElementById("personaVal");
+      if (!short && !card) {
+        el.textContent = "未设置";
+        return;
+      }
+      if (short && card) {
+        el.textContent = (short.length > 6 ? short.slice(0, 6) + "…" : short) + " · 有长卡";
+        return;
+      }
+      if (card) {
+        el.textContent = "仅长卡";
+        return;
+      }
+      el.textContent = short.length > 10 ? short.slice(0, 10) + "…" : short;
     }
 
     async function loadModels() {
@@ -1074,6 +2463,11 @@
       document.getElementById("saveMsg").textContent = "";
       document.getElementById("saveMsg").className = "save-msg";
       loadSettings();
+      collapsePersona();
+      collapseFollowDefaults();
+      collapseWorld();
+      collapseLore();
+      collapseAccessGate();
       document.getElementById("connPanel").classList.add("open");
       document.getElementById("rowConn").classList.add("open");
     }
@@ -1081,6 +2475,349 @@
     function collapseConn() {
       document.getElementById("connPanel").classList.remove("open");
       document.getElementById("rowConn").classList.remove("open");
+    }
+
+    function collapsePersona() {
+      document.getElementById("personaPanel").classList.remove("open");
+      document.getElementById("rowPersona").classList.remove("open");
+    }
+
+    function collapseWorld() {
+      document.getElementById("worldPanel").classList.remove("open");
+      document.getElementById("rowWorld").classList.remove("open");
+    }
+
+    function collapseLore() {
+      document.getElementById("lorePanel").classList.remove("open");
+      document.getElementById("rowLore").classList.remove("open");
+    }
+
+    function updateLoreVal(text) {
+      const el = document.getElementById("loreVal");
+      if (!el) return;
+      const t = String(text || "").trim();
+      el.textContent = t ? t.length + " 字" : "空";
+    }
+
+    function collapseFollowDefaults() {
+      document.getElementById("followDefaultsPanel").classList.remove("open");
+      document.getElementById("rowFollowDefaults").classList.remove("open");
+    }
+
+    function updateWorldVal(n) {
+      const el = document.getElementById("worldVal");
+      if (!el) return;
+      const c = Number(n) || 0;
+      el.textContent = c ? c + " 条" : "空";
+    }
+
+    function worldEntryHtml(e) {
+      return (
+        '<div class="world-entry" data-id="' +
+        escapeAttr(e.id || "") +
+        '">' +
+        '<div class="field"><label>关键词<small>逗号分隔</small></label>' +
+        '<input type="text" class="world-keys" value="' +
+        escapeAttr((e.keys || []).join("，")) +
+        '" placeholder="盖亚，Gaia" /></div>' +
+        '<div class="field"><label>内容</label>' +
+        '<textarea class="world-body" rows="3" placeholder="命中后注入跟批的设定…">' +
+        escapeHtml(e.body || "") +
+        "</textarea></div>" +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">' +
+        '<input type="checkbox" class="world-on" style="width:auto"' +
+        (e.enabled !== false ? " checked" : "") +
+        " />启用</label>" +
+        '<button type="button" class="ghost world-del" style="margin-top:4px">删除</button>' +
+        "</div>"
+      );
+    }
+
+    function renderWorldList(entries) {
+      const root = document.getElementById("worldList");
+      const list = Array.isArray(entries) ? entries : [];
+      updateWorldVal(list.length);
+      if (!list.length) {
+        root.innerHTML =
+          '<div class="hint" style="margin:0">还没有条目。可点「+ 条目」，或保留首次自动种子。</div>';
+        return;
+      }
+      root.innerHTML = list.map(worldEntryHtml).join("");
+    }
+
+    function collectWorldFromDom() {
+      return Array.from(document.querySelectorAll("#worldList .world-entry")).map((el) => ({
+        id: el.getAttribute("data-id") || undefined,
+        keys: el.querySelector(".world-keys").value,
+        body: el.querySelector(".world-body").value,
+        enabled: el.querySelector(".world-on").checked,
+      }));
+    }
+
+    async function loadWorld() {
+      try {
+        const res = await fetch("/api/v1/world", { cache: "no-store" });
+        const data = await res.json();
+        renderWorldList(data.entries || []);
+      } catch (_) {
+        updateWorldVal(0);
+        document.getElementById("worldList").innerHTML =
+          '<div class="hint">读取失败</div>';
+      }
+    }
+
+    function expandPersona() {
+      document.getElementById("personaMsg").textContent = "";
+      document.getElementById("personaMsg").className = "save-msg";
+      loadSettings();
+      collapseConn();
+      collapseFollowDefaults();
+      collapseWorld();
+      collapseLore();
+      document.getElementById("personaPanel").classList.add("open");
+      document.getElementById("rowPersona").classList.add("open");
+    }
+
+    function expandLore() {
+      document.getElementById("loreMsg").textContent = "";
+      document.getElementById("loreMsg").className = "save-msg";
+      loadSettings();
+      collapseConn();
+      collapsePersona();
+      collapseWorld();
+      collapseFollowDefaults();
+      document.getElementById("lorePanel").classList.add("open");
+      document.getElementById("rowLore").classList.add("open");
+    }
+
+    function expandWorld() {
+      document.getElementById("worldMsg").textContent = "";
+      document.getElementById("worldMsg").className = "save-msg";
+      loadWorld();
+      collapseConn();
+      collapsePersona();
+      collapseLore();
+      collapseFollowDefaults();
+      document.getElementById("worldPanel").classList.add("open");
+      document.getElementById("rowWorld").classList.add("open");
+    }
+
+    function expandFollowDefaults() {
+      document.getElementById("followDefaultsMsg").textContent = "";
+      document.getElementById("followDefaultsMsg").className = "save-msg";
+      loadSettings();
+      collapseConn();
+      collapsePersona();
+      collapseWorld();
+      collapseLore();
+      document.getElementById("followDefaultsPanel").classList.add("open");
+      document.getElementById("rowFollowDefaults").classList.add("open");
+    }
+
+    function togglePersona() {
+      if (document.getElementById("personaPanel").classList.contains("open")) collapsePersona();
+      else expandPersona();
+    }
+
+    function toggleLore() {
+      if (document.getElementById("lorePanel").classList.contains("open")) collapseLore();
+      else expandLore();
+    }
+
+    function toggleWorld() {
+      if (document.getElementById("worldPanel").classList.contains("open")) collapseWorld();
+      else expandWorld();
+    }
+
+    function toggleFollowDefaults() {
+      if (document.getElementById("followDefaultsPanel").classList.contains("open")) {
+        collapseFollowDefaults();
+      } else expandFollowDefaults();
+    }
+
+    async function saveLore() {
+      const msg = document.getElementById("loreMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      const lore_summary = document.getElementById("inLoreSummary").value;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lore_summary }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "http");
+        updateLoreVal(data.lore_summary != null ? data.lore_summary : lore_summary);
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+        collapseLore();
+      } catch (_) {
+        msg.textContent = "保存失败";
+        msg.className = "save-msg bad";
+      }
+    }
+
+    const LORE_FILE_MAX = 8000;
+
+    async function readDocxViaGateway(file) {
+      const res = await fetch("/api/v1/import/docx", {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        },
+        body: file,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        const err = new Error(data.message || "导入失败");
+        err.code = data.error || "docx_bad";
+        throw err;
+      }
+      return String(data.text || "");
+    }
+
+    function importLoreFromFile(file) {
+      const msg = document.getElementById("loreMsg");
+      if (!file) return;
+      const name = String(file.name || "").toLowerCase();
+      const isDocx = /\.docx$/i.test(name);
+      if (
+        !isDocx &&
+        !/\.(txt|md)$/.test(name) &&
+        file.type &&
+        !/^text\//.test(file.type)
+      ) {
+        msg.textContent = "请选 .txt / .md / .docx";
+        msg.className = "save-msg bad";
+        return;
+      }
+      const apply = (textIn) => {
+        let text = String(textIn || "").replace(/^\uFEFF/, "");
+        let note = "已导入，记得点保存";
+        if (text.length > LORE_FILE_MAX) {
+          text = text.slice(0, LORE_FILE_MAX);
+          note = "已导入并截到约 8000 字，记得点保存";
+        }
+        document.getElementById("inLoreSummary").value = text;
+        updateLoreVal(text);
+        msg.textContent = note;
+        msg.className = "save-msg ok";
+      };
+      if (isDocx) {
+        msg.textContent = "解析 Word…";
+        msg.className = "save-msg";
+        readDocxViaGateway(file)
+          .then(apply)
+          .catch((e) => {
+            msg.textContent = e.message || "导入失败";
+            msg.className = "save-msg bad";
+          });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => apply(reader.result);
+      reader.onerror = () => {
+        msg.textContent = "读取文件失败";
+        msg.className = "save-msg bad";
+      };
+      reader.readAsText(file, "utf-8");
+    }
+
+    async function saveWorld() {
+      const msg = document.getElementById("worldMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      try {
+        const res = await fetch("/api/v1/world", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ entries: collectWorldFromDom() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "http");
+        renderWorldList(data.entries || []);
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+      } catch (_) {
+        msg.textContent = "保存失败";
+        msg.className = "save-msg bad";
+      }
+    }
+
+    async function saveFollowDefaults() {
+      const msg = document.getElementById("followDefaultsMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      const default_follow_mode = document.getElementById("selDefaultMode").value;
+      const default_follow_tone = document.getElementById("selDefaultTone").value || "";
+      const default_budget_rmb = Number(document.getElementById("selDefaultBudget").value) || 0;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            default_follow_mode,
+            default_follow_tone,
+            default_budget_rmb,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "http");
+        updateFollowDefaultsVal(
+          data.default_follow_mode || default_follow_mode,
+          data.default_budget_rmb != null ? data.default_budget_rmb : default_budget_rmb,
+          data.default_follow_tone != null ? data.default_follow_tone : default_follow_tone
+        );
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+        collapseFollowDefaults();
+      } catch (_) {
+        msg.textContent = "保存失败";
+        msg.className = "save-msg bad";
+      }
+    }
+
+    async function savePersona() {
+      const msg = document.getElementById("personaMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      const persona = document.getElementById("inPersona").value;
+      const persona_card = document.getElementById("inPersonaCard").value;
+      const persona_card_in_follow = document.getElementById("inPersonaCardFollow").checked;
+      const name_user = document.getElementById("inNameUser").value;
+      const name_bot = document.getElementById("inNameBot").value;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            persona,
+            persona_card,
+            persona_card_in_follow,
+            name_user,
+            name_bot,
+            avatar_user: hutAvatarUser,
+            avatar_bot: hutAvatarBot,
+          }),
+        });
+        if (!res.ok) throw new Error("http " + res.status);
+        const s = await res.json();
+        applyHutDialogue(s);
+        document.getElementById("inNameUser").value = s.name_user || name_user;
+        document.getElementById("inNameBot").value = s.name_bot || name_bot;
+        hutAvatarUser = normalizeAvatarLocal(s.avatar_user, hutAvatarUser);
+        hutAvatarBot = normalizeAvatarLocal(s.avatar_bot, hutAvatarBot);
+        paintHutAvatarPicks();
+        updatePersonaVal(s.persona || persona, s.persona_card || persona_card);
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+        collapsePersona();
+      } catch (_) {
+        msg.textContent = "保存失败";
+        msg.className = "save-msg bad";
+      }
     }
 
     function toggleConn() {
@@ -1123,7 +2860,14 @@
     }
 
     function cabinMetaLine(b) {
-      return "小屋进度 " + (b.progress || 0) + "%";
+      let s = "小屋进度 " + (b.progress || 0) + "%";
+      if (b.default_mode && FOLLOW_MODE_LABEL[b.default_mode]) {
+        s += " · 默认" + FOLLOW_MODE_LABEL[b.default_mode];
+      }
+      if (b.default_tone && FOLLOW_TONE_LABEL[b.default_tone]) {
+        s += " · " + FOLLOW_TONE_LABEL[b.default_tone];
+      }
+      return s;
     }
 
     function activeBook() {
@@ -1141,13 +2885,25 @@
       el.textContent = "《" + book.title + "》· 继续";
     }
 
+    function shelfQuery() {
+      const el = document.getElementById("shelfSearch");
+      return el ? String(el.value || "").trim().toLowerCase() : "";
+    }
+
+    function bookMatchesShelfQ(b, q) {
+      if (!q) return true;
+      const hay = String((b.title || "") + " " + (b.author || "")).toLowerCase();
+      return hay.includes(q);
+    }
+
     function renderShelf(books) {
       const root = document.getElementById("shelfRoot");
       if (!books.length) {
-        root.innerHTML = '<div class="r-card"><div class="t">书架空空</div><div class="s">点上方「同步最近 10 本」拉取微信读书</div></div>';
+        root.innerHTML = '<div class="r-card"><div class="t">书架空空</div><div class="s">点上方「同步书架」拉取微信读书</div></div>';
         return;
       }
-      const list = books;
+      const q = shelfQuery();
+      const list = q ? books.filter((b) => bookMatchesShelfQ(b, q)) : books;
       const parts = [];
       const cont = books.find((b) => b.in_progress);
       if (cont) {
@@ -1165,11 +2921,28 @@
             "</div></div>"
         );
       }
+      if (!list.length) {
+        parts.push(
+          '<div class="r-card"><div class="t">没有匹配的书</div><div class="s">换个词，或清空搜索</div></div>'
+        );
+        root.innerHTML = parts.join("");
+        return;
+      }
       for (const b of list) {
         const pills = (b.passes || [])
-          .map((p, i) => '<span class="pill-tag' + (i === 0 ? " a" : "") + '">' + passLabel(p) + "</span>")
+          .map((p) => {
+            const on = Number(p) === Number(b.active_pass);
+            return (
+              '<button type="button" class="pill-tag' + (on ? " a" : "") +
+              '" data-set-pass="' + escapeAttr(String(p)) +
+              '" data-book-id="' + escapeAttr(b.id) + '">' +
+              passLabel(p) + "</button>"
+            );
+          })
           .join("");
-        const next = '<span class="pill-tag c">+ 下一刷</span>';
+        const next =
+          '<button type="button" class="pill-tag c" data-next-pass="' +
+          escapeAttr(b.id) + '">+ 下一刷</button>';
         const empty = !b.passes || !b.passes.length
           ? '<span class="pill-tag">未开刷</span>'
           : pills + next;
@@ -1241,8 +3014,10 @@
         renderShelf(booksCache);
         updateStandbyContinue();
         msg.className = "msg ok";
-        const total = data.total_remote != null ? data.total_remote : data.synced;
-        msg.textContent = "已同步最近 " + data.synced + " 本（微信读书共 " + total + " 本）";
+        const enriched =
+          data.progress_enriched != null ? data.progress_enriched : data.synced;
+        msg.textContent =
+          "已同步 " + data.synced + " 本（进度刷新 " + enriched + " 本）";
       } catch (_) {
         msg.className = "msg bad";
         msg.textContent = "同步失败：网络或网关异常";
@@ -1251,17 +3026,40 @@
       }
     }
 
+    function updateCoreadTitle() {
+      const el = document.querySelector("#view-coread .title");
+      if (!el) return;
+      const book = activeBook();
+      if (!book) return;
+      const pass = book.active_pass ? passLabel(book.active_pass) : "—";
+      const wr = book.weread_progress != null ? book.weread_progress : "—";
+      el.textContent =
+        "《" + book.title + "》·" + pass + " · 小屋" + (book.progress || 0) + "% · 读书" + wr + "%";
+    }
+
+    function applyWereadProgress(progress) {
+      if (!progress || !progress.id) return;
+      const i = booksCache.findIndex((b) => b.id === progress.id);
+      if (i < 0) return;
+      if (progress.weread_progress != null) {
+        booksCache[i].weread_progress = progress.weread_progress;
+      }
+      if (progress.weread_read_seconds != null) {
+        booksCache[i].weread_read_seconds = progress.weread_read_seconds;
+      }
+      updateCoreadTitle();
+    }
+
     function showView(name) {
       document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === "view-" + name));
-      if (name !== "coread") stopHighlightPoll();
+      if (name !== "coread") {
+        stopHighlightPoll();
+        setPresence(null);
+      }
       if (name === "coread") {
-        const book = activeBook();
-        if (book) {
-          const pass = book.active_pass ? passLabel(book.active_pass) : "—";
-          const wr = book.weread_progress != null ? book.weread_progress : "—";
-          document.querySelector("#view-coread .title").textContent =
-            "《" + book.title + "》·" + pass + " · 小屋" + (book.progress || 0) + "% · 读书" + wr + "%";
-        }
+        updateCoreadTitle();
+        updateOfflineBanner();
+        updateCoreadClock();
       }
       if (name === "standby") {
         checkHealth();
@@ -1270,6 +3068,8 @@
       if (name === "cabin") loadBooks();
       closeSheet();
       collapseConn();
+      collapsePersona();
+      collapseFollowDefaults();
     }
 
     function showTab(name) {
@@ -1280,9 +3080,13 @@
         btn.classList.toggle("on", btn.dataset.tab === name);
       });
       document.getElementById("cabinTitle").textContent = TITLES[name] || "";
-      if (name === "settings") checkHealth();
+      if (name === "settings") {
+        checkHealth();
+        loadWorld();
+      }
       if (name === "shelf") loadBooks();
       if (name === "records") loadRecords();
+      if (name === "notes") loadNotes();
     }
 
     function enterCabin() {
@@ -1291,6 +3095,55 @@
     }
 
     let highlightPollTimer = null;
+    let highlightCache = [];
+    let chatCache = [];
+    let followRegenBusy = false;
+    let chatSendBusy = false;
+    /** @type {{ highlightId: string, label: string } | null} */
+    let replyTarget = null;
+
+    function clipReplyLabel(s, n) {
+      const t = String(s || "").trim().replace(/\s+/g, " ");
+      if (!t) return "这条";
+      return t.length > n ? t.slice(0, n) + "…" : t;
+    }
+
+    function updateReplyChip() {
+      const chip = document.getElementById("replyChip");
+      const label = document.getElementById("replyChipLabel");
+      if (!chip || !label) return;
+      if (!replyTarget) {
+        chip.hidden = true;
+        label.textContent = "";
+        return;
+      }
+      chip.hidden = false;
+      label.textContent = "续「" + replyTarget.label + "」";
+    }
+
+    function clearReplyTarget() {
+      replyTarget = null;
+      updateReplyChip();
+    }
+
+    function setReplyTarget(highlightId, label, focusInput) {
+      replyTarget = {
+        highlightId: String(highlightId),
+        label: clipReplyLabel(label, 28),
+      };
+      updateReplyChip();
+      if (focusInput !== false) {
+        const input = document.getElementById("chatInput");
+        if (input) input.focus();
+      }
+    }
+
+    function replyLabelForHighlight(h) {
+      if (!h) return "这条";
+      if (h.text) return h.text;
+      if (h.idea) return h.idea;
+      return "划线";
+    }
 
     function stopHighlightPoll() {
       if (highlightPollTimer) {
@@ -1306,11 +3159,157 @@
           stopHighlightPoll();
           return;
         }
-        syncAndLoadHighlights();
+        if (browserOffline()) {
+          updateOfflineBanner();
+          return;
+        }
+        syncAndLoadHighlights({ fromPoll: true });
       }, 10000);
     }
 
-    function renderHighlightStream(highlights, statusMsg) {
+    function renderChatBubble(c) {
+      if (!c || !c.body) return "";
+      const replyMeta = c.reply_label
+        ? " · 续「" + escapeHtml(c.reply_label) + "」"
+        : "";
+      const kindLabel =
+        c.kind === "summary" || c.kind === "summary_request"
+          ? "总结刚才"
+          : "短聊";
+      if (c.role === "user") {
+        return (
+          '<div class="msg" data-chat="' + escapeAttr(c.id) + '">' +
+            avHtml("user") + '<div class="bubble-wrap">' +
+            '<div class="bubble">' + escapeHtml(c.body) + "</div>" +
+            '<div class="msg-meta">' + kindLabel + replyMeta + "</div>" +
+            "</div></div>"
+        );
+      }
+      const tok = (c.tokens_in || 0) + (c.tokens_out || 0);
+      const head = c.think
+        ? '<div class="bubble-head"><div class="think">💡 已深度思考</div></div>'
+        : "";
+      const meta = tok
+        ? kindLabel +
+          " · " +
+          tok +
+          " tokens · " +
+          (c.tokens_in || 0) +
+          " in / " +
+          (c.tokens_out || 0) +
+          " out" +
+          replyMeta
+        : kindLabel + replyMeta;
+      return (
+        '<div class="msg" data-chat="' + escapeAttr(c.id) + '">' +
+          avHtml("bot") + '<div class="bubble-wrap">' +
+          head +
+          '<div class="bubble">' + escapeHtml(c.body) + "</div>" +
+          '<div class="msg-meta">' + meta + "</div>" +
+          "</div></div>"
+      );
+    }
+
+    function isMsgsNearBottom() {
+      const m = document.getElementById("msgs");
+      if (!m) return true;
+      return m.scrollHeight - m.scrollTop - m.clientHeight < 96;
+    }
+
+    function renderFollowHtml(h) {
+      const f = h.follow;
+      if (!f || !f.body) {
+        if (h.follow_error) {
+          return (
+            '<div class="msg" data-follow="' + escapeAttr(h.id) + '" data-follow-failed="1">' +
+              avHtml("bot") +
+              '<div class="bubble-wrap">' +
+              '<div class="msg-meta">跟批失败：' + escapeHtml(h.follow_error) + "</div>" +
+              '<div class="actions">' +
+              '<button type="button" data-retry title="重试跟批">重试</button>' +
+              "</div>" +
+              "</div></div>"
+          );
+        }
+        return "";
+      }
+      const variants = Array.isArray(f.variants) && f.variants.length
+        ? f.variants
+        : [{ body: f.body, think: f.think, tokens_in: f.tokens_in, tokens_out: f.tokens_out }];
+      const active = Math.max(0, Math.min(variants.length - 1, Number(f.active) || 0));
+      const cur = variants[active] || f;
+      const tok = (cur.tokens_in || 0) + (cur.tokens_out || 0);
+      const total = variants.length;
+      const page = active + 1;
+      const thinkBit = cur.think
+        ? '<div class="think">💡 已深度思考</div>'
+        : '<div class="think"></div>';
+      const prevDis = active <= 0 ? " disabled" : "";
+      const nextDis = active >= total - 1 ? " disabled" : "";
+      const head =
+        '<div class="bubble-head">' +
+        thinkBit +
+        '<div class="variant-pager">' +
+        '<button type="button" data-var-step="-1" aria-label="上一条"' + prevDis + ">‹</button>" +
+        '<span class="n">' + page + " / " + total + "</span>" +
+        '<button type="button" data-var-step="1" aria-label="下一条"' + nextDis + ">›</button>" +
+        "</div></div>";
+      return (
+        '<div class="msg" data-follow="' + escapeAttr(h.id) + '" data-var-active="' + active + '" data-var-total="' + total + '">' +
+          avHtml("bot") + '<div class="bubble-wrap">' +
+          head +
+          '<div class="bubble" data-follow-body>' + escapeHtml(cur.body || "") + "</div>" +
+          '<div class="msg-meta">' +
+          (cur.edited || cur.model === "edit"
+            ? "手改"
+            : tok + " tokens · " + (cur.tokens_in || 0) + " in / " + (cur.tokens_out || 0) + " out") +
+          "</div>" +
+          '<div class="actions">' +
+          '<button type="button" data-regen title="换一条">↻</button>' +
+          '<button type="button" data-downvote title="踩 / 重写">↓</button>' +
+          '<button type="button" data-edit-follow title="编辑">✎</button>' +
+          '<button type="button" data-copy title="复制">⧉</button>' +
+          '<button type="button" data-continue-chat title="续聊">↩</button>' +
+          "</div></div></div>"
+      );
+    }
+
+    function renderHighlightHtml(h) {
+      const quote = h.text ? "划线：「" + escapeHtml(h.text) + "」" : "";
+      const metaBits = [];
+      if (h.chapter_title) metaBits.push(escapeHtml(h.chapter_title));
+      metaBits.push(h.kind === "idea" ? "想法" : "微信读书划线");
+      const passN = Math.max(1, Number(h.pass_ordinal) || 1);
+      metaBits.push(escapeHtml(passLabel(passN)));
+      return (
+        '<div class="msg" data-hid="' + escapeAttr(h.id) + '">' +
+          avHtml("user") + '<div class="bubble-wrap">' +
+          (quote ? '<div class="quote">' + quote + "</div>" : "") +
+          (h.idea ? '<div class="bubble">' + escapeHtml(h.idea) + "</div>" : "") +
+          '<div class="msg-meta">' + metaBits.join(" · ") + "</div>" +
+          '<div class="actions">' +
+          '<button type="button" data-move-pass title="改刷次">改刷次</button>' +
+          "</div>" +
+          "</div></div>"
+      );
+    }
+
+    /**
+     * 划线+跟批绑成一组，短聊按时间插入组间；避免跟批被拆到别的划线下。
+     * opts.scroll: "bottom" | "keep" | 默认=原本靠近底部才贴底
+     */
+    function renderHighlightStream(highlights, statusMsg, opts) {
+      if (Array.isArray(highlights)) highlightCache = highlights;
+      const m = document.getElementById("msgs");
+      const scrollMode = opts && opts.scroll;
+      const stickBottom =
+        scrollMode === "bottom"
+          ? true
+          : scrollMode === "keep"
+            ? false
+            : isMsgsNearBottom();
+      const prevTop = m ? m.scrollTop : 0;
+
       const stream = document.getElementById("msgStream");
       const parts = ['<div class="session-tape" title="本场分隔"></div>'];
       if (statusMsg) {
@@ -1320,60 +3319,60 @@
             "</div></div>"
         );
       }
-      if (!highlights.length) {
+
+      const visibleHls = filterHighlightsForView(highlights);
+      const visibleChats = filterChatsForView(chatCache);
+
+      const blocks = [];
+      for (const h of visibleHls) {
+        blocks.push({
+          t: Number(h.created_at) || 0,
+          kind: "mark",
+          h,
+        });
+      }
+      for (const c of visibleChats) {
+        blocks.push({ t: Number(c.at) || 0, kind: "chat", c });
+      }
+      blocks.sort((a, b) => a.t - b.t || (a.kind === "mark" ? -1 : 1));
+
+      if (!blocks.length) {
         parts.push(
           '<div class="msg notice"><div class="bubble-wrap">' +
-            '<div class="msg-meta">暂无划线。在微信读书划线后，本页约 10 秒内同步。</div>' +
-            "</div></div>"
+            '<div class="msg-meta">' +
+            (timelineScope === "session"
+              ? "本场还没有划线或短聊。点上方滤条可看本刷更早内容，或在微信读书划线。"
+              : timelineScope === "pass"
+                ? "本刷还没有划线或短聊。点上方滤条可看全部刷次；或在微信读书划线。"
+                : "暂无划线或短聊。在微信读书划线，或在下方说一句。") +
+            "</div></div></div>"
         );
       } else {
-        for (const h of highlights) {
-          const quote = h.text ? "划线：「" + escapeHtml(h.text) + "」" : "";
-          const metaBits = [];
-          if (h.chapter_title) metaBits.push(escapeHtml(h.chapter_title));
-          metaBits.push(h.kind === "idea" ? "想法" : "微信读书划线");
-          parts.push(
-            '<div class="msg" data-hid="' + escapeAttr(h.id) + '">' +
-              '<div class="av" aria-hidden="true">你</div><div class="bubble-wrap">' +
-              (quote ? '<div class="quote">' + quote + "</div>" : "") +
-              (h.idea ? '<div class="bubble">' + escapeHtml(h.idea) + "</div>" : "") +
-              '<div class="msg-meta">' + metaBits.join(" · ") + "</div>" +
-              "</div></div>"
-          );
-          if (h.follow && h.follow.body) {
-            const tok = (h.follow.tokens_in || 0) + (h.follow.tokens_out || 0);
-            let head = "";
-            if (h.follow.think) {
-              head =
-                '<div class="bubble-head"><div class="think">💡 已深度思考</div>' +
-                '<div class="variant-pager"><span class="n">1 / 1</span></div></div>';
-            }
-            parts.push(
-              '<div class="msg" data-follow="' + escapeAttr(h.id) + '">' +
-                '<div class="av" aria-hidden="true">熊</div><div class="bubble-wrap">' +
-                head +
-                '<div class="bubble">' + escapeHtml(h.follow.body) + "</div>" +
-                '<div class="msg-meta">' +
-                tok + " tokens · " + (h.follow.tokens_in || 0) + " in / " +
-                (h.follow.tokens_out || 0) + " out</div>" +
-                '<div class="actions">' +
-                '<button type="button" title="再生成" disabled>↻</button>' +
-                '<button type="button" title="复制">⧉</button>' +
-                '<button type="button" title="更多" disabled>⋮</button>' +
-                "</div></div></div>"
-            );
-          } else if (h.follow_error) {
-            parts.push(
-              '<div class="msg notice"><div class="bubble-wrap">' +
-                '<div class="msg-meta">跟批失败：' + escapeHtml(h.follow_error) + "</div>" +
-                "</div></div>"
-            );
+        for (const b of blocks) {
+          if (b.kind === "chat") {
+            parts.push(renderChatBubble(b.c));
+            continue;
           }
+          parts.push(renderHighlightHtml(b.h));
+          parts.push(renderFollowHtml(b.h));
         }
       }
       stream.innerHTML = parts.join("");
-      const m = document.getElementById("msgs");
-      m.scrollTop = m.scrollHeight;
+      if (m) {
+        if (stickBottom) m.scrollTop = m.scrollHeight;
+        else m.scrollTop = prevTop;
+      }
+    }
+
+    async function loadOpenChats() {
+      if (chatSendBusy) return;
+      try {
+        const res = await fetch("/api/v1/chat", { cache: "no-store" });
+        const data = await res.json();
+        chatCache = Array.isArray(data.chats) ? data.chats : [];
+      } catch (_) {
+        chatCache = [];
+      }
     }
 
     function thinkEnabled() {
@@ -1382,18 +3381,36 @@
 
     async function syncAndLoadHighlights(opts) {
       const retry = !!(opts && opts.retry);
+      const scrollOpt = opts && opts.scroll
+        ? { scroll: opts.scroll }
+        : opts && opts.fromPoll
+          ? { scroll: isMsgsNearBottom() ? "bottom" : "keep" }
+          : undefined;
+      const paint = (hls, msg) => renderHighlightStream(hls, msg, scrollOpt);
       const book = activeBook();
       if (!book || !book.id) {
-        renderHighlightStream([]);
+        paint([]);
         return;
       }
+      if (browserOffline()) {
+        enqueueOfflineSync(book.id);
+        paint(highlightCache.length ? highlightCache : [], "现在离线 · 已记下待补同步");
+        return;
+      }
+      let syncOk = false;
       try {
-        await fetch("/api/v1/highlights/sync", {
+        const syncRes = await fetch("/api/v1/highlights/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ bookId: book.id }),
         });
-      } catch (_) { /* 仍读本地 */ }
+        const syncData = await syncRes.json().catch(() => ({}));
+        if (syncData && syncData.progress) applyWereadProgress(syncData.progress);
+        syncOk = !!syncRes.ok;
+        if (!syncRes.ok) enqueueOfflineSync(book.id);
+      } catch (_) {
+        enqueueOfflineSync(book.id);
+      }
 
       let highlights = [];
       try {
@@ -1403,16 +3420,31 @@
         );
         const data = await res.json();
         highlights = Array.isArray(data.highlights) ? data.highlights : [];
+        if (syncOk) clearOfflineSync(book.id);
       } catch (_) {
-        renderHighlightStream([]);
+        enqueueOfflineSync(book.id);
+        await loadOpenChats();
+        paint(highlightCache.length ? highlightCache : [], "同步失败 · 已记下待补");
         return;
       }
 
-      const needFollow = highlights.some(
-        (h) => h.kind !== "idea" && (h.text || h.idea) && !h.follow && (retry || !h.follow_error)
-      );
+      await loadOpenChats();
+
+      const skipFollow =
+        doorLocked || followPaused || followMode === "silent" || budgetExhaustedLocal();
+      const needFollow =
+        !skipFollow &&
+        highlights.some((h) => {
+          if (h.kind === "idea") return false;
+          if (!(h.text || h.idea)) return false;
+          if (h.follow) return false;
+          if (h.follow_error && !retry) return false;
+          if (followMode === "ideas" && !(h.idea && String(h.idea).trim())) return false;
+          return true;
+        });
       if (needFollow) {
-        renderHighlightStream(highlights, "正在跟批最新划线…");
+        setPresence("thinking");
+        paint(highlights);
         try {
           const fr = await fetch("/api/v1/follow", {
             method: "POST",
@@ -1426,20 +3458,45 @@
             }),
           });
           const fd = await fr.json();
+          if (typeof fd.tokens_used === "number") tokensUsed = fd.tokens_used;
+          if (typeof fd.budget_tokens === "number") budgetTokens = fd.budget_tokens;
+          updateFollowUi();
           if (fd.highlights) highlights = fd.highlights;
           else if (!fr.ok) {
-            renderHighlightStream(
+            setPresence(null);
+            paint(
               highlights,
               fd.message || "跟批失败（请检查设定里的 LLM）"
             );
             return;
           }
+          setPresence("done");
         } catch (_) {
-          renderHighlightStream(highlights, "跟批请求失败");
+          setPresence(null);
+          enqueueOfflineSync(book.id);
+          paint(highlights, "跟批请求失败 · 已记下待补");
           return;
         }
+      } else if (doorLocked) {
+        paint(highlights, "已锁门 · 划线仍会同步");
+        return;
+      } else if (followPaused) {
+        const pending = highlights.some(
+          (h) => h.kind !== "idea" && (h.text || h.idea) && !h.follow && !h.follow_error
+        );
+        paint(
+          highlights,
+          pending ? "已暂停跟批 · 划线仍会同步" : undefined
+        );
+        return;
+      } else if (budgetExhaustedLocal()) {
+        paint(highlights, "额度用尽 · 划线仍会同步");
+        return;
+      } else if (followMode === "silent") {
+        paint(highlights, "定义静默 · 只收录不跟批");
+        return;
       }
-      renderHighlightStream(highlights);
+      paint(highlights);
     }
 
     function formatSessionDuration(ms) {
@@ -1462,8 +3519,13 @@
 
     function summaryHtml(s) {
       const lines = [
-        "<div class=\"sum-line\"><strong>《" + escapeHtml(s.book_title || "未命名") + "》</strong></div>",
-        "<div class=\"sum-line\">时长 · " + escapeHtml(formatSessionDuration(s.duration_ms)) + "</div>",
+        "<div class=\"sum-line\"><strong>《" + escapeHtml(s.book_title || "未命名") + "》</strong>" +
+          (s.pass_ordinal ? " · " + escapeHtml(passLabel(s.pass_ordinal)) : "") +
+          "</div>",
+        "<div class=\"sum-line\">共读时长 · " + escapeHtml(formatSessionDuration(s.duration_ms)) + "</div>",
+        (Number(s.weread_read_seconds) > 0
+          ? "<div class=\"sum-line\">微信阅读 · " + escapeHtml(formatDuration(s.weread_read_seconds) || "0分钟") + "</div>"
+          : ""),
         "<div class=\"sum-line\">本场划线 · " + (s.highlight_count || 0) +
           " · 已跟批 · " + (s.follow_count || 0) + "</div>",
       ];
@@ -1475,28 +3537,388 @@
       } else {
         lines.push("<div class=\"sum-line\">Token · —</div>");
       }
+      lines.push(
+        '<div class="export-row">' +
+          '<button type="button" class="export-btn" data-export="' +
+          escapeAttr(s.id) +
+          '" data-format="md">导出 MD</button>' +
+          '<button type="button" class="export-btn" data-export="' +
+          escapeAttr(s.id) +
+          '" data-format="doc">导出 Word</button>' +
+          '<button type="button" class="export-btn" data-export="' +
+          escapeAttr(s.id) +
+          '" data-format="json">导出 JSON</button>' +
+          "</div>"
+      );
       return lines.join("");
     }
 
-    function renderRecords(sessions) {
-      const list = Array.isArray(sessions) ? sessions : [];
-      let dur = 0;
-      let hl = 0;
-      let fl = 0;
-      for (const s of list) {
-        dur += Number(s.duration_ms) || 0;
-        hl += Number(s.highlight_count) || 0;
-        fl += Number(s.follow_count) || 0;
-      }
-      document.getElementById("statSessions").textContent = String(list.length);
-      document.getElementById("statDuration").textContent = formatSessionDuration(dur).replace(" ", "");
-      document.getElementById("statHighlights").textContent = String(hl);
-      document.getElementById("statFollows").textContent = String(fl);
+    let notesBooksCache = [];
+    let notesSearchTimer = 0;
+    let notesSearchQ = "";
 
-      const root = document.getElementById("recordsList");
-      if (!list.length) {
+    function clipText(s, n) {
+      const t = String(s || "").trim().replace(/\s+/g, " ");
+      if (!t) return "";
+      return t.length > n ? t.slice(0, n) + "…" : t;
+    }
+
+    function notesBackToList() {
+      if (notesSearchQ) runNotesSearch(notesSearchQ);
+      else renderNotesList(notesBooksCache);
+    }
+
+    function renderNotesList(books) {
+      const root = document.getElementById("notesRoot");
+      notesBooksCache = Array.isArray(books) ? books : [];
+      if (!notesBooksCache.length) {
         root.innerHTML =
-          '<div class="r-card"><div class="t">还没有场次</div><div class="s">结束一场共读后会出现在这里</div></div>';
+          '<div class="r-card"><div class="t">还没有书</div><div class="s">先在书架同步微信读书</div></div>';
+        return;
+      }
+      root.innerHTML = notesBooksCache
+        .map((b) => {
+          const empty = !b.total;
+          return (
+            '<div class="r-card tap" data-notes-book="' +
+            escapeAttr(b.id) +
+            '" role="button" tabindex="0">' +
+            '<div class="t">《' +
+            escapeHtml(b.title || "未命名") +
+            "》</div>" +
+            '<div class="s">' +
+            (empty
+              ? "暂无划线"
+              : "划线 " +
+                (b.mark_count || 0) +
+                " · 想法 " +
+                (b.idea_count || 0) +
+                " · 跟批 " +
+                (b.follow_count || 0)) +
+            "</div></div>"
+          );
+        })
+        .join("");
+    }
+
+    function renderNotesSearch(data) {
+      const root = document.getElementById("notesRoot");
+      const hits = (data && data.hits) || [];
+      const books = (data && data.books) || [];
+      notesBooksCache = books.length ? books : notesBooksCache;
+      if (!hits.length && !books.length) {
+        root.innerHTML =
+          '<div class="r-card"><div class="t">无匹配</div><div class="s">试试别的词，或清空搜索</div></div>';
+        return;
+      }
+      const bookCards = books
+        .filter((b) => b.title_match)
+        .map(
+          (b) =>
+            '<div class="r-card tap" data-notes-book="' +
+            escapeAttr(b.id) +
+            '" role="button" tabindex="0">' +
+            '<div class="t">《' +
+            escapeHtml(b.title || "未命名") +
+            "》</div>" +
+            '<div class="s">书名命中 · 划线 ' +
+            (b.mark_count || 0) +
+            " · 想法 " +
+            (b.idea_count || 0) +
+            "</div></div>"
+        )
+        .join("");
+      const hitCards = hits
+        .map((h) => {
+          const main =
+            h.kind === "idea"
+              ? clipText(h.idea || h.text, 100)
+              : clipText(h.text, 100);
+          const bits = [];
+          if (h.chapter_title) bits.push(clipText(h.chapter_title, 40));
+          if (h.kind !== "idea" && h.idea) bits.push("想法 · " + clipText(h.idea, 50));
+          if (h.follow_body) bits.push("跟批 · " + clipText(h.follow_body, 60));
+          return (
+            '<div class="r-card tap" data-notes-book="' +
+            escapeAttr(h.book_id) +
+            '" role="button" tabindex="0">' +
+            '<div class="s">《' +
+            escapeHtml(h.book_title || "") +
+            "》</div>" +
+            '<div class="t" style="font-weight:600;font-size:14px">' +
+            escapeHtml(main || "（空）") +
+            "</div>" +
+            (bits.length
+              ? '<div class="s">' + escapeHtml(bits.join(" · ")) + "</div>"
+              : "") +
+            "</div>"
+          );
+        })
+        .join("");
+      root.innerHTML =
+        '<div class="r-card"><div class="s">「' +
+        escapeHtml(data.query || "") +
+        "」· " +
+        hits.length +
+        " 条 · " +
+        books.length +
+        " 本书</div></div>" +
+        bookCards +
+        hitCards;
+    }
+
+    async function runNotesSearch(q) {
+      const root = document.getElementById("notesRoot");
+      notesSearchQ = String(q || "").trim();
+      if (!notesSearchQ) {
+        await loadNotes();
+        return;
+      }
+      root.innerHTML = '<div class="r-card"><div class="t">搜索中…</div></div>';
+      try {
+        const res = await fetch(
+          "/api/v1/notes/search?q=" + encodeURIComponent(notesSearchQ),
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        renderNotesSearch(data);
+      } catch (_) {
+        root.innerHTML =
+          '<div class="r-card"><div class="t">搜索失败</div><div class="s">网关不可达</div></div>';
+      }
+    }
+
+    function groupNotesByChapter(highlights) {
+      const list = Array.isArray(highlights) ? highlights.slice() : [];
+      list.sort((a, b) => (b.created_at || 0) - (a.created_at || 0));
+      const order = [];
+      const map = Object.create(null);
+      for (const h of list) {
+        const key =
+          (h.chapter_title && String(h.chapter_title).trim()) || "未分章";
+        if (!map[key]) {
+          map[key] = [];
+          order.push(key);
+        }
+        map[key].push(h);
+      }
+      return order.map((title) => ({ title, items: map[title] }));
+    }
+
+    function noteCardHtml(h) {
+      const main =
+        h.kind === "idea"
+          ? clipText(h.idea || h.text, 120)
+          : clipText(h.text, 120);
+      const idea =
+        h.kind !== "idea" && h.idea
+          ? '<div class="s">想法 · ' + escapeHtml(clipText(h.idea, 80)) + "</div>"
+          : "";
+      const follow =
+        h.follow && h.follow.body
+          ? '<div class="s">跟批 · ' + escapeHtml(clipText(h.follow.body, 100)) + "</div>"
+          : h.follow_error
+            ? '<div class="s">跟批失败</div>'
+            : "";
+      return (
+        '<div class="r-card">' +
+        '<div class="t" style="font-weight:600;font-size:14px">' +
+        escapeHtml(main || "（空）") +
+        "</div>" +
+        idea +
+        follow +
+        "</div>"
+      );
+    }
+
+    function renderNotesDetail(bookId, bookMeta, highlights) {
+      const root = document.getElementById("notesRoot");
+      const title = (bookMeta && bookMeta.title) || "未命名";
+      const list = Array.isArray(highlights) ? highlights : [];
+      const groups = groupNotesByChapter(list);
+      let body;
+      if (!list.length) {
+        body =
+          '<div class="r-card"><div class="t">暂无划线</div><div class="s">在微信读书划线后，共读中同步即可出现在这里</div></div>';
+      } else {
+        body = groups
+          .map((g) => {
+            return (
+              '<details class="notes-chap-block">' +
+              '<summary class="notes-chap">' +
+              escapeHtml(g.title) +
+              ' <span class="n">· ' +
+              g.items.length +
+              " 条</span></summary>" +
+              g.items.map(noteCardHtml).join("") +
+              "</details>"
+            );
+          })
+          .join("");
+      }
+      const foldBtns =
+        groups.length > 1
+          ? '<button type="button" class="export-btn" data-notes-chapters="open">全部展开</button>' +
+            '<button type="button" class="export-btn" data-notes-chapters="close">全部收起</button>'
+          : "";
+      root.innerHTML =
+        '<div class="r-card tap" id="notesBack" role="button" tabindex="0">' +
+        '<div class="t">← 全部笔记</div>' +
+        '<div class="s">《' +
+        escapeHtml(title) +
+        "》· " +
+        list.length +
+        " 条" +
+        (groups.length > 1 ? " · " + groups.length + " 章" : "") +
+        "</div>" +
+        '<div class="export-row">' +
+        foldBtns +
+        '<button type="button" class="export-btn" data-notes-export="' +
+        escapeAttr(bookId) +
+        '" data-format="md">导出 MD</button>' +
+        '<button type="button" class="export-btn" data-notes-export="' +
+        escapeAttr(bookId) +
+        '" data-format="doc">导出 Word</button>' +
+        '<button type="button" class="export-btn" data-notes-export="' +
+        escapeAttr(bookId) +
+        '" data-format="json">导出 JSON</button>' +
+        "</div></div>" +
+        body;
+      document.getElementById("notesBack").addEventListener("click", (e) => {
+        if (e.target.closest("[data-notes-export],[data-notes-chapters]")) return;
+        notesBackToList();
+      });
+    }
+
+    async function openNotesBook(bookId) {
+      const meta = notesBooksCache.find((b) => b.id === bookId) || { id: bookId, title: "…" };
+      const root = document.getElementById("notesRoot");
+      root.innerHTML =
+        '<div class="r-card"><div class="t">《' +
+        escapeHtml(meta.title || "") +
+        "》</div><div class=\"s\">加载中…</div></div>";
+      try {
+        const res = await fetch(
+          "/api/v1/books/" + encodeURIComponent(bookId) + "/highlights",
+          { cache: "no-store" }
+        );
+        const data = await res.json();
+        renderNotesDetail(bookId, meta, data.highlights || []);
+      } catch (_) {
+        root.innerHTML =
+          '<div class="r-card tap" id="notesBack" role="button" tabindex="0"><div class="t">← 返回</div><div class="s">加载失败</div></div>';
+        document.getElementById("notesBack").addEventListener("click", notesBackToList);
+      }
+    }
+
+    async function loadNotes() {
+      const root = document.getElementById("notesRoot");
+      const qEl = document.getElementById("notesSearch");
+      if (qEl && String(qEl.value || "").trim()) {
+        await runNotesSearch(qEl.value);
+        return;
+      }
+      notesSearchQ = "";
+      root.innerHTML = '<div class="r-card"><div class="t">加载中…</div></div>';
+      try {
+        const res = await fetch("/api/v1/notes", { cache: "no-store" });
+        const data = await res.json();
+        renderNotesList(data.books || []);
+      } catch (_) {
+        root.innerHTML =
+          '<div class="r-card"><div class="t">读取失败</div><div class="s">网关不可达</div></div>';
+      }
+    }
+
+    function renderRecords(sessions, stats) {
+      const list = Array.isArray(sessions) ? sessions : [];
+      recordsStatsCache = stats && typeof stats === "object" ? stats : null;
+      recordsAllCache = list;
+      paintRecordsStats();
+      paintRecordsList();
+    }
+
+    let recordsPeriod = "all";
+    let recordsStatsCache = null;
+    let recordsAllCache = [];
+
+    function emptyStatBucket() {
+      return {
+        sessions: 0,
+        duration_ms: 0,
+        highlight_count: 0,
+        follow_count: 0,
+        weread_read_seconds: 0,
+      };
+    }
+
+    function statsBucketFromList(list) {
+      const b = emptyStatBucket();
+      for (const s of list || []) {
+        b.sessions += 1;
+        b.duration_ms += Number(s.duration_ms) || 0;
+        b.highlight_count += Number(s.highlight_count) || 0;
+        b.follow_count += Number(s.follow_count) || 0;
+        b.weread_read_seconds += Number(s.weread_read_seconds) || 0;
+      }
+      return b;
+    }
+
+    function startOfLocalDayMs(ts) {
+      const d = new Date(ts);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    }
+
+    function startOfLocalWeekMs(ts) {
+      const d = new Date(ts);
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay();
+      const diff = day === 0 ? 6 : day - 1;
+      d.setDate(d.getDate() - diff);
+      return d.getTime();
+    }
+
+    function startOfLocalMonthMs(ts) {
+      const d = new Date(ts);
+      d.setDate(1);
+      d.setHours(0, 0, 0, 0);
+      return d.getTime();
+    }
+
+    /** 与网关导出 / 统计同一套：按 ended_at（缺则 started_at） */
+    function filterRecordsByPeriod(list, period) {
+      const all = Array.isArray(list) ? list : [];
+      const p = period || "all";
+      if (p === "all") return all.slice();
+      const now = Date.now();
+      let since = 0;
+      if (p === "today") since = startOfLocalDayMs(now);
+      else if (p === "week") since = startOfLocalWeekMs(now);
+      else if (p === "month") since = startOfLocalMonthMs(now);
+      else return all.slice();
+      return all.filter((s) => {
+        const t = Number(s.ended_at) || Number(s.started_at) || 0;
+        return t >= since;
+      });
+    }
+
+    function paintRecordsList() {
+      const root = document.getElementById("recordsList");
+      const list = filterRecordsByPeriod(recordsAllCache, recordsPeriod);
+      if (!list.length) {
+        const emptyHint =
+          recordsPeriod === "today"
+            ? "今天还没有结束的场次"
+            : recordsPeriod === "week"
+              ? "本周还没有结束的场次"
+              : recordsPeriod === "month"
+                ? "本月还没有结束的场次"
+                : "还没有场次";
+        root.innerHTML =
+          '<div class="r-card"><div class="t">' +
+          emptyHint +
+          '</div><div class="s">结束一场共读后会出现在这里</div></div>';
         return;
       }
       root.innerHTML = list
@@ -1506,8 +3928,12 @@
               '<div class="t">《' + escapeHtml(s.book_title || "未命名") + "》</div>" +
               '<div class="s">' +
                 escapeHtml(formatSessionWhen(s.ended_at)) +
-                " · " +
+                (s.pass_ordinal ? " · " + escapeHtml(passLabel(s.pass_ordinal)) : "") +
+                " · 共读 " +
                 escapeHtml(formatSessionDuration(s.duration_ms)) +
+                (Number(s.weread_read_seconds) > 0
+                  ? " · 微信 " + escapeHtml(formatDuration(s.weread_read_seconds) || "0分钟")
+                  : "") +
                 " · 划线 " +
                 (s.highlight_count || 0) +
                 " · 跟批 " +
@@ -1520,11 +3946,175 @@
         .join("");
     }
 
+    function paintRecordsStats() {
+      const key = recordsPeriod === "today" || recordsPeriod === "week" || recordsPeriod === "month"
+        ? recordsPeriod
+        : "all";
+      let bucket = recordsStatsCache && recordsStatsCache[key];
+      if (!bucket) bucket = emptyStatBucket();
+      document.getElementById("statSessions").textContent = String(bucket.sessions || 0);
+      document.getElementById("statDuration").textContent = formatSessionDuration(
+        bucket.duration_ms || 0
+      ).replace(" ", "");
+      const wrEl = document.getElementById("statWeread");
+      if (wrEl) {
+        wrEl.textContent = formatDuration(bucket.weread_read_seconds || 0) || "0分钟";
+      }
+      document.getElementById("statFollows").textContent = String(bucket.follow_count || 0);
+      document.querySelectorAll("#recordsPeriod [data-period]").forEach((btn) => {
+        btn.classList.toggle("on", btn.getAttribute("data-period") === recordsPeriod);
+      });
+      paintRecordsChart();
+    }
+
+    /** 柱高用共读时长；标签旁带场次数。分桶随时间段变。 */
+    function buildRecordsChartBuckets(list, period, now = Date.now()) {
+      const rows = Array.isArray(list) ? list : [];
+      const p = period || "all";
+      const slots = [];
+
+      function pushSlot(label, start, end) {
+        slots.push({ label, start, end, sessions: 0, duration_ms: 0, follow_count: 0 });
+      }
+
+      if (p === "today") {
+        const day0 = startOfLocalDayMs(now);
+        for (let i = 0; i < 8; i++) {
+          const start = day0 + i * 3 * 3600 * 1000;
+          pushSlot(String(i * 3).padStart(2, "0"), start, start + 3 * 3600 * 1000);
+        }
+      } else if (p === "week") {
+        const week0 = startOfLocalWeekMs(now);
+        const names = ["一", "二", "三", "四", "五", "六", "日"];
+        for (let i = 0; i < 7; i++) {
+          const start = week0 + i * 86400 * 1000;
+          pushSlot(names[i], start, start + 86400 * 1000);
+        }
+      } else if (p === "month") {
+        const month0 = startOfLocalMonthMs(now);
+        const dim = new Date(new Date(now).getFullYear(), new Date(now).getMonth() + 1, 0).getDate();
+        // ponytail: ≤31 根在窄屏挤；按周合并到 4～6 根，升级可改日粒度
+        let cursor = month0;
+        const monthEnd = month0 + dim * 86400 * 1000;
+        let weekIdx = 1;
+        while (cursor < monthEnd) {
+          const end = Math.min(cursor + 7 * 86400 * 1000, monthEnd);
+          pushSlot("第" + weekIdx + "周", cursor, end);
+          cursor = end;
+          weekIdx += 1;
+        }
+      } else {
+        // 全部：近 8 周（含本周）
+        const week0 = startOfLocalWeekMs(now);
+        for (let i = 7; i >= 0; i--) {
+          const start = week0 - i * 7 * 86400 * 1000;
+          const end = start + 7 * 86400 * 1000;
+          const d = new Date(start);
+          pushSlot(d.getMonth() + 1 + "/" + d.getDate(), start, end);
+        }
+      }
+
+      for (const s of rows) {
+        const t = Number(s.ended_at) || Number(s.started_at) || 0;
+        if (!t) continue;
+        for (const slot of slots) {
+          if (t >= slot.start && t < slot.end) {
+            slot.sessions += 1;
+            slot.duration_ms += Number(s.duration_ms) || 0;
+            slot.follow_count += Number(s.follow_count) || 0;
+            break;
+          }
+        }
+      }
+      return slots;
+    }
+
+    function paintRecordsChart() {
+      const labEl = document.getElementById("recordsChartLab");
+      const barsEl = document.getElementById("recordsChartBars");
+      if (!labEl || !barsEl) return;
+      const list = filterRecordsByPeriod(recordsAllCache, recordsPeriod);
+      const slots = buildRecordsChartBuckets(list, recordsPeriod);
+      const title =
+        recordsPeriod === "today"
+          ? "共读时长 · 今日按时段"
+          : recordsPeriod === "week"
+            ? "共读时长 · 本周按日"
+            : recordsPeriod === "month"
+              ? "共读时长 · 本月按周"
+              : "共读时长 · 近八周";
+      labEl.textContent = title;
+      const maxMs = Math.max(0, ...slots.map((s) => s.duration_ms));
+      const any = slots.some((s) => s.sessions > 0 || s.duration_ms > 0);
+      if (!any) {
+        barsEl.innerHTML =
+          '<div class="stat-chart-empty" style="flex:1">这段还没有共读时长</div>';
+        return;
+      }
+      barsEl.innerHTML = slots
+        .map((s) => {
+          const empty = !(s.sessions || s.duration_ms);
+          const pct = maxMs > 0 ? Math.max(empty ? 0 : 6, Math.round((s.duration_ms / maxMs) * 100)) : 0;
+          const tip =
+            s.label +
+            " · 场次 " +
+            s.sessions +
+            " · " +
+            formatSessionDuration(s.duration_ms).replace(" ", "") +
+            " · 跟批 " +
+            s.follow_count;
+          const nLab =
+            s.duration_ms > 0
+              ? formatSessionDuration(s.duration_ms).replace(/\s/g, "").replace("分钟", "分")
+              : "";
+          return (
+            '<div class="stat-chart-col' +
+            (empty ? " empty" : "") +
+            '" title="' +
+            escapeAttr(tip) +
+            '">' +
+            '<span class="n">' +
+            escapeHtml(nLab) +
+            "</span>" +
+            '<div class="stat-chart-track"><div class="stat-chart-bar" style="height:' +
+            (empty ? 2 : pct) +
+            '%"></div></div>' +
+            '<span class="d">' +
+            escapeHtml(s.label) +
+            "</span>" +
+            "</div>"
+          );
+        })
+        .join("");
+    }
+
+    // ponytail: 分桶自检；逻辑改坏时控制台 assert 失败
+    (function checkRecordsChartBuckets() {
+      const noon = new Date(2026, 8, 27, 12, 0, 0).getTime(); // Sun
+      const rows = [
+        { ended_at: noon, duration_ms: 600000, follow_count: 2 },
+        { ended_at: noon - 86400000, duration_ms: 300000, follow_count: 1 },
+      ];
+      const today = buildRecordsChartBuckets(rows, "today", noon);
+      console.assert(today.length === 8 && today[4].sessions === 1 && today[4].duration_ms === 600000);
+      const week = buildRecordsChartBuckets(rows, "week", noon);
+      console.assert(week.length === 7 && week[5].sessions === 1 && week[6].sessions === 1);
+      const all = buildRecordsChartBuckets(rows, "all", noon);
+      console.assert(all.length === 8 && all[7].sessions >= 1);
+    })();
+
     async function loadRecords() {
       try {
         const res = await fetch("/api/v1/sessions", { cache: "no-store" });
         const data = await res.json();
-        renderRecords(data.sessions || []);
+        const list = data.sessions || [];
+        const stats = data.stats || {
+          all: statsBucketFromList(list),
+          today: emptyStatBucket(),
+          week: emptyStatBucket(),
+          month: emptyStatBucket(),
+        };
+        renderRecords(list, stats);
       } catch (_) {
         document.getElementById("recordsList").innerHTML =
           '<div class="r-card"><div class="t">读取失败</div><div class="s">网关不可达</div></div>';
@@ -1534,6 +4124,8 @@
     function openSummarySheet(summary) {
       pendingSummary = summary;
       document.getElementById("sumBody").innerHTML = summaryHtml(summary);
+      const writeLore = document.getElementById("sumWriteLore");
+      if (writeLore) writeLore.checked = false;
       document.getElementById("summarySheet").classList.add("open");
     }
 
@@ -1577,12 +4169,17 @@
         return;
       }
       try {
+        const writeLore = !!(
+          document.getElementById("sumWriteLore") &&
+          document.getElementById("sumWriteLore").checked
+        );
         const res = await fetch("/api/v1/sessions/end", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bookId: book.id,
             startedAt: sessionStartedAt || Date.now(),
+            write_lore: writeLore,
           }),
         });
         const data = await res.json();
@@ -1590,8 +4187,20 @@
           alert(data.message || "结束失败");
           return;
         }
+        if (writeLore && data.lore_summary != null) {
+          const loreEl = document.getElementById("inLoreSummary");
+          if (loreEl) loreEl.value = data.lore_summary;
+          if (typeof updateLoreVal === "function") updateLoreVal(data.lore_summary);
+        }
         closeSummarySheet();
         sessionStartedAt = null;
+        followPaused = false;
+        loreLight = false;
+        followMode = "immersive";
+        followTone = "";
+        budgetTokens = 0;
+        tokensUsed = 0;
+        updateFollowUi();
         stopHighlightPoll();
         showTab("records");
         showView("cabin");
@@ -1606,8 +4215,330 @@
       closeSheet();
       closeSummarySheet();
       sessionStartedAt = null;
+      followPaused = false;
+      loreLight = false;
+      followMode = "immersive";
+      followTone = "";
+      budgetTokens = 0;
+      tokensUsed = 0;
+      updateFollowUi();
       showTab("shelf");
       showView("cabin");
+      updateOfflineBanner();
+    }
+
+    function formatClockNow() {
+      const d = new Date();
+      const pad = (n) => (n < 10 ? "0" + n : "" + n);
+      return pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+
+    function updateCoreadClock() {
+      const el = document.getElementById("crClock");
+      if (!el) return;
+      el.textContent = showClock ? formatClockNow() : "";
+    }
+
+    function startClockTick() {
+      if (clockTimer) clearInterval(clockTimer);
+      updateCoreadClock();
+      clockTimer = setInterval(updateCoreadClock, 15000);
+    }
+
+    async function setShowClock(on) {
+      showClock = !!on;
+      const clockCb = document.getElementById("inShowClock");
+      if (clockCb) clockCb.checked = showClock;
+      updateCoreadClock();
+      try {
+        await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ show_clock: showClock }),
+        });
+      } catch (_) { /* 本机已更新 */ }
+    }
+
+    function setPresence(kind) {
+      const el = document.getElementById("crPresence");
+      if (!el) return;
+      if (presenceClearTimer) {
+        clearTimeout(presenceClearTimer);
+        presenceClearTimer = null;
+      }
+      presenceKind = kind || null;
+      if (!presenceKind) {
+        el.hidden = true;
+        el.textContent = "";
+        el.classList.remove("busy");
+        return;
+      }
+      el.hidden = false;
+      if (presenceKind === "thinking") {
+        el.textContent = "正在想…";
+        el.classList.add("busy");
+      } else if (presenceKind === "done") {
+        el.textContent = "刚跟完";
+        el.classList.remove("busy");
+        presenceClearTimer = setTimeout(() => setPresence(null), 1800);
+      } else {
+        el.hidden = true;
+        el.textContent = "";
+        el.classList.remove("busy");
+        presenceKind = null;
+      }
+    }
+
+    function updateFollowUi() {
+      const filter = document.getElementById("crFilter");
+      const text = document.getElementById("crFilterText");
+      const btn = document.getElementById("sheetPause");
+      const loreInject = document.getElementById("sheetLoreInject");
+      const modeLabel = FOLLOW_MODE_LABEL[followMode] || followMode;
+      const toneLabel = FOLLOW_TONE_LABEL[followTone] || FOLLOW_TONE_LABEL[""];
+      const toneBit = followTone ? " · " + toneLabel : "";
+      const bud = budgetHint();
+      const scope = scopeLabel();
+      const loreBit = loreLight ? " · 未带设定" : " · 带设定";
+      updateDoorLockVal();
+      if (loreInject) loreInject.checked = !loreLight;
+      if (doorLocked) {
+        filter.classList.add("paused");
+        text.textContent = "已锁门 · " + scope + " · 划线仍同步";
+        btn.textContent = "暂停跟批";
+      } else if (followPaused) {
+        filter.classList.add("paused");
+        text.textContent = "已暂停跟批 · " + scope + " · " + modeLabel + toneBit + loreBit;
+        btn.textContent = "继续跟批";
+      } else if (budgetExhaustedLocal()) {
+        filter.classList.add("paused");
+        text.textContent = "额度用尽 · " + scope + " · " + modeLabel + toneBit + loreBit;
+        btn.textContent = "暂停跟批";
+      } else {
+        filter.classList.remove("paused");
+        text.textContent = bud
+          ? scope + " · " + modeLabel + toneBit + loreBit + " · " + bud
+          : scope + " · " + modeLabel + toneBit + loreBit + " · 薄荷巧克力皮";
+        btn.textContent = "暂停跟批";
+      }
+    }
+
+    async function setLoreLight(on) {
+      loreLight = !!on;
+      updateFollowUi();
+      try {
+        await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lore_light: loreLight }),
+        });
+      } catch (_) { /* ignore */ }
+    }
+
+    async function setFollowPaused(paused) {
+      followPaused = !!paused;
+      updateFollowUi();
+      try {
+        await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ follow_paused: followPaused }),
+        });
+      } catch (_) { /* 本机状态已更新 */ }
+      closeSheet();
+      if (!followPaused) syncAndLoadHighlights({ retry: true });
+      else syncAndLoadHighlights();
+    }
+
+    async function setFollowMode(mode) {
+      followMode = mode || "immersive";
+      updateFollowUi();
+      try {
+        const res = await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ follow_mode: followMode }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const bid = data.open && data.open.book_id;
+        if (bid) {
+          const b = booksCache.find((x) => x.id === bid);
+          if (b) b.default_mode = followMode;
+        }
+      } catch (_) { /* ignore */ }
+      closeModeSheet();
+      closeSheet();
+      if (!followPaused && followMode !== "silent") {
+        syncAndLoadHighlights({ retry: true });
+      } else {
+        syncAndLoadHighlights();
+      }
+    }
+
+    function closeModeSheet() {
+      document.getElementById("modeSheet").classList.remove("open");
+    }
+
+    function closeToneSheet() {
+      document.getElementById("toneSheet").classList.remove("open");
+    }
+
+    async function setFollowTone(tone) {
+      followTone = tone == null ? "" : String(tone);
+      if (followTone === "default") followTone = "";
+      updateFollowUi();
+      try {
+        const res = await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ follow_tone: followTone }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const bid = (data.open && data.open.book_id) || (activeBook() && activeBook().id);
+        if (bid) {
+          const b = booksCache.find((x) => x.id === bid);
+          if (b) b.default_tone = followTone;
+        }
+      } catch (_) { /* ignore */ }
+      closeToneSheet();
+      closeSheet();
+    }
+
+    function openToneSheet() {
+      const panel = document.getElementById("toneSheetPanel");
+      const tones = [
+        ["", "默认", "跟人设走，不额外拧语气"],
+        ["short", "短批", "一两句，点到为止"],
+        ["ask", "提问", "带 1～2 个轻问句"],
+        ["empathy", "共鸣", "先接情绪，少评判"],
+      ];
+      panel.innerHTML =
+        '<div class="sum-head" style="padding:8px 20px 4px">跟批语气</div>' +
+        '<div style="padding:0 20px 6px;font-size:12px;color:var(--muted)">改完会记成这本书的默认</div>' +
+        tones
+          .map(([id, title, hint]) => {
+            const sel = id === followTone ? ' class="selected"' : "";
+            return (
+              '<button type="button" data-follow-tone="' +
+              escapeAttr(id) +
+              '"' +
+              sel +
+              ">" +
+              title +
+              "<small style=\"display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:2px\">" +
+              hint +
+              "</small></button>"
+            );
+          })
+          .join("") +
+        '<button type="button" class="cancel" id="toneSheetCancel">取消</button>';
+      panel.querySelectorAll("[data-follow-tone]").forEach((btn) => {
+        btn.addEventListener("click", () => setFollowTone(btn.getAttribute("data-follow-tone") || ""));
+      });
+      document.getElementById("toneSheetCancel").addEventListener("click", closeToneSheet);
+      closeSheet();
+      document.getElementById("toneSheet").classList.add("open");
+    }
+
+    function openModeSheet() {
+      const panel = document.getElementById("modeSheetPanel");
+      const modes = [
+        ["immersive", "沉浸评论", "划线与想法都跟批"],
+        ["ideas", "仅想法", "有想法才跟批"],
+        ["silent", "定义静默", "只收录不跟批"],
+      ];
+      panel.innerHTML =
+        '<div class="sum-head" style="padding:8px 20px 4px">跟批方式</div>' +
+        '<div style="padding:0 20px 6px;font-size:12px;color:var(--muted)">改完会记成这本书的默认</div>' +
+        modes
+          .map(([id, title, hint]) => {
+            const sel = id === followMode ? ' class="selected"' : "";
+            return (
+              '<button type="button" data-follow-mode="' +
+              id +
+              '"' +
+              sel +
+              ">" +
+              title +
+              "<small style=\"display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:2px\">" +
+              hint +
+              "</small></button>"
+            );
+          })
+          .join("") +
+        '<button type="button" class="cancel" id="modeSheetCancel">取消</button>';
+      panel.querySelectorAll("[data-follow-mode]").forEach((btn) => {
+        btn.addEventListener("click", () => setFollowMode(btn.getAttribute("data-follow-mode")));
+      });
+      document.getElementById("modeSheetCancel").addEventListener("click", closeModeSheet);
+      closeSheet();
+      document.getElementById("modeSheet").classList.add("open");
+    }
+
+    function closeBudgetSheet() {
+      document.getElementById("budgetSheet").classList.remove("open");
+    }
+
+    async function setBudgetTokens(n) {
+      budgetTokens = Math.max(0, Number(n) || 0);
+      updateFollowUi();
+      try {
+        const res = await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ budget_tokens: budgetTokens }),
+        });
+        const data = await res.json();
+        if (data.open) {
+          budgetTokens = Number(data.open.budget_tokens) || 0;
+          tokensUsed = Number(data.open.tokens_used) || 0;
+          updateFollowUi();
+        }
+      } catch (_) { /* ignore */ }
+      closeBudgetSheet();
+      closeSheet();
+      if (!followPaused && followMode !== "silent" && !budgetExhaustedLocal()) {
+        syncAndLoadHighlights({ retry: true });
+      } else {
+        syncAndLoadHighlights();
+      }
+    }
+
+    function openBudgetSheet() {
+      const panel = document.getElementById("budgetSheetPanel");
+      const usedLine =
+        budgetTokens > 0
+          ? '<div class="sum-line" style="padding:0 20px 8px">本场已花约 ' +
+            formatRmb(rmbFromTokens(tokensUsed)) +
+            "（Flash 闲时粗算，非官方账单）</div>"
+          : '<div class="sum-line" style="padding:0 20px 8px">按人民币体感选档即可，不用懂 token</div>';
+      panel.innerHTML =
+        '<div class="sum-head" style="padding:8px 20px 4px">跟批额度</div>' +
+        usedLine +
+        BUDGET_PRESETS.map((p) => {
+          const sel = budgetPresetSelected(p) ? ' class="selected"' : "";
+          return (
+            '<button type="button" data-budget-rmb="' +
+            p.rmb +
+            '"' +
+            sel +
+            ">" +
+            p.title +
+            "<small style=\"display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:2px\">" +
+            p.hint +
+            "</small></button>"
+          );
+        }).join("") +
+        '<button type="button" class="cancel" id="budgetSheetCancel">取消</button>';
+      panel.querySelectorAll("[data-budget-rmb]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const rmb = Number(btn.getAttribute("data-budget-rmb"));
+          setBudgetTokens(tokensFromRmb(rmb));
+        });
+      });
+      document.getElementById("budgetSheetCancel").addEventListener("click", closeBudgetSheet);
+      closeSheet();
+      document.getElementById("budgetSheet").classList.add("open");
     }
 
     function enterCoread(bookId) {
@@ -1618,16 +4549,141 @@
         renderShelf(booksCache);
         updateStandbyContinue();
       }
+      const bid = bookId || (activeBook() && activeBook().id);
       sessionStartedAt = Date.now();
+      followPaused = false;
+      loreLight = false;
+      followMode = "immersive";
+      followTone = "";
+      budgetTokens = 0;
+      tokensUsed = 0;
+      sessionPassOrdinal = Number(activeBook() && activeBook().active_pass) || 1;
+      timelineScope = "session";
+      updateFollowUi();
       showView("coread");
-      syncAndLoadHighlights({ retry: true }).then(startHighlightPoll);
+      updateOfflineBanner();
+      const startReq = bid
+        ? fetch("/api/v1/sessions/start", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ bookId: bid }),
+          })
+            .then((r) => r.json())
+            .then((data) => {
+              if (data && data.open && data.open.started_at) {
+                sessionStartedAt = data.open.started_at;
+              }
+              if (data && data.open) {
+                followPaused = !!data.open.follow_paused;
+                loreLight = !!data.open.lore_light;
+                followMode = data.open.follow_mode || "immersive";
+                followTone = data.open.follow_tone || "";
+                budgetTokens = Number(data.open.budget_tokens) || 0;
+                tokensUsed = Number(data.open.tokens_used) || 0;
+                sessionPassOrdinal = Number(data.open.pass_ordinal) || sessionPassOrdinal || 1;
+                applySessionDialogue(data.open);
+                updateFollowUi();
+                if (data.open.pass_ordinal) {
+                  const b = booksCache.find((x) => x.id === data.open.book_id);
+                  if (b) {
+                    b.active_pass = data.open.pass_ordinal;
+                    if (!Array.isArray(b.passes) || !b.passes.includes(b.active_pass)) {
+                      b.passes = Array.isArray(b.passes) ? b.passes.concat([b.active_pass]) : [b.active_pass];
+                    }
+                  }
+                }
+                updateCoreadTitle();
+              }
+            })
+            .catch(() => {})
+        : Promise.resolve();
+      startReq
+        .then(() => loadBooks())
+        .then(() => loadOpenChats())
+        .then(() => syncAndLoadHighlights({ retry: true, scroll: "bottom" }))
+        .then(() => flushOfflineQueue())
+        .then(startHighlightPoll);
     }
 
     function endSession() {
       requestEndPreview();
     }
 
+    function closeDialogSheet() {
+      document.getElementById("dialogSheet").classList.remove("open");
+    }
+
+    function openDialogSheet() {
+      const d = sessionDialogue || {};
+      const has = (k) => Object.prototype.hasOwnProperty.call(d, k);
+      document.getElementById("dlgPersona").value = has("persona") ? d.persona || "" : "";
+      document.getElementById("dlgNameUser").value = has("name_user") ? d.name_user || "" : "";
+      document.getElementById("dlgNameBot").value = has("name_bot") ? d.name_bot || "" : "";
+      const eff = effectiveDialogueLocal();
+      dlgAvatarUser = has("avatar_user")
+        ? normalizeAvatarLocal(d.avatar_user, eff.avatar_user)
+        : eff.avatar_user;
+      dlgAvatarBot = has("avatar_bot")
+        ? normalizeAvatarLocal(d.avatar_bot, eff.avatar_bot)
+        : eff.avatar_bot;
+      paintAvatarPick(document.getElementById("dlgPickAvatarUser"), dlgAvatarUser, (src) => {
+        dlgAvatarUser = src;
+      });
+      paintAvatarPick(document.getElementById("dlgPickAvatarBot"), dlgAvatarBot, (src) => {
+        dlgAvatarBot = src;
+      });
+      const msg = document.getElementById("dlgMsg");
+      msg.textContent = "";
+      msg.className = "dlg-msg";
+      document.getElementById("dialogSheet").classList.add("open");
+    }
+
+    async function saveDialogSheet(clearAll) {
+      const msg = document.getElementById("dlgMsg");
+      msg.textContent = "保存中…";
+      msg.className = "dlg-msg";
+      let dialogue;
+      if (clearAll) {
+        dialogue = {
+          persona: "",
+          name_user: "",
+          name_bot: "",
+          avatar_user: "",
+          avatar_bot: "",
+        };
+      } else {
+        dialogue = {
+          persona: document.getElementById("dlgPersona").value,
+          name_user: document.getElementById("dlgNameUser").value,
+          name_bot: document.getElementById("dlgNameBot").value,
+          avatar_user: dlgAvatarUser,
+          avatar_bot: dlgAvatarBot,
+        };
+      }
+      try {
+        const res = await fetch("/api/v1/sessions/open", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dialogue }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "http");
+        applySessionDialogue(data.open || { dialogue: {} });
+        msg.textContent = clearAll ? "已恢复小屋默认" : "已保存";
+        msg.className = "dlg-msg ok";
+        closeDialogSheet();
+        if (highlightCache) {
+          renderHighlightStream(highlightCache, null, { scroll: "keep" });
+        }
+      } catch (e) {
+        msg.textContent = e.message || "保存失败";
+        msg.className = "dlg-msg bad";
+      }
+    }
+
     function openSheet() {
+      const loreInject = document.getElementById("sheetLoreInject");
+      if (loreInject) loreInject.checked = !loreLight;
       document.getElementById("sheet").classList.add("open");
     }
 
@@ -1676,6 +4732,65 @@
     document.getElementById("continue").addEventListener("click", enterCoread);
     document.getElementById("btnSyncShelf").addEventListener("click", syncWereadShelf);
     document.getElementById("shelfRoot").addEventListener("click", (e) => {
+      const nextBtn = e.target.closest("[data-next-pass]");
+      if (nextBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const bid = nextBtn.getAttribute("data-next-pass");
+        const book = booksCache.find((b) => b.id === bid);
+        const passes = (book && Array.isArray(book.passes) ? book.passes : [])
+          .map(Number)
+          .filter((n) => Number.isFinite(n) && n > 0);
+        const next = (passes.length ? Math.max(...passes) : 0) + 1;
+        const title = (book && book.title) || "这本书";
+        const ok = window.confirm(
+          "《" +
+            title +
+            "》将开始" +
+            passLabel(next) +
+            "。\n\n新刷次会切到当前，旧刷内容仍在。\n确定开下一刷？"
+        );
+        if (!ok) return;
+        fetch("/api/v1/books/" + encodeURIComponent(bid) + "/passes/next", { method: "POST" })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.ok && data.book) {
+              const i = booksCache.findIndex((b) => b.id === data.book.id);
+              if (i >= 0) booksCache[i] = data.book;
+              else booksCache.push(data.book);
+              renderShelf(booksCache);
+              updateStandbyContinue();
+            }
+          })
+          .catch(() => {});
+        return;
+      }
+      const passBtn = e.target.closest("[data-set-pass]");
+      if (passBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const bid = passBtn.getAttribute("data-book-id");
+        const pass = Number(passBtn.getAttribute("data-set-pass"));
+        fetch("/api/v1/books/" + encodeURIComponent(bid) + "/passes/active", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pass }),
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.ok && data.book) {
+              const i = booksCache.findIndex((b) => b.id === data.book.id);
+              if (i >= 0) booksCache[i] = data.book;
+              else booksCache.push(data.book);
+              renderShelf(booksCache);
+              updateStandbyContinue();
+              // PRD T2：点刷次进对应对话
+              enterCoread(bid);
+            }
+          })
+          .catch(() => {});
+        return;
+      }
       const card = e.target.closest("[data-action=coread]");
       if (card) enterCoread(card.getAttribute("data-book-id") || undefined);
     });
@@ -1683,13 +4798,356 @@
     document.getElementById("btnSaveSettings").addEventListener("click", saveSettings);
     document.getElementById("btnCloseConn").addEventListener("click", collapseConn);
     document.getElementById("rowConn").addEventListener("click", toggleConn);
+    document.getElementById("btnSavePersona").addEventListener("click", savePersona);
+    document.getElementById("btnClosePersona").addEventListener("click", collapsePersona);
+    document.getElementById("rowPersona").addEventListener("click", togglePersona);
+    document.getElementById("personaPanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("btnSaveLore").addEventListener("click", saveLore);
+    document.getElementById("loreFile").addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      importLoreFromFile(f);
+      e.target.value = "";
+    });
+    document.getElementById("btnCloseLore").addEventListener("click", collapseLore);
+    document.getElementById("rowLore").addEventListener("click", toggleLore);
+    document.getElementById("lorePanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("btnSaveWorld").addEventListener("click", saveWorld);
+    document.getElementById("btnCloseWorld").addEventListener("click", collapseWorld);
+    document.getElementById("rowWorld").addEventListener("click", toggleWorld);
+    document.getElementById("btnWorldAdd").addEventListener("click", () => {
+      const root = document.getElementById("worldList");
+      const emptyHint = root.querySelector(".hint");
+      if (emptyHint) root.innerHTML = "";
+      root.insertAdjacentHTML(
+        "beforeend",
+        worldEntryHtml({ id: "", keys: [], body: "", enabled: true })
+      );
+    });
+    const WORLD_FILE_MAX = 8000;
+    const WORLD_PREVIEW_CHARS = 500;
+    let pendingWorldImport = null;
+
+    function closeWorldImportSheet() {
+      pendingWorldImport = null;
+      document.getElementById("worldImportSheet").classList.remove("open");
+    }
+
+    function openWorldImportPreview(title, body, note) {
+      pendingWorldImport = { keys: title, body, note: note || "" };
+      document.getElementById("worldImportKeys").value = title;
+      const preview = body.length > WORLD_PREVIEW_CHARS
+        ? body.slice(0, WORLD_PREVIEW_CHARS) + "…"
+        : body;
+      document.getElementById("worldImportPreview").textContent = preview;
+      const meta = document.getElementById("worldImportPreviewMeta");
+      meta.textContent =
+        body.length > WORLD_PREVIEW_CHARS
+          ? "前约 500 字 · 全文 " + body.length + " 字"
+          : "全文 " + body.length + " 字";
+      document.getElementById("worldImportMsg").textContent = note || "";
+      document.getElementById("worldImportMsg").className =
+        note ? "dlg-msg ok" : "dlg-msg";
+      document.getElementById("worldImportSheet").classList.add("open");
+      const keysInput = document.getElementById("worldImportKeys");
+      keysInput.focus();
+      keysInput.select();
+    }
+
+    function confirmWorldImport() {
+      if (!pendingWorldImport) {
+        closeWorldImportSheet();
+        return;
+      }
+      const keysRaw = document.getElementById("worldImportKeys").value.trim();
+      const keys = keysRaw
+        ? keysRaw.split(/[,，、]/).map((s) => s.trim()).filter(Boolean)
+        : [pendingWorldImport.keys || "导入条目"];
+      const body = pendingWorldImport.body;
+      const note = pendingWorldImport.note || "已导入一条，记得点保存";
+      const root = document.getElementById("worldList");
+      const emptyHint = root.querySelector(".hint");
+      if (emptyHint) root.innerHTML = "";
+      root.insertAdjacentHTML(
+        "beforeend",
+        worldEntryHtml({ id: "", keys, body, enabled: true })
+      );
+      updateWorldVal(document.querySelectorAll("#worldList .world-entry").length);
+      const msg = document.getElementById("worldMsg");
+      msg.textContent = note;
+      msg.className = "save-msg ok";
+      closeWorldImportSheet();
+      const last = root.querySelector(".world-entry:last-child .world-keys");
+      if (last) last.focus();
+    }
+
+    function importWorldFromFile(file) {
+      const msg = document.getElementById("worldMsg");
+      if (!file) return;
+      const name = String(file.name || "").toLowerCase();
+      const isDocx = /\.docx$/i.test(name);
+      if (
+        !isDocx &&
+        !/\.(txt|md)$/.test(name) &&
+        file.type &&
+        !/^text\//.test(file.type)
+      ) {
+        msg.textContent = "请选 .txt / .md / .docx";
+        msg.className = "save-msg bad";
+        return;
+      }
+      const prepare = (textIn) => {
+        let text = String(textIn || "").replace(/^\uFEFF/, "").trim();
+        if (!text) {
+          msg.textContent = "文件是空的";
+          msg.className = "save-msg bad";
+          return;
+        }
+        let note = "";
+        if (text.length > WORLD_FILE_MAX) {
+          text = text.slice(0, WORLD_FILE_MAX);
+          note = "全文已截到约 8000 字";
+        }
+        const title =
+          String(file.name || "")
+            .replace(/\.(txt|md|docx)$/i, "")
+            .trim() || "导入条目";
+        msg.textContent = "";
+        msg.className = "save-msg";
+        openWorldImportPreview(title, text, note);
+      };
+      if (isDocx) {
+        msg.textContent = "解析 Word…";
+        msg.className = "save-msg";
+        readDocxViaGateway(file)
+          .then(prepare)
+          .catch((e) => {
+            msg.textContent = e.message || "导入失败";
+            msg.className = "save-msg bad";
+          });
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => prepare(reader.result);
+      reader.onerror = () => {
+        msg.textContent = "读取文件失败";
+        msg.className = "save-msg bad";
+      };
+      reader.readAsText(file, "utf-8");
+    }
+    document.getElementById("worldFile").addEventListener("change", (e) => {
+      const f = e.target.files && e.target.files[0];
+      importWorldFromFile(f);
+      e.target.value = "";
+    });
+    document.getElementById("worldImportConfirm").addEventListener("click", confirmWorldImport);
+    document.getElementById("worldImportCancel").addEventListener("click", closeWorldImportSheet);
+    document.getElementById("worldImportSheet").addEventListener("click", (e) => {
+      if (e.target.id === "worldImportSheet") closeWorldImportSheet();
+    });
+    document.getElementById("worldList").addEventListener("click", (e) => {
+      const del = e.target.closest(".world-del");
+      if (!del) return;
+      const card = del.closest(".world-entry");
+      if (card) card.remove();
+    });
+    document.getElementById("worldPanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("btnSaveFollowDefaults").addEventListener("click", saveFollowDefaults);
+    document.getElementById("inShowClock").addEventListener("change", (e) => {
+      setShowClock(!!e.target.checked);
+    });
+    document.getElementById("btnCloseFollowDefaults").addEventListener("click", collapseFollowDefaults);
+    document.getElementById("rowFollowDefaults").addEventListener("click", toggleFollowDefaults);
+    document.getElementById("followDefaultsPanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("connPanel").addEventListener("click", (e) => e.stopPropagation());
 
     document.querySelectorAll(".tabs button").forEach((btn) => {
       btn.addEventListener("click", () => showTab(btn.dataset.tab));
     });
 
     document.getElementById("btnMore").addEventListener("click", openSheet);
+    document.getElementById("crFilter").addEventListener("click", toggleTimelineScope);
+    document.getElementById("crFilter").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleTimelineScope();
+      }
+    });
     document.getElementById("sheetCancel").addEventListener("click", closeSheet);
+    document.getElementById("sheetPause").addEventListener("click", () => {
+      setFollowPaused(!followPaused);
+    });
+    document.getElementById("sheetLoreInject").addEventListener("change", (e) => {
+      // 开关开 = 带上设定 → lore_light false
+      setLoreLight(!e.target.checked);
+    });
+    document.getElementById("sheetLock").addEventListener("click", () => {
+      setDoorLocked(!doorLocked);
+    });
+    document.getElementById("rowDoorLock").addEventListener("click", () => {
+      setDoorLocked(!doorLocked);
+    });
+    document.getElementById("rowDoorLock").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setDoorLocked(!doorLocked);
+      }
+    });
+    document.getElementById("rowAccessGate").addEventListener("click", toggleAccessGate);
+    document.getElementById("btnSaveAccessGate").addEventListener("click", saveAccessGate);
+    document.getElementById("btnCloseAccessGate").addEventListener("click", collapseAccessGate);
+    document.getElementById("accessGatePanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("btnGateUnlock").addEventListener("click", unlockGate);
+    document.getElementById("gatePassword").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") unlockGate();
+    });
+    function exportBackup(format) {
+      const fmt = format === "zip" ? "zip" : "json";
+      const el = document.getElementById("backupVal");
+      if (el) el.textContent = "导出中…";
+      window.location.href = "/api/v1/backup/export?format=" + encodeURIComponent(fmt);
+      setTimeout(() => {
+        if (el) el.textContent = "导出";
+      }, 1500);
+    }
+    let pendingBackup = null;
+    function setBackupMsg(text, ok) {
+      const msg = document.getElementById("backupMsg");
+      if (!msg) return;
+      msg.textContent = text || "";
+      msg.className = "save-msg" + (ok === true ? " ok" : ok === false ? " bad" : "");
+    }
+    function clearPendingBackup() {
+      pendingBackup = null;
+      const btn = document.getElementById("btnBackupRestore");
+      if (btn) btn.disabled = true;
+      const input = document.getElementById("backupFile");
+      if (input) input.value = "";
+    }
+    function collapseBackup() {
+      document.getElementById("backupPanel").classList.remove("open");
+      document.getElementById("rowBackup").classList.remove("open");
+      clearPendingBackup();
+      setBackupMsg("");
+    }
+    function expandBackup() {
+      document.getElementById("backupPanel").classList.add("open");
+      document.getElementById("rowBackup").classList.add("open");
+    }
+    function toggleBackup() {
+      if (document.getElementById("backupPanel").classList.contains("open")) collapseBackup();
+      else expandBackup();
+    }
+    async function onBackupFileChosen(file) {
+      pendingBackup = null;
+      document.getElementById("btnBackupRestore").disabled = true;
+      if (!file) {
+        setBackupMsg("");
+        return;
+      }
+      setBackupMsg("读取中…");
+      try {
+        const text = await file.text();
+        const backup = JSON.parse(text);
+        const res = await fetch("/api/v1/backup/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backup }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "预览失败");
+        pendingBackup = backup;
+        document.getElementById("btnBackupRestore").disabled = false;
+        const p = data.preview || {};
+        const when = p.exported_at
+          ? String(p.exported_at).replace("T", " ").slice(0, 19)
+          : "未知时间";
+        const files = (p.files || []).join("、") || "—";
+        setBackupMsg(
+          "备份于 " + when + " · 将写入：" + files + "。确认后覆盖当前 data（密钥保留本机）。",
+          true
+        );
+      } catch (e) {
+        pendingBackup = null;
+        setBackupMsg(e.message || "文件无效", false);
+      }
+    }
+    async function confirmRestoreBackup() {
+      if (!pendingBackup) return;
+      if (
+        !window.confirm("确认用该备份覆盖当前书架/划线/场次/设定？本机密钥会保留。")
+      ) {
+        return;
+      }
+      const btn = document.getElementById("btnBackupRestore");
+      btn.disabled = true;
+      setBackupMsg("恢复中…");
+      try {
+        const res = await fetch("/api/v1/backup/restore", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ backup: pendingBackup, confirm: true }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "恢复失败");
+        const snap = data.snapshot ? "已留快照 " + data.snapshot + "。" : "";
+        setBackupMsg("已恢复：" + (data.written || []).join("、") + "。" + snap, true);
+        pendingBackup = null;
+        document.getElementById("backupFile").value = "";
+        loadSettings();
+        loadBooks();
+        if (typeof loadRecords === "function") loadRecords();
+      } catch (e) {
+        setBackupMsg(e.message || "恢复失败", false);
+        btn.disabled = false;
+      }
+    }
+    document.getElementById("rowBackup").addEventListener("click", toggleBackup);
+    document.getElementById("rowBackup").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleBackup();
+      }
+    });
+    document.getElementById("btnBackupJson").addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportBackup("json");
+    });
+    document.getElementById("btnBackupZip").addEventListener("click", (e) => {
+      e.stopPropagation();
+      exportBackup("zip");
+    });
+    document.getElementById("btnCloseBackup").addEventListener("click", (e) => {
+      e.stopPropagation();
+      collapseBackup();
+    });
+    document.getElementById("backupFile").addEventListener("change", (e) => {
+      e.stopPropagation();
+      onBackupFileChosen(e.target.files && e.target.files[0]);
+    });
+    document.getElementById("btnBackupRestore").addEventListener("click", (e) => {
+      e.stopPropagation();
+      confirmRestoreBackup();
+    });
+    document.getElementById("backupPanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("sheetMode").addEventListener("click", openModeSheet);
+    document.getElementById("sheetTone").addEventListener("click", openToneSheet);
+    document.getElementById("sheetBudget").addEventListener("click", openBudgetSheet);
+    document.getElementById("btnDialog").addEventListener("click", openDialogSheet);
+    document.getElementById("dlgSave").addEventListener("click", () => saveDialogSheet(false));
+    document.getElementById("dlgClear").addEventListener("click", () => saveDialogSheet(true));
+    document.getElementById("dlgCancel").addEventListener("click", closeDialogSheet);
+    document.getElementById("dialogSheet").addEventListener("click", (e) => {
+      if (e.target.id === "dialogSheet") closeDialogSheet();
+    });
+    document.getElementById("modeSheet").addEventListener("click", (e) => {
+      if (e.target.id === "modeSheet") closeModeSheet();
+    });
+    document.getElementById("toneSheet").addEventListener("click", (e) => {
+      if (e.target.id === "toneSheet") closeToneSheet();
+    });
+    document.getElementById("budgetSheet").addEventListener("click", (e) => {
+      if (e.target.id === "budgetSheet") closeBudgetSheet();
+    });
     document.getElementById("sheetEnd").addEventListener("click", endSession);
     document.getElementById("sheet").addEventListener("click", (e) => {
       if (e.target.id === "sheet") closeSheet();
@@ -1703,7 +5161,40 @@
     document.getElementById("summarySheet").addEventListener("click", (e) => {
       if (e.target.id === "summarySheet") closeSummarySheet();
     });
+    document.getElementById("btnRecordsExportMd").addEventListener("click", () => {
+      window.location.href =
+        "/api/v1/sessions/export?period=" +
+        encodeURIComponent(recordsPeriod || "all") +
+        "&format=md";
+    });
+    document.getElementById("btnRecordsExportDoc").addEventListener("click", () => {
+      window.location.href =
+        "/api/v1/sessions/export?period=" +
+        encodeURIComponent(recordsPeriod || "all") +
+        "&format=doc";
+    });
+    document.getElementById("recordsPeriod").addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-period]");
+      if (!btn) return;
+      recordsPeriod = btn.getAttribute("data-period") || "all";
+      paintRecordsStats();
+      paintRecordsList();
+    });
+
     document.getElementById("recordsList").addEventListener("click", (e) => {
+      const exp = e.target.closest("[data-export]");
+      if (exp) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = exp.getAttribute("data-export");
+        const format = exp.getAttribute("data-format") || "md";
+        window.location.href =
+          "/api/v1/sessions/" +
+          encodeURIComponent(id) +
+          "/export?format=" +
+          encodeURIComponent(format);
+        return;
+      }
       const card = e.target.closest("[data-session]");
       if (!card) return;
       const detail = card.querySelector(".session-detail");
@@ -1718,8 +5209,1041 @@
         card.classList.add("selected-detail");
       }
     });
+    document.getElementById("btnNotesExportAllMd").addEventListener("click", () => {
+      window.location.href = "/api/v1/notes/export?format=md";
+    });
+    document.getElementById("btnNotesExportAllDoc").addEventListener("click", () => {
+      window.location.href = "/api/v1/notes/export?format=doc";
+    });
+    document.getElementById("notesRoot").addEventListener("click", (e) => {
+      const fold = e.target.closest("[data-notes-chapters]");
+      if (fold) {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = fold.getAttribute("data-notes-chapters") === "open";
+        document
+          .getElementById("notesRoot")
+          .querySelectorAll("details.notes-chap-block")
+          .forEach((d) => {
+            d.open = open;
+          });
+        return;
+      }
+      const exp = e.target.closest("[data-notes-export]");
+      if (exp) {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = exp.getAttribute("data-notes-export");
+        const format = exp.getAttribute("data-format") || "md";
+        window.location.href =
+          "/api/v1/books/" +
+          encodeURIComponent(id) +
+          "/notes/export?format=" +
+          encodeURIComponent(format);
+        return;
+      }
+      const card = e.target.closest("[data-notes-book]");
+      if (!card) return;
+      openNotesBook(card.getAttribute("data-notes-book"));
+    });
+    (function wireNotesSearch() {
+      const el = document.getElementById("notesSearch");
+      if (!el) return;
+      el.addEventListener("input", () => {
+        clearTimeout(notesSearchTimer);
+        notesSearchTimer = setTimeout(() => runNotesSearch(el.value), 280);
+      });
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          clearTimeout(notesSearchTimer);
+          runNotesSearch(el.value);
+        }
+      });
+    })();
+    (function wireShelfSearch() {
+      const el = document.getElementById("shelfSearch");
+      if (!el) return;
+      let t = 0;
+      el.addEventListener("input", () => {
+        clearTimeout(t);
+        t = setTimeout(() => renderShelf(booksCache), 180);
+      });
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          clearTimeout(t);
+          renderShelf(booksCache);
+        }
+      });
+    })();
     document.getElementById("btnThink").addEventListener("click", function () {
       this.classList.toggle("on");
+    });
+
+    async function regenFollow(highlightId, opts) {
+      const book = activeBook();
+      if (!book || !book.id || followRegenBusy) return;
+      const feedback =
+        opts && Object.prototype.hasOwnProperty.call(opts, "feedback")
+          ? opts.feedback
+          : undefined;
+      const pendingLabel =
+        feedback !== undefined ? "正在按踩着重写…" : "正在换一条…（模型生成中，请稍候）";
+      const msg = document.querySelector('#msgStream [data-follow="' + CSS.escape(highlightId) + '"]');
+      followRegenBusy = true;
+      if (msg) {
+        msg.classList.add("regen-pending");
+        const regenBtn = msg.querySelector("[data-regen]");
+        if (regenBtn) {
+          regenBtn.disabled = true;
+          regenBtn.title = "生成中…";
+          regenBtn.textContent = "…";
+        }
+        const downBtn = msg.querySelector("[data-downvote]");
+        if (downBtn) downBtn.disabled = true;
+        let tip = msg.querySelector("[data-regen-tip]");
+        if (!tip) {
+          tip = document.createElement("div");
+          tip.className = "msg-meta";
+          tip.setAttribute("data-regen-tip", "1");
+          const actions = msg.querySelector(".actions");
+          if (actions) actions.insertAdjacentElement("beforebegin", tip);
+          else msg.querySelector(".bubble-wrap").appendChild(tip);
+        }
+        tip.textContent = pendingLabel;
+        msg.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+      document.querySelectorAll("#msgStream [data-regen], #msgStream [data-downvote]").forEach((b) => {
+        b.disabled = true;
+      });
+      setPresence("thinking");
+      try {
+        const payload = {
+          bookId: book.id,
+          highlightId,
+          regenerate: true,
+          think: thinkEnabled(),
+          model: activeModel() || undefined,
+        };
+        if (feedback !== undefined) {
+          payload.downvote = true;
+          payload.feedback = feedback;
+        }
+        const fr = await fetch("/api/v1/follow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const fd = await fr.json();
+        if (typeof fd.tokens_used === "number") tokensUsed = fd.tokens_used;
+        if (typeof fd.budget_tokens === "number") budgetTokens = fd.budget_tokens;
+        updateFollowUi();
+        if (fd.ok && fd.highlights) {
+          setPresence("done");
+          const prevScroll = document.getElementById("msgs").scrollTop;
+          renderHighlightStream(fd.highlights);
+          document.getElementById("msgs").scrollTop = prevScroll;
+          const fresh = document.querySelector('#msgStream [data-follow="' + CSS.escape(highlightId) + '"]');
+          if (fresh) fresh.scrollIntoView({ block: "nearest" });
+        } else {
+          setPresence(null);
+          if (msg) {
+            msg.classList.remove("regen-pending");
+            const tip = msg.querySelector("[data-regen-tip]");
+            if (tip) tip.textContent = fd.message || "换一条失败";
+            const regenBtn = msg.querySelector("[data-regen]");
+            if (regenBtn) {
+              regenBtn.disabled = false;
+              regenBtn.title = "换一条";
+              regenBtn.textContent = "↻";
+            }
+            const downBtn = msg.querySelector("[data-downvote]");
+            if (downBtn) downBtn.disabled = false;
+          } else {
+            renderHighlightStream(highlightCache, fd.message || "换一条失败");
+          }
+          document.querySelectorAll("#msgStream [data-regen], #msgStream [data-downvote]").forEach((b) => {
+            b.disabled = false;
+          });
+        }
+      } catch (_) {
+        setPresence(null);
+        if (msg) {
+          msg.classList.remove("regen-pending");
+          const tip = msg.querySelector("[data-regen-tip]");
+          if (tip) tip.textContent = "换一条请求失败";
+          const regenBtn = msg.querySelector("[data-regen]");
+          if (regenBtn) {
+            regenBtn.disabled = false;
+            regenBtn.title = "换一条";
+            regenBtn.textContent = "↻";
+          }
+          const downBtn = msg.querySelector("[data-downvote]");
+          if (downBtn) downBtn.disabled = false;
+        } else {
+          renderHighlightStream(highlightCache, "换一条请求失败");
+        }
+        document.querySelectorAll("#msgStream [data-regen], #msgStream [data-downvote]").forEach((b) => {
+          b.disabled = false;
+        });
+      } finally {
+        followRegenBusy = false;
+      }
+    }
+
+    async function stepFollowVariant(highlightId, delta) {
+      const book = activeBook();
+      if (!book || !book.id) return;
+      const h = highlightCache.find((x) => x.id === highlightId);
+      if (!h || !h.follow) return;
+      const variants = Array.isArray(h.follow.variants) && h.follow.variants.length
+        ? h.follow.variants
+        : [{ body: h.follow.body }];
+      const cur = Math.max(0, Math.min(variants.length - 1, Number(h.follow.active) || 0));
+      const next = Math.max(0, Math.min(variants.length - 1, cur + delta));
+      if (next === cur) return;
+      try {
+        const fr = await fetch("/api/v1/follow/variant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookId: book.id, highlightId, index: next }),
+        });
+        const fd = await fr.json();
+        if (fd.ok && fd.highlights) renderHighlightStream(fd.highlights);
+      } catch (_) { /* ignore */ }
+    }
+
+    async function retryFailedFollow(highlightId) {
+      const book = activeBook();
+      if (!book || !book.id || followRegenBusy) return;
+      if (doorLocked) {
+        renderHighlightStream(highlightCache, "已锁门 · 无法重试跟批");
+        return;
+      }
+      if (budgetExhaustedLocal()) {
+        renderHighlightStream(highlightCache, "额度用尽 · 无法重试跟批");
+        return;
+      }
+      if (browserOffline()) {
+        enqueueOfflineFollow(book.id, highlightId);
+        renderHighlightStream(highlightCache, "现在离线 · 已记下待补重试");
+        return;
+      }
+      const msg = document.querySelector(
+        '#msgStream [data-follow="' + CSS.escape(highlightId) + '"][data-follow-failed]'
+      );
+      followRegenBusy = true;
+      setPresence("thinking");
+      if (msg) {
+        const btn = msg.querySelector("[data-retry]");
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "…";
+        }
+      }
+      try {
+        const fr = await fetch("/api/v1/follow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookId: book.id,
+            highlightId,
+            retry: true,
+            think: thinkEnabled(),
+            model: activeModel() || undefined,
+          }),
+        });
+        const fd = await fr.json();
+        if (typeof fd.tokens_used === "number") tokensUsed = fd.tokens_used;
+        if (typeof fd.budget_tokens === "number") budgetTokens = fd.budget_tokens;
+        updateFollowUi();
+        if (fd.ok && fd.highlights) {
+          clearOfflineFollow(book.id, highlightId);
+          const prevScroll = document.getElementById("msgs").scrollTop;
+          renderHighlightStream(fd.highlights);
+          document.getElementById("msgs").scrollTop = prevScroll;
+          const still = fd.highlights.find(
+            (h) => h.id === highlightId && h.follow_error && !(h.follow && h.follow.body)
+          );
+          setPresence(still ? null : "done");
+          if (still) {
+            renderHighlightStream(
+              fd.highlights,
+              "跟批仍失败：" + (still.follow_error || "")
+            );
+          }
+        } else {
+          setPresence(null);
+          if (msg) {
+            const btn = msg.querySelector("[data-retry]");
+            if (btn) {
+              btn.disabled = false;
+              btn.textContent = "重试";
+            }
+          }
+          renderHighlightStream(highlightCache, fd.message || "重试失败");
+        }
+      } catch (_) {
+        setPresence(null);
+        enqueueOfflineFollow(book.id, highlightId);
+        if (msg) {
+          const btn = msg.querySelector("[data-retry]");
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = "重试";
+          }
+        }
+        renderHighlightStream(highlightCache, "重试请求失败 · 已记下待补");
+      } finally {
+        followRegenBusy = false;
+      }
+    }
+
+    document.getElementById("msgStream").addEventListener("click", (e) => {
+      const moveBtn = e.target.closest("[data-move-pass]");
+      if (moveBtn) {
+        const mark = moveBtn.closest("[data-hid]");
+        if (mark) openPassMoveSheet(mark.getAttribute("data-hid"));
+        return;
+      }
+      const msg = e.target.closest("[data-follow]");
+      if (!msg) return;
+      const hid = msg.getAttribute("data-follow");
+      if (e.target.closest("[data-retry]")) {
+        retryFailedFollow(hid);
+        return;
+      }
+      if (e.target.closest("[data-regen]")) {
+        regenFollow(hid);
+        return;
+      }
+      if (e.target.closest("[data-downvote]")) {
+        openDownvoteSheet(hid);
+        return;
+      }
+      if (e.target.closest("[data-edit-follow]")) {
+        openEditFollow(hid);
+        return;
+      }
+      if (e.target.closest("[data-copy]")) {
+        const body = msg.querySelector("[data-follow-body]");
+        const text = body ? body.textContent : "";
+        if (text && navigator.clipboard) navigator.clipboard.writeText(text).catch(() => {});
+        return;
+      }
+      if (e.target.closest("[data-continue-chat]")) {
+        const h = highlightCache.find((x) => x.id === hid);
+        setReplyTarget(hid, replyLabelForHighlight(h));
+        return;
+      }
+      const stepBtn = e.target.closest("[data-var-step]");
+      if (stepBtn && !stepBtn.disabled) {
+        stepFollowVariant(hid, Number(stepBtn.getAttribute("data-var-step")) || 0);
+      }
+    });
+
+    let passMoveHid = null;
+
+    function closePassMoveSheet() {
+      passMoveHid = null;
+      document.getElementById("passMoveSheet").classList.remove("open");
+    }
+
+    function openPassMoveSheet(highlightId) {
+      const book = activeBook();
+      const h = highlightCache.find((x) => x.id === highlightId);
+      if (!book || !book.id || !h) return;
+      passMoveHid = highlightId;
+      const cur = Math.max(1, Number(h.pass_ordinal) || 1);
+      let passes = Array.isArray(book.passes) ? book.passes.map(Number).filter((n) => n > 0) : [];
+      if (!passes.length) passes = [1];
+      const viewPass = viewPassOrdinal();
+      if (!passes.includes(viewPass)) passes = passes.concat([viewPass]).sort((a, b) => a - b);
+      const panel = document.getElementById("passMoveSheetPanel");
+      panel.innerHTML =
+        '<div class="sum-head" style="padding:8px 20px 4px">把这条划线归到</div>' +
+        '<div class="sum-line" style="padding:0 20px 8px;color:var(--muted);font-size:12px">当前 · ' +
+        escapeHtml(passLabel(cur)) +
+        "</div>" +
+        passes
+          .map((p) => {
+            const sel = Number(p) === cur ? ' class="selected"' : "";
+            return (
+              '<button type="button" data-pass-pick="' +
+              escapeAttr(String(p)) +
+              '"' +
+              sel +
+              ">" +
+              escapeHtml(passLabel(p)) +
+              (Number(p) === cur ? " · 当前" : "") +
+              "</button>"
+            );
+          })
+          .join("") +
+        '<button type="button" class="cancel" id="passMoveSheetCancel">取消</button>';
+      panel.querySelectorAll("[data-pass-pick]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const n = Number(btn.getAttribute("data-pass-pick"));
+          applyHighlightPass(passMoveHid, n);
+        });
+      });
+      document.getElementById("passMoveSheetCancel").addEventListener("click", closePassMoveSheet);
+      document.getElementById("passMoveSheet").classList.add("open");
+    }
+
+    async function applyHighlightPass(highlightId, passOrdinal) {
+      const book = activeBook();
+      if (!book || !book.id || !highlightId) return;
+      const want = Math.max(1, Number(passOrdinal) || 1);
+      try {
+        const res = await fetch(
+          "/api/v1/books/" +
+            encodeURIComponent(book.id) +
+            "/highlights/" +
+            encodeURIComponent(highlightId) +
+            "/pass",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pass_ordinal: want }),
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        closePassMoveSheet();
+        if (!res.ok || !data.ok) {
+          renderHighlightStream(
+            highlightCache,
+            data.message || "改刷次失败"
+          );
+          return;
+        }
+        const prevScroll = document.getElementById("msgs").scrollTop;
+        renderHighlightStream(data.highlights || [], "已改到" + passLabel(want));
+        document.getElementById("msgs").scrollTop = prevScroll;
+      } catch (_) {
+        closePassMoveSheet();
+        renderHighlightStream(highlightCache, "改刷次请求失败");
+      }
+    }
+
+    document.getElementById("passMoveSheet").addEventListener("click", (e) => {
+      if (e.target.id === "passMoveSheet") closePassMoveSheet();
+    });
+
+    let downvoteHid = null;
+
+    function closeDownvoteSheet() {
+      downvoteHid = null;
+      document.getElementById("downvoteSheet").classList.remove("open");
+    }
+
+    function openDownvoteSheet(hid) {
+      const h = highlightCache.find((x) => x.id === hid);
+      if (!h || !h.follow) return;
+      downvoteHid = hid;
+      const ta = document.getElementById("downvoteReason");
+      const msg = document.getElementById("downvoteMsg");
+      ta.value = "";
+      msg.textContent = "";
+      msg.className = "dlg-msg";
+      document.querySelectorAll("#downvoteChips button").forEach((b) => b.classList.remove("on"));
+      document.getElementById("downvoteSheet").classList.add("open");
+    }
+
+    document.getElementById("downvoteCancel").addEventListener("click", closeDownvoteSheet);
+    document.getElementById("downvoteSheet").addEventListener("click", (e) => {
+      if (e.target.id === "downvoteSheet") closeDownvoteSheet();
+    });
+    document.getElementById("downvoteChips").addEventListener("click", (e) => {
+      const chip = e.target.closest("[data-chip]");
+      if (!chip) return;
+      const reason = chip.getAttribute("data-chip") || "";
+      const ta = document.getElementById("downvoteReason");
+      const cur = (ta.value || "").trim();
+      if (!cur) ta.value = reason;
+      else if (!cur.includes(reason)) ta.value = cur + "；" + reason;
+      document.querySelectorAll("#downvoteChips button").forEach((b) => {
+        b.classList.toggle("on", b === chip);
+      });
+    });
+    document.getElementById("downvoteGo").addEventListener("click", async () => {
+      const hid = downvoteHid;
+      if (!hid) return;
+      if (budgetExhaustedLocal()) {
+        document.getElementById("downvoteMsg").className = "dlg-msg bad";
+        document.getElementById("downvoteMsg").textContent = "额度用尽";
+        return;
+      }
+      if (doorLocked) {
+        document.getElementById("downvoteMsg").className = "dlg-msg bad";
+        document.getElementById("downvoteMsg").textContent = "已锁门";
+        return;
+      }
+      const feedback = (document.getElementById("downvoteReason").value || "").trim();
+      closeDownvoteSheet();
+      await regenFollow(hid, { feedback });
+    });
+
+    let editFollowHid = null;
+
+    function closeEditFollow() {
+      editFollowHid = null;
+      document.getElementById("editFollowSheet").classList.remove("open");
+    }
+
+    function openEditFollow(hid) {
+      const h = highlightCache.find((x) => x.id === hid);
+      if (!h || !h.follow) return;
+      editFollowHid = hid;
+      const f = h.follow;
+      const variants = Array.isArray(f.variants) && f.variants.length ? f.variants : [{ body: f.body }];
+      const active = Math.max(0, Math.min(variants.length - 1, Number(f.active) || 0));
+      const cur = variants[active] || f;
+      const ta = document.getElementById("editFollowBody");
+      const msg = document.getElementById("editFollowMsg");
+      ta.value = cur.body || "";
+      msg.textContent = "";
+      msg.className = "dlg-msg";
+      document.getElementById("editFollowSheet").classList.add("open");
+      setTimeout(() => ta.focus(), 50);
+    }
+
+    document.getElementById("editFollowCancel").addEventListener("click", closeEditFollow);
+    document.getElementById("editFollowSheet").addEventListener("click", (e) => {
+      if (e.target.id === "editFollowSheet") closeEditFollow();
+    });
+    document.getElementById("editFollowSave").addEventListener("click", async () => {
+      const book = activeBook();
+      const hid = editFollowHid;
+      const msg = document.getElementById("editFollowMsg");
+      const body = (document.getElementById("editFollowBody").value || "").trim();
+      if (!book || !hid) return;
+      if (!body) {
+        msg.className = "dlg-msg bad";
+        msg.textContent = "请输入正文";
+        return;
+      }
+      const btn = document.getElementById("editFollowSave");
+      btn.disabled = true;
+      msg.className = "dlg-msg";
+      msg.textContent = "保存中…";
+      try {
+        const fr = await fetch("/api/v1/follow/edit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookId: book.id, highlightId: hid, body }),
+        });
+        const fd = await fr.json();
+        if (fd.ok && fd.highlights) {
+          closeEditFollow();
+          renderHighlightStream(fd.highlights, undefined, { scroll: "keep" });
+        } else {
+          msg.className = "dlg-msg bad";
+          msg.textContent = fd.message || "保存失败";
+        }
+      } catch (_) {
+        msg.className = "dlg-msg bad";
+        msg.textContent = "保存失败";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function highlightCopyText(h) {
+      if (!h) return "";
+      const parts = [];
+      if (h.text) parts.push(h.text);
+      if (h.idea) parts.push(h.idea);
+      return parts.join("\n").trim();
+    }
+
+    function flashCopyTip(msgEl) {
+      if (!msgEl) return;
+      let tip = msgEl.querySelector("[data-copy-tip]");
+      if (!tip) {
+        tip = document.createElement("div");
+        tip.className = "msg-meta";
+        tip.setAttribute("data-copy-tip", "1");
+        const wrap = msgEl.querySelector(".bubble-wrap");
+        if (wrap) wrap.appendChild(tip);
+      }
+      tip.textContent = "已复制";
+      clearTimeout(tip._t);
+      tip._t = setTimeout(() => {
+        if (tip.parentNode) tip.remove();
+      }, 1200);
+    }
+
+    function copyHighlightFromEl(msgEl) {
+      if (!msgEl) return;
+      const hid = msgEl.getAttribute("data-hid");
+      const h = highlightCache.find((x) => x.id === hid);
+      const text = highlightCopyText(h);
+      if (!text) return;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(() => flashCopyTip(msgEl)).catch(() => {});
+      }
+    }
+
+    // 划线：长按 / 右键复制（不挂按钮）
+    (function bindHighlightLongPressCopy() {
+      const root = document.getElementById("msgStream");
+      let timer = null;
+      let startX = 0;
+      let startY = 0;
+      let target = null;
+
+      function clear() {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        target = null;
+      }
+
+      root.addEventListener("pointerdown", (e) => {
+        const msg = e.target.closest("[data-hid]");
+        if (!msg || e.target.closest("button")) return;
+        target = msg;
+        startX = e.clientX;
+        startY = e.clientY;
+        timer = setTimeout(() => {
+          copyHighlightFromEl(target);
+          clear();
+        }, 480);
+      });
+      root.addEventListener("pointermove", (e) => {
+        if (!timer) return;
+        if (Math.abs(e.clientX - startX) > 12 || Math.abs(e.clientY - startY) > 12) clear();
+      });
+      root.addEventListener("pointerup", clear);
+      root.addEventListener("pointercancel", clear);
+      root.addEventListener("contextmenu", (e) => {
+        const msg = e.target.closest("[data-hid]");
+        if (!msg) return;
+        e.preventDefault();
+        copyHighlightFromEl(msg);
+      });
+    })();
+
+    document.getElementById("replyChipClear").addEventListener("click", clearReplyTarget);
+
+    async function sendShortChat() {
+      const input = document.getElementById("chatInput");
+      const text = (input && input.value || "").trim();
+      if (!text || chatSendBusy) return;
+      if (budgetExhaustedLocal()) {
+        renderHighlightStream(highlightCache, "额度用尽 · 无法短聊");
+        return;
+      }
+      if (doorLocked) {
+        renderHighlightStream(highlightCache, "已锁门 · 无法短聊");
+        return;
+      }
+      const pendingReply = replyTarget;
+      chatSendBusy = true;
+      const sendBtn = document.getElementById("btnSend");
+      if (sendBtn) {
+        sendBtn.disabled = true;
+        sendBtn.textContent = "…";
+      }
+      if (input) input.disabled = true;
+      const optimistic = {
+        id: "pending_u",
+        role: "user",
+        kind: "chat",
+        body: text,
+        at: Date.now(),
+      };
+      if (pendingReply) {
+        optimistic.reply_to = pendingReply.highlightId;
+        optimistic.reply_label = pendingReply.label;
+      }
+      chatCache = chatCache.concat([optimistic]);
+      if (input) input.value = "";
+      clearReplyTarget();
+      setPresence("thinking");
+      renderHighlightStream(highlightCache, "对方正在回…", { scroll: "bottom" });
+      try {
+        const payload = {
+          text,
+          think: thinkEnabled(),
+          model: activeModel() || undefined,
+        };
+        if (pendingReply) payload.replyToHighlightId = pendingReply.highlightId;
+        const fr = await fetch("/api/v1/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const fd = await fr.json();
+        if (typeof fd.tokens_used === "number") tokensUsed = fd.tokens_used;
+        if (typeof fd.budget_tokens === "number") budgetTokens = fd.budget_tokens;
+        updateFollowUi();
+        if (fd.ok && Array.isArray(fd.chats)) {
+          chatCache = fd.chats;
+          setPresence("done");
+          renderHighlightStream(highlightCache, undefined, { scroll: "bottom" });
+        } else {
+          setPresence(null);
+          chatCache = chatCache.filter((c) => c.id !== "pending_u");
+          if (pendingReply) setReplyTarget(pendingReply.highlightId, pendingReply.label, false);
+          renderHighlightStream(highlightCache, fd.message || "短聊失败", { scroll: "bottom" });
+          if (input) input.value = text;
+        }
+      } catch (_) {
+        setPresence(null);
+        chatCache = chatCache.filter((c) => c.id !== "pending_u");
+        if (pendingReply) setReplyTarget(pendingReply.highlightId, pendingReply.label, false);
+        renderHighlightStream(highlightCache, "短聊请求失败", { scroll: "bottom" });
+        if (input) input.value = text;
+      } finally {
+        chatSendBusy = false;
+        if (sendBtn) {
+          sendBtn.disabled = false;
+          sendBtn.textContent = "↑";
+        }
+        if (input) {
+          input.disabled = false;
+          input.focus();
+        }
+      }
+    }
+
+    document.getElementById("btnSend").addEventListener("click", sendShortChat);
+    document.getElementById("chatInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendShortChat();
+      }
+    });
+
+    function closePlusSheet() {
+      document.getElementById("plusSheet").classList.remove("open");
+    }
+    function openPlusSheet() {
+      document.getElementById("plusSheet").classList.add("open");
+    }
+    document.getElementById("btnPlus").addEventListener("click", openPlusSheet);
+    document.getElementById("plusSheetCancel").addEventListener("click", closePlusSheet);
+    document.getElementById("plusSheet").addEventListener("click", (e) => {
+      if (e.target.id === "plusSheet") closePlusSheet();
+    });
+
+    async function summarizeRecentChat() {
+      closePlusSheet();
+      if (chatSendBusy) return;
+      if (budgetExhaustedLocal()) {
+        renderHighlightStream(highlightCache, "额度用尽 · 无法总结");
+        return;
+      }
+      if (doorLocked) {
+        renderHighlightStream(highlightCache, "已锁门 · 无法总结");
+        return;
+      }
+      chatSendBusy = true;
+      setPresence("thinking");
+      renderHighlightStream(highlightCache, "正在总结刚才…", { scroll: "bottom" });
+      try {
+        const fr = await fetch("/api/v1/chat/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            think: thinkEnabled(),
+            model: activeModel() || undefined,
+          }),
+        });
+        const fd = await fr.json();
+        if (typeof fd.tokens_used === "number") tokensUsed = fd.tokens_used;
+        if (typeof fd.budget_tokens === "number") budgetTokens = fd.budget_tokens;
+        updateFollowUi();
+        if (fd.ok && Array.isArray(fd.chats)) {
+          chatCache = fd.chats;
+          setPresence("done");
+          renderHighlightStream(highlightCache, undefined, { scroll: "bottom" });
+        } else {
+          setPresence(null);
+          renderHighlightStream(
+            highlightCache,
+            fd.message || "总结失败",
+            { scroll: "bottom" }
+          );
+        }
+      } catch (_) {
+        setPresence(null);
+        renderHighlightStream(highlightCache, "总结请求失败", { scroll: "bottom" });
+      } finally {
+        chatSendBusy = false;
+      }
+    }
+    document.getElementById("plusSummarize").addEventListener("click", summarizeRecentChat);
+
+    function noteChapterTitle(h) {
+      return (h && h.chapter_title && String(h.chapter_title).trim()) || "未分章";
+    }
+
+    function closeChapterNotesSheet() {
+      document.getElementById("chapterNotesSheet").classList.remove("open");
+    }
+
+    function openChapterNotesSheet() {
+      closePlusSheet();
+      const visible = filterHighlightsForView(highlightCache);
+      const titleEl = document.getElementById("chapterNotesTitle");
+      const subEl = document.getElementById("chapterNotesSub");
+      const body = document.getElementById("chapterNotesBody");
+      if (!visible.length) {
+        titleEl.textContent = "本章笔记";
+        subEl.textContent = scopeLabel();
+        body.innerHTML =
+          '<div class="r-card"><div class="t">暂无划线</div><div class="s">当前滤条下还没有内容</div></div>';
+      } else {
+        const latest = visible
+          .slice()
+          .sort((a, b) => toMs(b.created_at) - toMs(a.created_at))[0];
+        const chap = noteChapterTitle(latest);
+        const items = visible
+          .filter((h) => noteChapterTitle(h) === chap)
+          .sort((a, b) => toMs(b.created_at) - toMs(a.created_at));
+        titleEl.textContent = chap;
+        subEl.textContent =
+          items.length + " 条 · " + scopeLabel() + " · 取最近划线所在章";
+        body.innerHTML = items.map(noteCardHtml).join("");
+      }
+      document.getElementById("chapterNotesSheet").classList.add("open");
+    }
+
+    document
+      .getElementById("plusChapterNotes")
+      .addEventListener("click", openChapterNotesSheet);
+    document
+      .getElementById("chapterNotesClose")
+      .addEventListener("click", closeChapterNotesSheet);
+    document.getElementById("chapterNotesSheet").addEventListener("click", (e) => {
+      if (e.target.id === "chapterNotesSheet") closeChapterNotesSheet();
+    });
+
+    function coreadOpen() {
+      return document.getElementById("view-coread").classList.contains("active");
+    }
+
+    function browserOffline() {
+      return typeof navigator !== "undefined" && navigator.onLine === false;
+    }
+
+    // —— 离线队列（本机 localStorage；上线后冲同步 / 跟批重试）——
+    const OFFLINE_Q_KEY = "cabin_offline_q_v1";
+    const OFFLINE_SYNC_CAP = 5;
+    const OFFLINE_FOLLOW_CAP = 30;
+    let offlineFlushBusy = false;
+
+    function emptyOfflineQ() {
+      return { syncBooks: [], follows: [] };
+    }
+
+    function readOfflineQ() {
+      try {
+        const raw = JSON.parse(localStorage.getItem(OFFLINE_Q_KEY) || "{}");
+        const syncBooks = Array.isArray(raw.syncBooks)
+          ? raw.syncBooks.map(String).filter(Boolean)
+          : [];
+        const follows = Array.isArray(raw.follows)
+          ? raw.follows
+              .map((f) => ({
+                bookId: String((f && f.bookId) || ""),
+                highlightId: String((f && f.highlightId) || ""),
+              }))
+              .filter((f) => f.bookId && f.highlightId)
+          : [];
+        return { syncBooks, follows };
+      } catch (_) {
+        return emptyOfflineQ();
+      }
+    }
+
+    function writeOfflineQ(q) {
+      try {
+        localStorage.setItem(
+          OFFLINE_Q_KEY,
+          JSON.stringify({
+            syncBooks: (q.syncBooks || []).slice(0, OFFLINE_SYNC_CAP),
+            follows: (q.follows || []).slice(0, OFFLINE_FOLLOW_CAP),
+          })
+        );
+      } catch (_) { /* quota */ }
+      updateOfflineBanner();
+    }
+
+    function offlinePendingCount(q) {
+      const x = q || readOfflineQ();
+      return (x.syncBooks || []).length + (x.follows || []).length;
+    }
+
+    function enqueueOfflineSync(bookId) {
+      if (!bookId) return;
+      const q = readOfflineQ();
+      const id = String(bookId);
+      if (!q.syncBooks.includes(id)) {
+        q.syncBooks.push(id);
+        if (q.syncBooks.length > OFFLINE_SYNC_CAP) {
+          q.syncBooks = q.syncBooks.slice(-OFFLINE_SYNC_CAP);
+        }
+        writeOfflineQ(q);
+      } else {
+        updateOfflineBanner();
+      }
+    }
+
+    function clearOfflineSync(bookId) {
+      if (!bookId) return;
+      const q = readOfflineQ();
+      const id = String(bookId);
+      const next = q.syncBooks.filter((b) => b !== id);
+      if (next.length !== q.syncBooks.length) {
+        q.syncBooks = next;
+        writeOfflineQ(q);
+      }
+    }
+
+    function enqueueOfflineFollow(bookId, highlightId) {
+      if (!bookId || !highlightId) return;
+      const q = readOfflineQ();
+      const bid = String(bookId);
+      const hid = String(highlightId);
+      if (!q.follows.some((f) => f.bookId === bid && f.highlightId === hid)) {
+        q.follows.push({ bookId: bid, highlightId: hid });
+        if (q.follows.length > OFFLINE_FOLLOW_CAP) {
+          q.follows = q.follows.slice(-OFFLINE_FOLLOW_CAP);
+        }
+        writeOfflineQ(q);
+      } else {
+        updateOfflineBanner();
+      }
+      enqueueOfflineSync(bid);
+    }
+
+    function clearOfflineFollow(bookId, highlightId) {
+      if (!bookId || !highlightId) return;
+      const q = readOfflineQ();
+      const bid = String(bookId);
+      const hid = String(highlightId);
+      const next = q.follows.filter(
+        (f) => !(f.bookId === bid && f.highlightId === hid)
+      );
+      if (next.length !== q.follows.length) {
+        q.follows = next;
+        writeOfflineQ(q);
+      }
+    }
+
+    function updateOfflineBanner() {
+      const el = document.getElementById("crOffline");
+      if (!el) return;
+      const off = browserOffline();
+      const n = offlinePendingCount();
+      const inCoread = coreadOpen();
+      const show = inCoread && (off || n > 0 || offlineFlushBusy);
+      el.classList.toggle("on", show);
+      el.classList.toggle("off-net", off);
+      el.classList.toggle("pending", !off && (n > 0 || offlineFlushBusy));
+      if (!show) return;
+      if (offlineFlushBusy) {
+        el.textContent = "正在补同步…";
+      } else if (off) {
+        el.textContent =
+          n > 0
+            ? "现在离线，待补 " + n + " 条"
+            : "现在离线，划线稍后再同步";
+      } else {
+        el.textContent = "待补 " + n + " 条 · 恢复后自动补";
+      }
+    }
+
+    async function flushOfflineQueue() {
+      if (offlineFlushBusy || browserOffline() || !coreadOpen()) return;
+      const book = activeBook();
+      if (!book || !book.id) return;
+      const q = readOfflineQ();
+      const bid = String(book.id);
+      const needSync = q.syncBooks.includes(bid);
+      const follows = q.follows.filter((f) => f.bookId === bid);
+      if (!needSync && !follows.length) {
+        updateOfflineBanner();
+        return;
+      }
+      offlineFlushBusy = true;
+      updateOfflineBanner();
+      try {
+        await syncAndLoadHighlights({ retry: true });
+        clearOfflineSync(bid);
+        for (const f of follows) {
+          if (browserOffline()) break;
+          await retryFailedFollow(f.highlightId);
+        }
+      } finally {
+        offlineFlushBusy = false;
+        updateOfflineBanner();
+      }
+    }
+
+    // ponytail: 队列去重/封顶自检
+    (function checkOfflineQueue() {
+      const prev = localStorage.getItem(OFFLINE_Q_KEY);
+      try {
+        localStorage.removeItem(OFFLINE_Q_KEY);
+        enqueueOfflineSync("b1");
+        enqueueOfflineSync("b1");
+        enqueueOfflineFollow("b1", "h1");
+        enqueueOfflineFollow("b1", "h1");
+        let q = readOfflineQ();
+        console.assert(q.syncBooks.length === 1 && q.follows.length === 1);
+        clearOfflineFollow("b1", "h1");
+        clearOfflineSync("b1");
+        q = readOfflineQ();
+        console.assert(offlinePendingCount(q) === 0);
+      } finally {
+        if (prev == null) localStorage.removeItem(OFFLINE_Q_KEY);
+        else localStorage.setItem(OFFLINE_Q_KEY, prev);
+        updateOfflineBanner();
+      }
+    })();
+
+    function onBrowserOnline() {
+      updateOfflineBanner();
+      if (coreadOpen()) {
+        startHighlightPoll();
+        flushOfflineQueue();
+      }
+    }
+
+    function onBrowserOffline() {
+      updateOfflineBanner();
+    }
+
+    window.addEventListener("online", onBrowserOnline);
+    window.addEventListener("offline", onBrowserOffline);
+
+    function patchSessionTiming(timing) {
+      if (!coreadOpen()) return;
+      fetch("/api/v1/sessions/open", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timing }),
+      }).catch(() => {});
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!coreadOpen()) return;
+      if (document.visibilityState === "hidden") {
+        patchSessionTiming("pause");
+        stopHighlightPoll();
+      } else {
+        patchSessionTiming("resume");
+        updateOfflineBanner();
+        if (!browserOffline()) startHighlightPoll();
+      }
+    });
+    window.addEventListener("pagehide", () => {
+      if (coreadOpen()) patchSessionTiming("pause");
     });
 
     let touchY = null;
@@ -1734,9 +6258,13 @@
       if (dy > 56) enterCabin();
     }, { passive: true });
 
-    checkHealth();
-    loadModels();
-    loadBooks();
+    ensureGate().then((ok) => {
+      if (!ok) return;
+      checkHealth();
+      loadModels();
+      loadBooks();
+      startClockTick();
+    });
   </script>
 </body>
 </html>

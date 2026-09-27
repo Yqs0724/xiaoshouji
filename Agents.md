@@ -173,6 +173,8 @@ UI 映射（锁定）：
 | set_mode / set_budget | ✓（确认） | ✓（确认） | 受 session 闸门只读 |
 | 直接调 LLM 写跟批 | — | — | ✓ |
 
+**已接线 MCP（2026-09）**：`health_check`、`list_bookshelf`、`sync_bookshelf`、`get_progress`、`get_last_session`、`get_session_summary`、`start_coread`、`end_coread`（可选 `write_lore`）、`set_mode`、`set_budget`、`set_door_lock`、`list_notes`、`search_notes`。传输：电脑 Chatbox 用 **stdio**（`npm run mcp`）；另有 HTTP 传输代码但 **Chatbox 移动端暂无工作模式，不能当手机剧情调小屋用**。上表其余（idle 等）仍为规划；手机共读以 **PWA** 为准。见 `落地进度.md`。桌面 Chatbox 须**工作模式**且开聊前选好。
+
 ---
 
 ## 7. 失败与降级话术

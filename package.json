@@ -4,7 +4,9 @@
   "scripts": {
     "start": "node gateway/server.js",
     "mcp": "node gateway/mcp-server.mjs",
-    "check:mcp": "node gateway/mcp-check.mjs"
+    "mcp:http": "node gateway/mcp-http.mjs",
+    "check:mcp": "node gateway/mcp-check.mjs",
+    "check:mcp-http": "node gateway/mcp-http-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",

@@ -10,6 +10,8 @@
 DEEPSEEK_API_KEY=sk-你的密钥
 LLM_BASE=https://api.deepseek.com
 LLM_MODEL=deepseek-flash
+# PERSONA=叫我阿州，语气轻松
+# PERSONA_CARD=完整角色卡（可选）
 ```
 
 填好后**重启** `npm start`。环境变量优先于设定页；`.env` 已在 `.gitignore`。
@@ -30,20 +32,67 @@ npm start
 curl.exe http://127.0.0.1:8787/api/v1/health
 ```
 
-# 应看到 "llm":"configured"（密钥填对并重启后）
+应看到 `"llm":"configured"`（密钥填对并重启后）。
 
-## Chatbox · MCP（只读）
+## 当前已落地（对照代码，非愿望清单）
 
-共读号 / 剧情号挂**同一** MCP。在 Chatbox MCP 配置里（路径按本机改）：
+### 网关 + PWA
 
-| 项 | 值 |
-|----|-----|
-| command | `node` |
-| args | `d:\cursor-projects\共读室\gateway\mcp-server.mjs` |
-| cwd | `d:\cursor-projects\共读室` |
+| 能力 | 说明 |
+|------|------|
+| 健康 / 设定 | Key、LLM Base/Key/Model；连接面板可改 |
+| 微信书架 | 全量同步；进度/时长只刷新最近 10 本 + 在读；书架可搜书名/作者 |
+| 划线轮询 | 共读中约 10s 同步；时间线划线 + 跟批 |
+| 跟批 LLM | OpenAI 兼容（如 DeepSeek flash）；深思可关 |
+| 本场模型 | composer 模型 pill 切换（如 flash / chat） |
+| 跟批方式 | 沉浸评论 / 仅想法 / 定义静默；**按书写默认**（改本场或结束时记住，新开场优先） |
+| 暂停跟批 | 仍同步划线，不自动跟批 |
+| 跟批额度 | 本场约 1 / 5 / 10 块或不限（Flash 闲时粗算，非账单） |
+| 人设 | **跟批人设（短）** 每次注入；**完整角色卡（长）** 可存，默认不注入；可选「跟批也带长卡」（约 4000 字截断） |
+| 世界书 | 设定增删；关键词命中划线/想法时**静默**注入跟批（界面不展示命中） |
+| 剧情摘要 | 设定一栏短文本；跟批时在人设之后、世界书之前注入 |
+| 跟批带设定 | 共读 `···` 开关「跟批带上剧情/世界书」（默认开；关=本场少灌背景） |
+| 跟批默认 | 设定里可存默认方式 + 默认语气 + 默认额度；**新开场**时带上（该书另有默认时优先书；本场 `···` 仍可改） |
+| 笔记 Tab | 按书列表 → 按章分组预览；关键词搜索；按书导出 MD/JSON |
+| 换一条 | 跟批 ↻ 再生成；👎 踩/OOC 可带理由重写；旧文保留为候选；⧉ 复制；✎ 手改覆盖当前条 |
+| 短聊 | 共读输入框发送；本场入库；与划线时间线按时间合并 |
+| 总结刚才 | 共读 `+` → 收最近约 8 条划线/想法/跟批进时间线；计本场额度 |
+| 本章笔记 | 共读 `+` → 滑出当前章划线（按滤条 + 最近划线所在章） |
+| 续聊 | 跟批 ↩ → composer 续条；划线不挂操作钮 |
+| 关门锁 | 设定 / 共读···；停跟批·短聊；划线仍入库；MCP 读书工具拒 |
+| 访问密码 | 设定里设；进站要解锁（Cookie）；与关门锁不同；可选 `CABIN_GATE` |
+| 结束本场 | 摘要卡入库；可选勾选写入设定·剧情摘要；记录 Tab 可查 |
+| 记录统计 | 全部/今日/本周/本月：场次·**共读时长**·**微信阅读增量**·跟批 |
+| 刷次 | 一书默认一刷；书架 pill / +下一刷；顶栏显示；摘要带刷次 |
 
-或：`npm run mcp`（cwd 同上）。
+### Chatbox · MCP（电脑）
 
-当前工具：`health_check` · `list_bookshelf` · `get_last_session`（均只读本地数据；书架同步仍用 PWA / `npm start`）。
+共读号 / 剧情号挂**同一**工具集。**仅桌面 Chatbox**：**新建对话前**先选 **工作模式**（开聊后不能改），再打开「共读小屋」开关。
+
+```text
+node d:\cursor-projects\共读室\gateway\mcp-server.mjs
+```
+
+cwd（若有）：`d:\cursor-projects\共读室`
+
+| 工具 | 作用 |
+|------|------|
+| `health_check` | 本地设定是否配齐 |
+| `list_bookshelf` | 读本机书架缓存 |
+| `sync_bookshelf` | 同步微信全量书架（进度补最近+在读） |
+| `get_progress` | 当前/指定书进度 |
+| `get_last_session` / `get_session_summary` | 最近一场 / 按 id 摘要（同库） |
+| `start_coread` / `end_coread` | 开场·恢复 / 结束本场（可选 `write_lore`） |
+| `set_mode` / `set_budget` | 改本场跟批方式 / 额度（须已开场） |
+| `set_door_lock` | 开关门锁 |
+| `list_notes` / `search_notes` | 笔记索引 / 关键词搜索（本地） |
 
 自检：`npm run check:mcp`
+
+**手机 Chatbox**：官方工作模式目前仅桌面；移动端**不能**稳定调 MCP 开场。手机共读请用 **PWA**（阅读器旁开 `http://…:8787` 看跟批）。远程 HTTP MCP（`npm run mcp:http`）代码保留，供日后移动端有工作模式或其它客户端再用——**暂不作为手机 Chatbox 用法宣传**。Base URL Tool 循环搁置。
+
+### 明确未做（勿当成已有）
+
+分层剧情摘要编辑器、多刷次完整时间线、导入正文/沉浸共读、深链唤起微信 App、手机 Chatbox 调小屋（等官方移动端工作模式）、Base URL Tool 循环等——见 `PRD.md` / `Tech-Design.md` 与 [`落地进度.md`](./落地进度.md)。
+
+更细的阶段表见 [`Tech-Design.md`](./Tech-Design.md) §12 与 [`落地进度.md`](./落地进度.md)。
