@@ -179,8 +179,9 @@ function formatTime(unix) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 读书架时补齐缺失刷次（写回） */
+/** 读书架时补齐缺失刷次（写回）；附带正文 has_body 标记；与未结束场次对齐 in_progress */
 function listBooksNormalized() {
+  const { annotateBooksBody } = require("./bodies");
   const { books } = readBooks();
   let dirty = false;
   for (const b of books) {
@@ -189,6 +190,22 @@ function listBooksNormalized() {
     ensurePassOnBook(b);
     if (JSON.stringify(b.passes) + "|" + b.active_pass !== before) dirty = true;
   }
+  try {
+    const { getOpenSession } = require("./sessions");
+    const open = getOpenSession();
+    if (open && open.book_id && books.some((b) => b.id === open.book_id)) {
+      for (const b of books) {
+        const want = b.id === open.book_id;
+        if (!!b.in_progress !== want) {
+          b.in_progress = want;
+          dirty = true;
+        }
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+  annotateBooksBody(books);
   if (dirty) writeBooks(books);
   return { books };
 }
@@ -284,21 +301,32 @@ async function syncFromWeread(apiKey) {
   const prev = readBooks().books;
   const prevById = Object.fromEntries(prev.map((b) => [b.id, b]));
   const localOnly = prev.filter((b) => b.source === "local" && !b.weread_id);
+  const prevActiveId = (prev.find((b) => b.in_progress) || {}).id || null;
+
+  let openBookId = null;
+  try {
+    const { getOpenSession } = require("./sessions");
+    const open = getOpenSession();
+    if (open && open.book_id) openBookId = open.book_id;
+  } catch (_) {
+    /* sessions 未就绪时忽略 */
+  }
 
   const targets = pickProgressTargets(remote, prevById);
   const targetIds = new Set(targets.map((b) => b.id));
   await enrichWithWereadProgress(apiKey, targets);
 
-  if (remote.length) remote[0].in_progress = true;
-
+  const { copyBodyFields, annotateBooksBody } = require("./bodies");
   for (const b of remote) {
     const old = prevById[b.id];
+    b.in_progress = false;
     if (old) {
       b.passes = Array.isArray(old.passes) ? old.passes.slice() : [];
       b.active_pass = old.active_pass || null;
       b.progress = old.progress || 0;
       if (old.default_mode) b.default_mode = old.default_mode;
       if (old.default_tone != null) b.default_tone = old.default_tone;
+      copyBodyFields(old, b);
       if (!targetIds.has(b.id)) {
         b.weread_progress =
           old.weread_progress != null ? old.weread_progress : null;
@@ -308,8 +336,19 @@ async function syncFromWeread(apiKey) {
     }
     ensurePassOnBook(b);
   }
-  for (const b of localOnly) ensurePassOnBook(b);
+  for (const b of localOnly) {
+    b.in_progress = false;
+    ensurePassOnBook(b);
+  }
   const books = [...remote, ...localOnly];
+  const preferId = openBookId || prevActiveId;
+  if (preferId && books.some((b) => b.id === preferId)) {
+    for (const b of books) b.in_progress = b.id === preferId;
+  } else if (remote.length) {
+    // 无未结束场次、也无旧进行中：才默认最近读的微信书
+    remote[0].in_progress = true;
+  }
+  annotateBooksBody(books);
   writeBooks(books);
   return {
     books,
@@ -318,6 +357,135 @@ async function syncFromWeread(apiKey) {
     total_remote: remote.length,
     albums: Array.isArray(shelf.albums) ? shelf.albums.length : 0,
   };
+}
+
+function titleFromFilename(filename) {
+  const base = String(filename || "")
+    .replace(/^.*[\\/]/, "")
+    .replace(/\.[^.]+$/, "")
+    .trim();
+  return base || "未命名";
+}
+
+function nowStamp() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 纯本地书：无 weread_id；微信同步会保留（localOnly）。
+ * 顺带写入正文（复用 bodies.putBookBody）。
+ */
+function createLocalBookFromText(textIn, { filename, title, author, chapters } = {}) {
+  const { BODY_MAX_CHARS, putBookBody } = require("./bodies");
+  const text = String(textIn == null ? "" : textIn).replace(/^\uFEFF/, "");
+  if (!text.trim()) {
+    const err = new Error("正文是空的");
+    err.code = "empty_body";
+    throw err;
+  }
+  if (text.length > BODY_MAX_CHARS) {
+    const err = new Error("正文太大（约上限 " + BODY_MAX_CHARS + " 字）");
+    err.code = "body_too_large";
+    throw err;
+  }
+  const { books } = readBooks();
+  const id =
+    "local-" +
+    Date.now().toString(36) +
+    "-" +
+    Math.random().toString(36).slice(2, 6);
+  const book = {
+    id,
+    title: (title && String(title).trim()) || titleFromFilename(filename),
+    author: author != null ? String(author) : "",
+    cover: "",
+    progress: 0,
+    source: "local",
+    passes: [1],
+    active_pass: 1,
+    in_progress: false,
+    updated_at: nowStamp(),
+  };
+  const next = books.filter((b) => b.id !== "seed-placeholder");
+  next.unshift(book);
+  writeBooks(next);
+  return putBookBody(id, text, { filename: filename || null, chapters });
+}
+
+function isLocalOnlyBook(b) {
+  return !!(b && b.source === "local" && !b.weread_id);
+}
+
+function findBookInList(books, bookKey) {
+  const key = String(bookKey || "");
+  return books.find((x) => x && (x.id === key || String(x.weread_id) === key));
+}
+
+/** 仅纯本地书改标题 */
+function renameLocalBook(bookKey, titleIn) {
+  const { annotateBooksBody } = require("./bodies");
+  const { books } = readBooks();
+  const b = findBookInList(books, bookKey);
+  if (!b || b.id === "seed-placeholder") {
+    const err = new Error("找不到这本书");
+    err.code = "book_not_found";
+    throw err;
+  }
+  if (!isLocalOnlyBook(b)) {
+    const err = new Error("只能改本地导入的书名");
+    err.code = "not_local_book";
+    throw err;
+  }
+  const title = String(titleIn == null ? "" : titleIn).trim();
+  if (!title) {
+    const err = new Error("书名不能为空");
+    err.code = "empty_title";
+    throw err;
+  }
+  b.title = title.slice(0, 200);
+  b.updated_at = nowStamp();
+  writeBooks(books);
+  annotateBooksBody([b]);
+  return { book: b };
+}
+
+/**
+ * 仅纯本地书：删书架条目 + 正文文件 + 该书划线/想法。
+ * 本场正开着这本书则拒绝。
+ */
+function deleteLocalBook(bookKey) {
+  const { deleteBookBodyFile } = require("./bodies");
+  const { removeBookHighlights } = require("./highlights");
+  const { books } = readBooks();
+  const b = findBookInList(books, bookKey);
+  if (!b || b.id === "seed-placeholder") {
+    const err = new Error("找不到这本书");
+    err.code = "book_not_found";
+    throw err;
+  }
+  if (!isLocalOnlyBook(b)) {
+    const err = new Error("只能删除本地导入的书");
+    err.code = "not_local_book";
+    throw err;
+  }
+  try {
+    const { getOpenSession } = require("./sessions");
+    const open = getOpenSession();
+    if (open && open.book_id === b.id) {
+      const err = new Error("正在共读这本书，请先结束本场再删");
+      err.code = "session_open";
+      throw err;
+    }
+  } catch (e) {
+    if (e && e.code === "session_open") throw e;
+  }
+  const id = b.id;
+  removeBookHighlights(id);
+  deleteBookBodyFile(id);
+  writeBooks(books.filter((x) => x.id !== id));
+  return { book_id: id, deleted: true };
 }
 
 module.exports = {
@@ -335,6 +503,11 @@ module.exports = {
   addNextPass,
   setBookDefaultMode,
   setBookDefaultTone,
+  createLocalBookFromText,
+  renameLocalBook,
+  deleteLocalBook,
+  isLocalOnlyBook,
+  titleFromFilename,
   BOOKS_PATH,
 };
 
@@ -346,5 +519,36 @@ if (require.main === module) {
   console.assert(ids.includes("b0") && ids.includes("b14") && !ids.includes("b12"), ids);
   const { normalizeFollowTone } = require("./settings");
   console.assert(normalizeFollowTone("ask") === "ask");
+  console.assert(titleFromFilename("沉浸体验-短文.txt") === "沉浸体验-短文");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const prevBooks = readBooks().books;
+  const put = createLocalBookFromText("本地书自检一段。", {
+    filename: "自检书.txt",
+  });
+  console.assert(put.book && put.book.source === "local", put);
+  console.assert(put.book.title === "自检书", put.book.title);
+  console.assert(put.book.has_body && put.chars > 0);
+  const ren = renameLocalBook(put.book.id, "改名自检");
+  console.assert(ren.book.title === "改名自检", ren.book.title);
+  try {
+    renameLocalBook(put.book.id, "   ");
+    throw new Error("expected empty_title");
+  } catch (e) {
+    console.assert(e.code === "empty_title", e.code);
+  }
+  const del = deleteLocalBook(put.book.id);
+  console.assert(del.deleted === true && del.book_id === put.book.id, del);
+  console.assert(!readBooks().books.some((b) => b.id === put.book.id));
+  console.assert(
+    !fs.existsSync(path.join(__dirname, "..", "data", "bodies", put.book.id + ".txt"))
+  );
+  try {
+    deleteLocalBook(put.book.id);
+    throw new Error("expected book_not_found");
+  } catch (e) {
+    console.assert(e.code === "book_not_found", e.code);
+  }
+  writeBooks(prevBooks);
   console.log("books.js self-check ok");
 }

@@ -17,10 +17,10 @@ const {
   tokensFromBudgetRmb,
   patchSettings,
   assertDoorOpen,
-  appendSessionToLore,
 } = require("./settings.js");
-const { readBooks, syncFromWeread } = require("./books.js");
+const { readBooks, syncFromWeread, setInProgress } = require("./books.js");
 const { findBook, listNotesIndex, searchNotes } = require("./highlights.js");
+const { appendSessionToPassLore } = require("./pass-lore.js");
 
 const NOTES_HIT_CAP = 30;
 const NOTES_CLIP = 120;
@@ -57,6 +57,8 @@ const {
   startSession,
   endSession,
   patchOpenSession,
+  sessionLinks,
+  getRecentCoreadContext,
 } = require("./sessions.js");
 
 function sessionCard(session) {
@@ -151,7 +153,7 @@ function requireDoorOpen() {
 function createServer() {
   const server = new McpServer({
     name: "coread-cabin",
-    version: "0.2.8",
+    version: "0.2.10",
   });
 
   server.registerTool(
@@ -245,6 +247,76 @@ function createServer() {
             in_progress: !!b.in_progress,
           })),
           message: `已同步 ${result.synced} 本（进度刷新 ${result.progress_enriched} 本）`,
+        });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "open_book",
+    {
+      description:
+        "选书：标为进行中并返回 PWA / 微信读书网页链接（不开场、不开 App 深链）。省略 book_id 用当前 in_progress。若另有未结束异书场次，不改书架选中，只提示先 end_coread。",
+      inputSchema: {
+        book_id: z
+          .string()
+          .optional()
+          .describe("书架书 id；省略则用进行中的书"),
+      },
+    },
+    async ({ book_id }) => {
+      try {
+        requireDoorOpen();
+        let book;
+        const key = String(book_id || "").trim();
+        if (key) {
+          book = findBook(key);
+          if (!book) {
+            const err = new Error("找不到这本书");
+            err.code = "book_not_found";
+            throw err;
+          }
+        } else {
+          book = readBooks().books.find((b) => b.in_progress);
+          if (!book) {
+            const err = new Error("没有进行中的书，请传 book_id");
+            err.code = "book_required";
+            throw err;
+          }
+        }
+        const open = getOpenSession();
+        if (open && open.book_id !== book.id) {
+          return jsonText({
+            ok: true,
+            book: {
+              id: book.id,
+              title: book.title,
+              author: book.author,
+              in_progress: !!book.in_progress,
+            },
+            links: sessionLinks(book),
+            selected: false,
+            session_open: true,
+            open_book_id: open.book_id,
+            message: `《${book.title}》可选，但当前未结束场次是《${open.book_title}》。请先 end_coread，再 open_book / start_coread。`,
+          });
+        }
+        book = setInProgress(book.id);
+        return jsonText({
+          ok: true,
+          book: {
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            in_progress: !!book.in_progress,
+          },
+          links: sessionLinks(book),
+          selected: true,
+          session_open: !!open,
+          open_book_id: open ? open.book_id : null,
+          message: `已选中《${book.title}》。打开 links 看书；要开场请 start_coread。`,
         });
       } catch (e) {
         return jsonError(e);
@@ -355,7 +427,7 @@ function createServer() {
     "end_coread",
     {
       description:
-        "结束当前共读本场，写入摘要卡（与 PWA「结束本场」同一数据）。write_lore 默认 false；true 时才追加到设定·剧情摘要。",
+        "结束当前共读本场，写入摘要卡（与 PWA「结束本场」同一数据）。write_lore 默认 false；true 时追加本场要点到该书·本刷摘要（非设定全局栏）。",
       inputSchema: {
         book_id: z
           .string()
@@ -364,22 +436,22 @@ function createServer() {
         write_lore: z
           .boolean()
           .optional()
-          .describe("是否写入长期剧情摘要；默认 false"),
+          .describe("是否追加到该书本刷摘要；默认 false"),
       },
     },
     async ({ book_id, write_lore }) => {
       try {
         const session = endSession(book_id || undefined);
-        let lore_summary;
+        let pass_lore;
         if (write_lore) {
-          const s = appendSessionToLore(session);
-          lore_summary = s.lore_summary;
+          pass_lore = appendSessionToPassLore(session);
         }
         return jsonText({
           ok: true,
           session: sessionCard(session),
-          lore_written: !!lore_summary,
-          lore_summary,
+          lore_written: !!pass_lore,
+          pass_lore,
+          lore_summary: pass_lore ? pass_lore.text : undefined,
           message: `已结束《${session.book_title}》`,
         });
       } catch (e) {
@@ -447,6 +519,83 @@ function createServer() {
           open,
           budget_rmb: n <= 0 ? 0 : n,
           message: `本场额度 → ${label}（已用 token ${open.tokens_used || 0}）`,
+        });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "get_recent_coread_context",
+    {
+      description:
+        "接戏用：当前未结束场次（优先）或最近一场已结束共读的要点——书/进度/刷次 + 最近划线·想法·跟批·短聊（截断，默认 10 条、最多 24）。锁门时拒绝。",
+      inputSchema: {
+        limit: z
+          .number()
+          .optional()
+          .describe("最近几条，默认 10，最大 24"),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        requireDoorOpen();
+        const data = getRecentCoreadContext(limit);
+        return jsonText({ ok: true, ...data });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "ask_idle_read",
+    {
+      description:
+        "查询本场空闲自读日志（沉浸共读停手后，按正文进度记下的摘录）。可用来回答「你刚才读了啥」。无开放场次或尚无记录时如实说明。锁门时拒绝。",
+      inputSchema: {
+        limit: z
+          .number()
+          .optional()
+          .describe("最近几条，默认 5，最大 24"),
+      },
+    },
+    async ({ limit }) => {
+      try {
+        requireDoorOpen();
+        const open = getOpenSession();
+        if (!open) {
+          return jsonText({
+            ok: true,
+            open: false,
+            entries: [],
+            count: 0,
+            message: "没有进行中的共读场次",
+          });
+        }
+        const log = Array.isArray(open.idle_log) ? open.idle_log : [];
+        const n = Math.max(1, Math.min(24, Math.floor(Number(limit) || 5)));
+        const entries = log
+          .slice(-n)
+          .reverse()
+          .map((e) => ({
+            at: e && e.at,
+            from: e && e.from,
+            to: e && e.to,
+            excerpt: clipNote(e && e.excerpt, 400) || "",
+          }));
+        return jsonText({
+          ok: true,
+          open: true,
+          book_id: open.book_id,
+          book_title: open.book_title || null,
+          idle_offset: Number(open.idle_offset) || 0,
+          count: log.length,
+          entries,
+          message: entries.length
+            ? undefined
+            : "本场还没有默读记录（沉浸共读停手约 40 秒后会开始记）",
         });
       } catch (e) {
         return jsonError(e);

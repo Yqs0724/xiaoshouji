@@ -19,6 +19,12 @@
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { scrollbar-width: none; }
+    *::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
     body {
       min-height: 100vh;
       background: radial-gradient(ellipse at 50% 10%, #4a3f36 0%, var(--bg) 65%);
@@ -125,7 +131,8 @@
     }
     .cabin-top .spacer { flex: 1; }
     .cabin-top .down {
-      color: var(--muted); cursor: pointer; font-weight: 400; font-size: 18px;
+      color: var(--muted); cursor: pointer; font-weight: 400; font-size: 22px;
+      padding: 4px 8px 4px 0; line-height: 1;
     }
     .cabin-top .deco-mini {
       width: 28px; height: 28px; object-fit: contain; opacity: .9;
@@ -169,10 +176,30 @@
       pointer-events: none;
       filter: drop-shadow(0 1px 2px rgba(60,40,20,.2));
     }
-    .frame-corner.tl { top: 14px; left: 6px; transform: rotate(-8deg); }
-    .frame-corner.tr { top: 14px; right: 6px; transform: rotate(10deg); }
+    .frame-corner.tl {
+      top: 14px;
+      left: 6px;
+      width: 50px;
+      height: 38px;
+      transform: rotate(-6deg);
+      opacity: .96;
+      filter: brightness(0) invert(1)
+        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
+        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
+    }
+    .frame-corner.tr {
+      top: 10px;
+      right: 4px;
+      width: 50px;
+      height: 38px;
+      transform: rotate(6deg);
+      opacity: .96;
+      filter: brightness(0) invert(1)
+        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
+        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
+    }
     .frame-corner.bl { bottom: 14px; left: 6px; transform: rotate(6deg); }
-    .frame-corner.br { bottom: 14px; right: 6px; transform: rotate(-12deg); width: 32px; height: 32px; }
+    .frame-corner.br { bottom: 14px; right: 6px; transform: rotate(-12deg); width: 34px; height: 34px; }
 
     .cabin-body {
       flex: 1;
@@ -593,26 +620,16 @@
 
       <div class="view" id="view-cabin">
         <div class="cabin-top" id="cabinTop">
-          <div id="cabinTitle">书架</div>
+          <span class="down" onclick="showView('standby')" title="回锁屏">←</span>
           <div class="spacer"></div>
-          <img class="deco-mini" src="assets/cafe/sticker-bean.png" alt="" />
-          <span class="down" onclick="showView('standby')">⇣</span>
+          <div id="cabinTitle">书架</div>
         </div>
         <div class="cabin-frame">
           <div class="frame-washi" aria-hidden="true"></div>
-          <img class="frame-corner tl" src="assets/cafe/sticker-flower.png" alt="" />
-          <img class="frame-corner tr" src="assets/cafe/decor-flower.png" alt="" />
-          <img class="frame-corner bl" src="assets/cafe/treat.png" alt="" />
-          <img class="frame-corner br" src="assets/cafe/sticker-bean.png" alt="" />
+          <img class="frame-corner tl" src="assets/cafe/bow-corner-tl.png?v=4" alt="" />
+          <img class="frame-corner br" src="assets/cafe/deco-cupcake-mint.png" alt="" />
           <div class="cabin-body" id="cabinBody">
             <div class="tab-panel active" id="tab-shelf">
-              <div class="r-card continue" onclick="showView('coread')">
-                <img class="cover" src="assets/cafe/cup.png" alt="" />
-                <div>
-                  <div class="t">《三体》· 继续共读</div>
-                  <div class="s">一刷 · 进度 62% · 点此进入本场</div>
-                </div>
-              </div>
               <div class="r-card">
                 <div class="book-row" onclick="toast('打开书详情（示意）')">
                   <div class="thumb"><img src="assets/cafe/decor-case.png" alt="" /></div>
@@ -729,10 +746,10 @@
               <img src="assets/cafe/shelf.png" alt="" />书架
             </button>
             <button type="button" data-tab="notes" onclick="openPage('notes')">
-              <img src="assets/cafe/notes.png" alt="" />笔记
+              <img src="assets/cafe/deco-macaron.png" alt="" />笔记
             </button>
             <button type="button" data-tab="records" onclick="openPage('records')">
-              <img src="assets/cafe/cup.png" alt="" />记录
+              <img src="assets/cafe/records.png" alt="" />记录
             </button>
             <button type="button" data-tab="settings" onclick="openPage('settings')">
               <img src="assets/cafe/settings.png" alt="" />设定

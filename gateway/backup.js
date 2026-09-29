@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
+const BODIES_DIR = path.join(DATA_DIR, "bodies");
 
 /** 进备份包的数据文件（不含 .env） */
 const DATA_FILES = [
@@ -13,6 +14,52 @@ const DATA_FILES = [
 ];
 
 const KEY_FIELDS = ["weread_key", "llm_key", "llm_base", "gate_hash", "gate_salt"];
+
+function safeBodyFileId(id) {
+  return String(id || "")
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .slice(0, 180);
+}
+
+/** 读 data/bodies/*.txt → { bookId: text }；无可备份则 null */
+function collectBodiesMap() {
+  if (!fs.existsSync(BODIES_DIR)) return null;
+  let names;
+  try {
+    names = fs.readdirSync(BODIES_DIR);
+  } catch {
+    return null;
+  }
+  const out = {};
+  for (const name of names) {
+    if (!/\.txt$/i.test(name)) continue;
+    const base = path.basename(name);
+    if (base !== name) continue;
+    const id = safeBodyFileId(base.replace(/\.txt$/i, ""));
+    if (!id) continue;
+    try {
+      out[id] = fs.readFileSync(path.join(BODIES_DIR, base), "utf8");
+    } catch {
+      /* skip unreadable */
+    }
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function writeBodiesMap(bodies) {
+  if (!bodies || typeof bodies !== "object" || Array.isArray(bodies)) return [];
+  if (!fs.existsSync(BODIES_DIR)) fs.mkdirSync(BODIES_DIR, { recursive: true });
+  const written = [];
+  for (const [rawId, text] of Object.entries(bodies)) {
+    const id = safeBodyFileId(rawId);
+    if (!id) continue;
+    if (typeof text !== "string") continue;
+    const fp = path.join(BODIES_DIR, id + ".txt");
+    fs.writeFileSync(fp, text, "utf8");
+    written.push("bodies/" + id + ".txt");
+  }
+  return written;
+}
 
 function crc32(buf) {
   let c = ~0;
@@ -139,6 +186,11 @@ function collectBackupBundle() {
     data[key] = parsed;
     files.push(name);
   }
+  const bodies = collectBodiesMap();
+  if (bodies) {
+    data.bodies = bodies;
+    files.push("bodies");
+  }
   if (!files.length) {
     const err = new Error("data/ 里还没有可备份的文件");
     err.code = "no_data";
@@ -150,7 +202,8 @@ function collectBackupBundle() {
     format: "coread-backup",
     exported_at,
     files,
-    note: "单个 JSON 备份，手机可直接保存/分享；不含 .env 与 API Key。可用设定页「恢复」写回。",
+    note:
+      "单个 JSON 备份，手机可直接保存/分享；不含 .env 与 API Key。含本地正文 bodies（若有）。可用设定页「恢复」写回。",
     data,
   };
 }
@@ -167,11 +220,22 @@ function collectBackupEntries() {
   };
 
   for (const name of bundle.files) {
+    if (name === "bodies") continue;
     const key = name.replace(/\.json$/, "");
     entries.push({
       name: "data/" + name,
       data: JSON.stringify(bundle.data[key], null, 2),
     });
+  }
+  if (bundle.data.bodies && typeof bundle.data.bodies === "object") {
+    for (const [id, text] of Object.entries(bundle.data.bodies)) {
+      const safe = safeBodyFileId(id);
+      if (!safe || typeof text !== "string") continue;
+      entries.push({
+        name: "data/bodies/" + safe + ".txt",
+        data: text,
+      });
+    }
   }
 
   entries.unshift({
@@ -185,8 +249,8 @@ function collectBackupEntries() {
       manifest.files.join(", ") +
       "\n" +
       "settings 中的 Key 已清空；勿把密钥备份传到公网。\n" +
-      "手机更推荐导出单个 JSON。\n" +
-      "恢复：暂请手动把对应 json 拷回小屋 data/（先关网关）。\n",
+      "手机更推荐导出单个 JSON（含 bodies 正文）。\n" +
+      "恢复：设定页选 JSON 恢复，或手动拷回 data/（先关网关）。\n",
   });
   entries.push({
     name: "manifest.json",
@@ -281,15 +345,21 @@ function previewBackup(input) {
       ? b.files.slice()
       : Object.keys(b.data)
           .filter((k) => b.data[k] != null)
-          .map((k) => k + ".json");
+          .map((k) => (k === "bodies" ? "bodies" : k + ".json"));
+  const bodyCount =
+    b.data.bodies && typeof b.data.bodies === "object" && !Array.isArray(b.data.bodies)
+      ? Object.keys(b.data.bodies).length
+      : 0;
   return {
     exported_at: b.exported_at || null,
     files,
+    body_count: bodyCount,
     has: {
       books: b.data.books != null,
       highlights: b.data.highlights != null,
       sessions: b.data.sessions != null,
       settings: b.data.settings != null,
+      bodies: bodyCount > 0,
     },
   };
 }
@@ -341,6 +411,15 @@ function restoreFromBackup(input) {
     written.push(name);
   }
 
+  if (b.data.bodies != null) {
+    if (typeof b.data.bodies !== "object" || Array.isArray(b.data.bodies)) {
+      const err = new Error("bodies 内容不是对象");
+      err.code = "bad_backup";
+      throw err;
+    }
+    written.push(...writeBodiesMap(b.data.bodies));
+  }
+
   if (!written.length) {
     const err = new Error("备份里没有可恢复的数据文件");
     err.code = "bad_backup";
@@ -351,6 +430,10 @@ function restoreFromBackup(input) {
     written,
     snapshot,
     exported_at: b.exported_at || null,
+    body_count:
+      b.data.bodies && typeof b.data.bodies === "object"
+        ? Object.keys(b.data.bodies).length
+        : 0,
   };
 }
 
@@ -360,6 +443,10 @@ if (require.main === module) {
   const parsed = JSON.parse(json.body.toString("utf8"));
   console.assert(parsed.format === "coread-backup" && parsed.data && parsed.data.settings);
   console.assert(!parsed.data.settings.weread_key);
+  if (parsed.data.bodies) {
+    console.assert(typeof parsed.data.bodies === "object");
+    console.assert(parsed.files.includes("bodies"));
+  }
   const file = buildBackupZip();
   console.assert(file.body[0] === 0x50 && file.body[1] === 0x4b, "zip magic");
   const scrubbed = scrubSettingsRaw(
@@ -369,6 +456,19 @@ if (require.main === module) {
   console.assert(s.weread_key === "" && s.llm_key === "" && s.persona === "hi");
   const prev = previewBackup(parsed);
   console.assert(prev.files.length && prev.has.settings);
+  console.assert(typeof prev.body_count === "number");
+  const tmpId = "backup-selfcheck-" + Date.now().toString(36);
+  if (!fs.existsSync(BODIES_DIR)) fs.mkdirSync(BODIES_DIR, { recursive: true });
+  const tmpPath = path.join(BODIES_DIR, tmpId + ".txt");
+  fs.writeFileSync(tmpPath, "备份正文自检", "utf8");
+  const withBody = collectBackupBundle();
+  console.assert(withBody.data.bodies && withBody.data.bodies[tmpId] === "备份正文自检");
+  const wrote = writeBodiesMap({ [tmpId]: "恢复后正文" });
+  console.assert(wrote.length === 1);
+  console.assert(fs.readFileSync(tmpPath, "utf8") === "恢复后正文");
+  try {
+    fs.unlinkSync(tmpPath);
+  } catch (_) {}
   try {
     parseBackupBundle({ format: "nope", data: {} });
     throw new Error("expected bad_backup");
@@ -379,6 +479,7 @@ if (require.main === module) {
     jsonBytes: json.body.length,
     zipBytes: file.body.length,
     name: json.filename,
+    body_count: prev.body_count,
   });
 }
 

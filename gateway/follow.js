@@ -1,4 +1,4 @@
-const { chatCompletion, parseThinkBody } = require("./llm");
+const { chatCompletion, parseThinkBody, resolveThinkText } = require("./llm");
 const { getHighlights, findBook, readAll, writeAll } = require("./highlights");
 const {
   readSettings,
@@ -8,8 +8,8 @@ const {
   appendDialogueHints,
   appendLoreToSystem,
 } = require("./settings");
-const { appendWorldToSystem } = require("./world");
 const { getOpenSession, budgetExhausted, addOpenTokensUsed } = require("./sessions");
+const { loreTextForInject } = require("./pass-lore");
 
 function saveHighlightPatch(bookId, highlightId, patch) {
   const all = readAll();
@@ -22,14 +22,22 @@ function saveHighlightPatch(bookId, highlightId, patch) {
   return list[idx];
 }
 
-/** paused 优先；mode: immersive | ideas | silent */
+/** paused 优先；mode: immersive | ideas | silent
+ * 微信孤儿想法 / 本地想法：kind===idea，靠 idea 字段跟批。
+ */
 function shouldFollowHighlight(h, { paused = false, mode = "immersive" } = {}) {
   if (paused) return false;
   if (mode === "silent") return false;
-  if (!h || h.kind === "idea") return false;
-  if (!(h.text || h.idea)) return false;
+  if (!h) return false;
   if (h.follow || h.follow_error) return false;
-  if (mode === "ideas" && !(h.idea && String(h.idea).trim())) return false;
+  const hasIdea = !!(h.idea && String(h.idea).trim());
+  const hasText = !!(h.text && String(h.text).trim());
+  if (h.kind === "idea") {
+    if (!hasIdea) return false;
+    return mode === "immersive" || mode === "ideas";
+  }
+  if (!hasText && !hasIdea) return false;
+  if (mode === "ideas" && !hasIdea) return false;
   return true;
 }
 
@@ -118,22 +126,34 @@ function applySessionLore(system, highlight, open, loreSummary) {
   if (open && open.lore_light) {
     return (
       system +
-      "\n本场设定：少提设定。不要注入/主动提及剧情摘要与世界书背景，多贴原文与当下感受；不要主动续写长线剧情。"
+      "\n本场设定：少提设定。不要注入/主动提及剧情摘要背景，多贴原文与当下感受；不要主动续写长线剧情。"
     );
   }
-  system = appendLoreToSystem(system, loreSummary);
-  return appendWorldToSystem(system, highlight);
+  return appendLoreToSystem(system, loreSummary);
 }
 
 function appendFollowTone(system, tone) {
-  const t = String(tone || "").trim();
-  const hints = {
-    short: "本场语气：短批。一两句即可，点到为止，别展开长议。",
-    ask: "本场语气：提问。跟批里带 1～2 个轻问句，引读者想一想，勿连珠炮。",
-    empathy: "本场语气：共鸣。先接住情绪与画面感，少评判、少讲道理。",
-  };
-  const h = hints[t];
-  return h ? String(system || "") + "\n" + h : String(system || "");
+  // 语气档位已下线：长短/口吻交人设与划线内容，不再注入 short/ask/empathy
+  return String(system || "");
+}
+
+/** 本场跟批 system（与 followOne 同装配；世界书已下线） */
+function buildOpenFollowSystem(book, open, highlight) {
+  const sess = open || getOpenSession();
+  const dlg = effectiveDialogue(sess);
+  let system = buildFollowSystem("", dlg.persona_card, {
+    includeCard: !!dlg.persona_card_in_follow,
+  });
+  system = appendDialogueHints(system, dlg);
+  const pass =
+    (sess && Number(sess.pass_ordinal)) ||
+    (book && Number(book.active_pass)) ||
+    1;
+  const lore =
+    book && book.id ? loreTextForInject(book.id, pass) : "";
+  system = applySessionLore(system, highlight || { text: "", idea: "" }, sess, lore);
+  system = appendFollowTone(system, sess && sess.follow_tone);
+  return system;
 }
 
 async function followOne(book, highlight, { think, model, feedback } = {}) {
@@ -141,13 +161,7 @@ async function followOne(book, highlight, { think, model, feedback } = {}) {
 
   const s = readSettings();
   const open = getOpenSession();
-  const dlg = effectiveDialogue(open);
-  let system = buildFollowSystem("", dlg.persona_card, {
-    includeCard: !!dlg.persona_card_in_follow,
-  });
-  system = appendDialogueHints(system, dlg);
-  system = applySessionLore(system, highlight, open, s.lore_summary);
-  system = appendFollowTone(system, open && open.follow_tone);
+  const system = buildOpenFollowSystem(book, open, highlight);
 
   const usedModel =
     String(model || s.llm_model || "").trim() || undefined;
@@ -159,7 +173,7 @@ async function followOne(book, highlight, { think, model, feedback } = {}) {
   });
   const parsed = parseThinkBody(raw.content, !!think);
   const snap = {
-    think: parsed.think || null,
+    think: resolveThinkText(parsed, raw, !!think),
     body: parsed.body || raw.content,
     tokens_in: raw.tokens_in,
     tokens_out: raw.tokens_out,
@@ -383,14 +397,12 @@ async function followPending(
   if (budgetDone || locked) {
     pending = [];
   } else if (hid) {
-    // 用户点「重试」：只跟这一条，不要求未暂停
+    // 用户点「重试」：只跟这一条，不要求未暂停（含 kind===idea）
     const target = highlights.find((h) => h.id === hid);
     if (
       target &&
-      target.kind !== "idea" &&
-      (target.text || target.idea) &&
-      !(target.follow && target.follow.body) &&
-      !(mode === "ideas" && !(target.idea && String(target.idea).trim()))
+      shouldFollowHighlight(target, { paused: false, mode }) &&
+      !(target.follow && target.follow.body)
     ) {
       pending = [target];
     }
@@ -445,6 +457,11 @@ if (require.main === module) {
   console.assert(shouldFollowHighlight({ ...base, idea: "想" }, { mode: "ideas" }));
   console.assert(!shouldFollowHighlight(base, { mode: "silent" }));
   console.assert(!shouldFollowHighlight(base, { paused: true, mode: "immersive" }));
+  const orphan = { kind: "idea", text: "", idea: "本地想法" };
+  console.assert(shouldFollowHighlight(orphan, { mode: "immersive" }));
+  console.assert(shouldFollowHighlight(orphan, { mode: "ideas" }));
+  console.assert(!shouldFollowHighlight(orphan, { mode: "silent" }));
+  console.assert(!shouldFollowHighlight({ kind: "idea", idea: "  " }, { mode: "ideas" }));
   const withP = buildFollowSystem("叫我阿州");
   console.assert(withP.includes("叫我阿州"));
   console.assert(!buildFollowSystem("").includes("跟批人设"));
@@ -494,9 +511,9 @@ if (require.main === module) {
   console.assert(light.includes("少提设定") && !light.includes("长剧情") && !light.includes("相关设定"), light);
   const full = applySessionLore("base", { text: "线粒体与内共生" }, { lore_light: false }, "长剧情");
   console.assert(full.includes("长剧情") || full.includes("剧情摘要"), full);
-  console.assert(appendFollowTone("base", "short").includes("短批"));
-  console.assert(appendFollowTone("base", "ask").includes("提问"));
-  console.assert(appendFollowTone("base", "empathy").includes("共鸣"));
+  console.assert(appendFollowTone("base", "short") === "base");
+  console.assert(appendFollowTone("base", "ask") === "base");
+  console.assert(appendFollowTone("base", "empathy") === "base");
   console.assert(appendFollowTone("base", "") === "base");
   console.log("follow ok");
 }
@@ -511,6 +528,7 @@ module.exports = {
   applyFollowVariant,
   shouldFollowHighlight,
   buildFollowSystem,
+  buildOpenFollowSystem,
   buildFollowUserParts,
   applySessionLore,
   appendFollowTone,

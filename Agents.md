@@ -150,13 +150,15 @@ UI 映射（锁定）：
 
 ### 5.4 Prompt 装配（顺序）
 
-1. 人设卡  
-2. 分层剧情摘要（锚点 / 关系 / 可检索段）  
-3. 世界书命中（**静默**，UI 不展示命中列表）  
-4. 有正文时：近文章节窗  
-5. 当前划线 / 想法 / 用户短聊  
-6. 语气预设与长度约束  
-7. 要求：锚定原文；不剧透未读（若进度可知）；不声称自己是微信官方  
+现行跟批装配（以网关 `follow.js` / 落地进度为准；**世界书注入已关**）：
+
+1. 可选完整角色卡（截断）  
+2. 称呼 / 短人设  
+3. **本刷摘要**（`lore_light` 时跳过）  
+4. 语气预设与长度约束  
+5. 当前划线 / 想法 / 用户短聊等用户侧内容  
+
+规划中曾列「分层剧情 / 世界书静默命中 / 近文章节窗」——世界书 UI 与注入已下线；分层剧情编辑器未做。勿按旧序硬编码。
 
 ### 5.5 与上一刷联动（P2）
 
@@ -170,10 +172,10 @@ UI 映射（锁定）：
 |------|--------|--------|----------|
 | health / bookshelf / open / start / end | ✓ | ✓ | — |
 | get_progress / summaries / notes / get_recent_coread_context / ask_idle_read | ✓ | ✓ | 可读上下文 |
-| set_mode / set_budget | ✓（确认） | ✓（确认） | 受 session 闸门只读 |
+| set_mode / set_budget / set_door_lock | ✓（确认） | ✓（确认） | 受 session 闸门 |
 | 直接调 LLM 写跟批 | — | — | ✓ |
 
-**已接线 MCP（2026-09）**：`health_check`、`list_bookshelf`、`sync_bookshelf`、`get_progress`、`get_last_session`、`get_session_summary`、`start_coread`、`end_coread`（可选 `write_lore`）、`set_mode`、`set_budget`、`set_door_lock`、`list_notes`、`search_notes`。传输：电脑 Chatbox 用 **stdio**（`npm run mcp`）；另有 HTTP 传输代码但 **Chatbox 移动端暂无工作模式，不能当手机剧情调小屋用**。上表其余（idle 等）仍为规划；手机共读以 **PWA** 为准。见 `落地进度.md`。桌面 Chatbox 须**工作模式**且开聊前选好。
+**已接线 MCP（对照 `落地进度.md`）**：`health_check`、`list_bookshelf`、`sync_bookshelf`、`get_progress`、`get_last_session`、`get_session_summary`、`start_coread`、`end_coread`（可选 `write_lore`）、`set_mode`、`set_budget`、`set_door_lock`、`list_notes`、`search_notes`、`ask_idle_read`、`open_book`、`get_recent_coread_context`。传输：电脑 Chatbox 用 **stdio**（`npm run mcp`）；另有 HTTP 传输但 **Chatbox 移动端暂无工作模式**。手机共读以 **本机 Web :8787** 为准。桌面须**工作模式**且开聊前选好。
 
 ---
 

@@ -1,4 +1,4 @@
-const { chatCompletion, parseThinkBody } = require("./llm");
+const { chatCompletion, parseThinkBody, resolveThinkText, withReplySuffix } = require("./llm");
 const { findBook, getHighlights } = require("./highlights");
 const {
   readSettings,
@@ -13,9 +13,77 @@ const {
   appendOpenChats,
   listOpenChats,
 } = require("./sessions");
-const { PERSONA_CARD_FOLLOW_MAX } = require("./follow");
+const { PERSONA_CARD_FOLLOW_MAX, buildOpenFollowSystem } = require("./follow");
 
 const CHAT_HISTORY = 8;
+
+/** 精确字数标签：↑500 / ↑1.5K / ↑12K（底栏不带「字」） */
+function formatCtxLabel(chars) {
+  const n = Math.max(0, Math.round(Number(chars) || 0));
+  if (n < 1000) return "↑" + n;
+  const k = n / 1000;
+  if (k < 10) {
+    const one = Math.round(k * 10) / 10;
+    return "↑" + (one % 1 === 0 ? String(one) : one.toFixed(1)) + "K";
+  }
+  return "↑" + Math.round(k) + "K";
+}
+
+/**
+ * 本场对话上下文体量（字数精确）：短聊将发送的 system（含深思尾缀）+ 近 CHAT_HISTORY 条；
+ * 附带跟批基线 system（不含当条划线原文）。
+ */
+function estimateDialogueContext({ think = false } = {}) {
+  const open = getOpenSession();
+  if (!open) {
+    const err = new Error("请先进入共读（开场）");
+    err.code = "no_open_session";
+    throw err;
+  }
+  const book = findBook(open.book_id);
+  const thinkOn = !!think;
+  const chatSystem = withReplySuffix(buildShortChatSystem(book, open), {
+    think: thinkOn,
+    replyKind: "chat",
+  });
+  const history = listOpenChats().slice(-CHAT_HISTORY);
+  let historyChars = 0;
+  for (const m of history) {
+    historyChars += String((m && m.body) || "").length;
+  }
+  const chatSystemChars = chatSystem.length;
+  const chatChars = chatSystemChars + historyChars;
+
+  const followSystem = withReplySuffix(buildOpenFollowSystem(book, open, null), {
+    think: thinkOn,
+    replyKind: "follow",
+  });
+  const followChars = followSystem.length;
+
+  return {
+    book_id: open.book_id,
+    book_title: open.book_title || (book && book.title) || null,
+    lore_light: !!open.lore_light,
+    think: thinkOn,
+    unit: "chars",
+    label: formatCtxLabel(chatChars),
+    chars: chatChars,
+    chat: {
+      system_chars: chatSystemChars,
+      history_chars: historyChars,
+      history_msgs: history.length,
+      history_cap: CHAT_HISTORY,
+      chars: chatChars,
+      label: formatCtxLabel(chatChars),
+    },
+    follow: {
+      system_chars: followChars,
+      chars: followChars,
+      label: formatCtxLabel(followChars),
+      note: "不含当条划线/想法原文",
+    },
+  };
+}
 
 function buildShortChatSystem(book, open) {
   const sess = open || getOpenSession();
@@ -158,7 +226,7 @@ async function sendShortChat(text, { think = false, model, replyToHighlightId } 
     role: "assistant",
     kind: "chat",
     body: parsed.body || raw.content,
-    think: parsed.think || null,
+    think: resolveThinkText(parsed, raw, !!think),
     tokens_in: raw.tokens_in,
     tokens_out: raw.tokens_out,
     model: usedModel,
@@ -308,7 +376,7 @@ async function summarizeRecent({ limit = SUMMARY_DEFAULT_LIMIT, think = false, m
     role: "assistant",
     kind: "summary",
     body: parsed.body || raw.content,
-    think: parsed.think || null,
+    think: resolveThinkText(parsed, raw, !!think),
     tokens_in: raw.tokens_in,
     tokens_out: raw.tokens_out,
     model: usedModel,
@@ -346,6 +414,29 @@ if (require.main === module) {
   console.assert(picked.length === 2 && picked[0].id === "2", picked);
   console.assert(formatHighlightForSummary(picked[1], 1).includes("想法"), formatHighlightForSummary(picked[1], 1));
   console.assert(buildSummarySystem({ title: "A" }).includes("总结刚才"));
+  console.assert(formatCtxLabel(500) === "↑500");
+  console.assert(formatCtxLabel(12000) === "↑12K");
+  console.assert(formatCtxLabel(1500) === "↑1.5K");
+  {
+    const { withReplySuffix, resolveThinkText, parseThinkBody } = require("./llm");
+    const a = withReplySuffix("基", { think: false, replyKind: "chat" });
+    const b = withReplySuffix("基", { think: true, replyKind: "chat" });
+    console.assert(a.includes("直接输出回复") && b.includes("【思考】") && b.length > a.length);
+    const tagged = parseThinkBody("【思考】想一想\n【回复】正文", true);
+    console.assert(resolveThinkText(tagged, { reasoning: "接口链" }, true) === "想一想");
+    console.assert(
+      resolveThinkText(parseThinkBody("只有正文", true), { reasoning: "接口链" }, true) ===
+        "接口链"
+    );
+    console.assert(resolveThinkText(tagged, { reasoning: "x" }, false) === null);
+  }
+  try {
+    estimateDialogueContext({ think: true });
+    const ctx = estimateDialogueContext({ think: false });
+    console.assert(ctx && ctx.chat && ctx.unit === "chars" && typeof ctx.label === "string");
+  } catch (e) {
+    console.assert(e.code === "no_open_session", e);
+  }
   console.log("chat ok");
 }
 
@@ -358,5 +449,8 @@ module.exports = {
   pickHighlightsForSummary,
   formatHighlightForSummary,
   resolveReplyContext,
+  estimateDialogueContext,
+  formatCtxLabel,
+  CHAT_HISTORY,
   SUMMARY_DEFAULT_LIMIT,
 };

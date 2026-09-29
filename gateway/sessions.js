@@ -55,8 +55,124 @@ function listSessions() {
   return { sessions };
 }
 
+const IDLE_CHUNK_DEFAULT = 420;
+const IDLE_LOG_MAX = 24;
+
+function normalizeOpenIdle(open) {
+  if (!open || typeof open !== "object") return open;
+  if (!Number.isFinite(Number(open.idle_offset)) || Number(open.idle_offset) < 0) {
+    open.idle_offset = 0;
+  } else {
+    open.idle_offset = Math.floor(Number(open.idle_offset));
+  }
+  if (!Array.isArray(open.idle_log)) open.idle_log = [];
+  return open;
+}
+
 function getOpenSession() {
-  return readAll().open;
+  const open = readAll().open;
+  return open ? normalizeOpenIdle(open) : null;
+}
+
+/**
+ * 从正文 offset 切下一段空闲自读（尽量在句号/段末断开）。
+ * 纯函数，供自检与 idleReadAdvance 共用。
+ */
+function pickIdleChunk(textIn, offsetIn, chunkChars) {
+  const text = String(textIn || "");
+  let offset = Math.max(0, Math.floor(Number(offsetIn) || 0));
+  if (offset >= text.length) {
+    return { excerpt: "", from: offset, to: offset, done: true };
+  }
+  while (offset < text.length && /\s/.test(text[offset])) offset++;
+  if (offset >= text.length) {
+    return { excerpt: "", from: offset, to: offset, done: true };
+  }
+  const n = Math.max(80, Math.min(2000, Math.floor(Number(chunkChars) || IDLE_CHUNK_DEFAULT)));
+  let end = Math.min(text.length, offset + n);
+  const slice = text.slice(offset, end);
+  const breaks = [
+    slice.lastIndexOf("\n\n"),
+    slice.lastIndexOf("。"),
+    slice.lastIndexOf("！"),
+    slice.lastIndexOf("？"),
+    slice.lastIndexOf("；"),
+  ];
+  const breakAt = Math.max.apply(null, breaks);
+  if (breakAt >= 40) end = offset + breakAt + 1;
+  const excerpt = text.slice(offset, end).trim();
+  return {
+    excerpt,
+    from: offset,
+    to: end,
+    done: end >= text.length || !excerpt,
+  };
+}
+
+/**
+ * 本场空闲自读推进一段（有正文；关门锁拒）。不调 LLM，只记日志。
+ */
+function idleReadAdvance({ chunkChars } = {}) {
+  const { assertDoorOpen } = require("./settings");
+  assertDoorOpen();
+  const all = readAll();
+  if (!all.open) {
+    const err = new Error("没有进行中的场次");
+    err.code = "no_open_session";
+    throw err;
+  }
+  normalizeOpenIdle(all.open);
+  const { getBookBody } = require("./bodies");
+  let body;
+  try {
+    body = getBookBody(all.open.book_id);
+  } catch (e) {
+    if (e && e.code === "no_body") {
+      const err = new Error("这本书还没有本地正文，无法空闲自读");
+      err.code = "no_body";
+      throw err;
+    }
+    throw e;
+  }
+  const text = String(body.text || "");
+  if (!text.trim()) {
+    const err = new Error("正文是空的");
+    err.code = "no_body";
+    throw err;
+  }
+  const picked = pickIdleChunk(text, all.open.idle_offset, chunkChars);
+  if (!picked.excerpt) {
+    all.open.idle_offset = text.length;
+    writeAll(all);
+    return {
+      ok: true,
+      done: true,
+      excerpt: null,
+      idle_offset: all.open.idle_offset,
+      idle_log: all.open.idle_log,
+      message: "正文已读到末尾",
+    };
+  }
+  const entry = {
+    at: Date.now(),
+    from: picked.from,
+    to: picked.to,
+    excerpt: picked.excerpt.slice(0, 800),
+  };
+  const log = all.open.idle_log.slice();
+  log.push(entry);
+  while (log.length > IDLE_LOG_MAX) log.shift();
+  all.open.idle_offset = picked.to;
+  all.open.idle_log = log;
+  writeAll(all);
+  return {
+    ok: true,
+    done: !!picked.done,
+    excerpt: entry.excerpt,
+    idle_offset: all.open.idle_offset,
+    idle_log: all.open.idle_log,
+    chars: entry.excerpt.length,
+  };
 }
 
 function getSession(id) {
@@ -135,6 +251,7 @@ function startSession(bookKey) {
         open.active_ms = 0;
         dirty = true;
       }
+      normalizeOpenIdle(open);
       open.active_since = Date.now();
       dirty = true;
       if (dirty) {
@@ -180,6 +297,8 @@ function startSession(bookKey) {
     weread_read_seconds_at_start: Number(bookReady.weread_read_seconds) || 0,
     active_ms: 0,
     active_since: Date.now(),
+    idle_offset: 0,
+    idle_log: [],
   };
   all.open = open;
   writeAll(all);
@@ -505,6 +624,133 @@ function sessionMarksInRange(session) {
   return highlights.filter(
     (h) => inRange(h.created_at) || (h.follow && inRange(h.follow.at))
   );
+}
+
+const CTX_DEFAULT = 10;
+const CTX_MAX = 24;
+const CTX_CLIP = 160;
+
+function clipCtx(s, n) {
+  const t = String(s || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  if (!t) return "";
+  return t.length > n ? t.slice(0, n) + "…" : t;
+}
+
+/**
+ * 剧情号接戏用：未结束场次优先，否则最近一场已结束。
+ * 返回时间序最近 N 条划线/想法/跟批/短聊（截断）。
+ */
+function getRecentCoreadContext(limit) {
+  const n = Math.min(
+    CTX_MAX,
+    Math.max(1, Math.floor(Number(limit) || CTX_DEFAULT) || CTX_DEFAULT)
+  );
+  const open = getOpenSession();
+  let scope;
+  if (open) {
+    scope = {
+      open: true,
+      session_id: null,
+      book_id: open.book_id,
+      book_title: open.book_title || "未命名",
+      pass_ordinal: Number(open.pass_ordinal) || null,
+      started_at: open.started_at,
+      ended_at: null,
+      follow_mode: open.follow_mode || null,
+      chats: Array.isArray(open.chats) ? open.chats : [],
+    };
+  } else {
+    const last = listSessions().sessions[0];
+    if (!last) {
+      return {
+        open: false,
+        session: null,
+        book: null,
+        entries: [],
+        count: 0,
+        returned: 0,
+        truncated: false,
+        message: "还没有共读场次；请先 start_coread",
+      };
+    }
+    scope = {
+      open: false,
+      session_id: last.id,
+      book_id: last.book_id,
+      book_title: last.book_title || "未命名",
+      pass_ordinal: Number(last.pass_ordinal) || null,
+      started_at: last.started_at,
+      ended_at: last.ended_at,
+      follow_mode: null,
+      chats: Array.isArray(last.chats) ? last.chats : [],
+    };
+  }
+
+  const marks = sessionMarksInRange({
+    book_id: scope.book_id,
+    started_at: scope.started_at,
+    ended_at: scope.ended_at || Date.now(),
+  });
+  const events = [];
+  for (const h of marks) {
+    const at =
+      toMs(h.created_at) || (h.follow && toMs(h.follow.at)) || 0;
+    let kind = "highlight";
+    if (h.kind === "idea") kind = "idea";
+    else if (h.follow && h.follow.body) kind = "follow";
+    events.push({
+      at,
+      kind,
+      text: clipCtx(h.text, CTX_CLIP),
+      idea: clipCtx(h.idea, CTX_CLIP) || null,
+      follow_body: clipCtx(h.follow && h.follow.body, CTX_CLIP) || null,
+      chapter_title: h.chapter_title || null,
+    });
+  }
+  for (const c of scope.chats) {
+    events.push({
+      at: Number(c.at) || 0,
+      kind: c.role === "user" ? "chat_user" : "chat_assistant",
+      text: clipCtx(c.body, CTX_CLIP),
+      idea: null,
+      follow_body: null,
+      chapter_title: null,
+    });
+  }
+  events.sort((a, b) => a.at - b.at || 0);
+  const sliced = events.slice(-n);
+  const book = findBook(scope.book_id);
+  return {
+    open: scope.open,
+    session: {
+      id: scope.session_id,
+      pass_ordinal: scope.pass_ordinal,
+      started_at: scope.started_at,
+      ended_at: scope.ended_at,
+      follow_mode: scope.follow_mode,
+      highlight_count: marks.filter((h) => h.kind !== "idea").length,
+      follow_count: marks.filter((h) => h.follow && h.follow.body).length,
+      chat_count: scope.chats.filter((c) => c.role === "user").length,
+    },
+    book: {
+      id: scope.book_id,
+      title: (book && book.title) || scope.book_title,
+      author: (book && book.author) || null,
+      cabin_progress: book ? book.progress ?? 0 : null,
+      weread_progress: book ? book.weread_progress ?? null : null,
+    },
+    count: events.length,
+    returned: sliced.length,
+    truncated: events.length > sliced.length,
+    entries: sliced,
+    message: sliced.length
+      ? undefined
+      : scope.open
+        ? "本场还没有划线/跟批/短聊"
+        : "上场没有可摘的划线/跟批/短聊",
+  };
 }
 
 function buildSessionExportPayload(session) {
@@ -918,6 +1164,20 @@ if (require.main === module) {
   console.assert(st.today && st.week && st.month);
   console.assert(openActiveDurationMs({ started_at: Date.now() - 5000, active_ms: 1000, active_since: null }) === 1000);
   console.assert(openActiveDurationMs({ active_ms: 0, active_since: Date.now() - 2000 }) >= 1900);
+  {
+    const ctx = getRecentCoreadContext(3);
+    console.assert(ctx && Array.isArray(ctx.entries) && typeof ctx.open === "boolean");
+    console.assert(ctx.returned <= 3);
+  }
+  const idleSample =
+    "第一段。\n\n" +
+    "第二段比较长，用来测试空闲自读切片是否在句号处断开。".repeat(8) +
+    "还有下文收尾。";
+  const chunk1 = pickIdleChunk(idleSample, 0, 100);
+  console.assert(chunk1.excerpt.includes("第一段"), chunk1);
+  console.assert(chunk1.to > 0 && chunk1.to < idleSample.length && !chunk1.done, chunk1);
+  const chunkEnd = pickIdleChunk(idleSample, idleSample.length, 100);
+  console.assert(chunkEnd.done && !chunkEnd.excerpt);
   const { sessions } = listSessions();
   if (sessions[0]) {
     const md = exportSession(sessions[0].id, "md");
@@ -944,6 +1204,10 @@ module.exports = {
   getSession,
   getOpenSession,
   startSession,
+  idleReadAdvance,
+  pickIdleChunk,
+  IDLE_CHUNK_DEFAULT,
+  IDLE_LOG_MAX,
   patchOpenSession,
   budgetExhausted,
   addOpenTokensUsed,
@@ -963,5 +1227,6 @@ module.exports = {
   startOfLocalWeek,
   startOfLocalMonth,
   sessionLinks,
+  getRecentCoreadContext,
   SESSIONS_PATH,
 };

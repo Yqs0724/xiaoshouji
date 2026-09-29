@@ -30,12 +30,7 @@ async function chatCompletion({
   }
 
   const url = chatCompletionsUrl(base);
-  const label =
-    replyKind === "chat" ? "回复" : replyKind === "summary" ? "小结" : "跟批";
-  const sys = think
-    ? system +
-      `\n输出格式必须严格如下（不要用 markdown 代码块）：\n【思考】\n（简短推理）\n【${label}】\n（正文）`
-    : system + `\n直接输出${label}正文，不要输出思考过程，不要用 markdown 代码块。`;
+  const sys = withReplySuffix(system, { think, replyKind });
 
   const msgList = Array.isArray(messages) && messages.length
     ? [{ role: "system", content: sys }, ...messages.filter((m) => m.role !== "system")]
@@ -77,18 +72,39 @@ async function chatCompletion({
     throw err;
   }
 
-  const content =
-    (data.choices &&
-      data.choices[0] &&
-      data.choices[0].message &&
-      data.choices[0].message.content) ||
-    "";
+  const msg =
+    (data.choices && data.choices[0] && data.choices[0].message) || {};
+  const content = String(msg.content || "").trim();
+  // DeepSeek 等把思维链放在 reasoning_content，正文只在 content
+  const reasoning = String(
+    msg.reasoning_content || msg.reasoning || ""
+  ).trim();
   const usage = data.usage || {};
   return {
-    content: String(content).trim(),
+    content,
+    reasoning,
     tokens_in: Number(usage.prompt_tokens) || 0,
     tokens_out: Number(usage.completion_tokens) || 0,
   };
+}
+
+function replyKindLabel(replyKind) {
+  if (replyKind === "chat") return "回复";
+  if (replyKind === "summary") return "小结";
+  return "跟批";
+}
+
+/** 与真发时 system 尾缀一致（深思 / 非深思） */
+function withReplySuffix(system, { think = false, replyKind = "follow" } = {}) {
+  const label = replyKindLabel(replyKind);
+  const base = String(system || "");
+  if (think) {
+    return (
+      base +
+      `\n输出格式必须严格如下（不要用 markdown 代码块）：\n【思考】\n（简短推理）\n【${label}】\n（正文）`
+    );
+  }
+  return base + `\n直接输出${label}正文，不要输出思考过程，不要用 markdown 代码块。`;
 }
 
 function parseThinkBody(content, think) {
@@ -106,4 +122,18 @@ function parseThinkBody(content, think) {
   return { think: "", body: content };
 }
 
-module.exports = { chatCompletion, parseThinkBody, chatCompletionsUrl };
+/** 标签【思考】优先；否则用接口 reasoning_content */
+function resolveThinkText(parsed, raw, thinkOn) {
+  if (!thinkOn) return null;
+  const t = String((parsed && parsed.think) || (raw && raw.reasoning) || "").trim();
+  return t || null;
+}
+
+module.exports = {
+  chatCompletion,
+  parseThinkBody,
+  resolveThinkText,
+  chatCompletionsUrl,
+  withReplySuffix,
+  replyKindLabel,
+};

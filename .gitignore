@@ -6,5 +6,9 @@ data/sessions.json
 data/books.json
 data/world-entries.json
 data/backups/
+data/bodies/
+
+# 购买素材包（源目录）；运行时已拷入 assets/cafe
+素材/薄巧素材9.29（购买）/
 
 node_modules/

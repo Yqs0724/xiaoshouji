@@ -2,15 +2,28 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 require("./load-env").loadEnv();
-const { readSettings, patchSettings, healthFlags, publicSettings, listLlmModels, effectiveDialogue, appendSessionToLore } = require("./settings");
-const { readBooks, syncFromWeread, listBooksNormalized, setActivePass, addNextPass, refreshBookProgress } = require("./books");
-const { getHighlights, listNotesIndex, searchNotes, syncHighlights, exportNotesBook, exportNotesAll, setHighlightPass } = require("./highlights");
+const { readSettings, patchSettings, healthFlags, publicSettings, listLlmModels, effectiveDialogue } = require("./settings");
+const { readBooks, syncFromWeread, listBooksNormalized, setActivePass, addNextPass, refreshBookProgress, createLocalBookFromText, renameLocalBook, deleteLocalBook } = require("./books");
+const { putBookBody, getBookBody, BODY_MAX_CHARS } = require("./bodies");
+const { getHighlights, listNotesIndex, searchNotes, syncHighlights, exportNotesBook, exportNotesAll, setHighlightPass, addLocalHighlight, addLocalIdea } = require("./highlights");
 const { followPending, regenerateFollow, selectFollowVariant, editFollow } = require("./follow");
-const { sendShortChat, summarizeRecent, listOpenChats } = require("./chat");
-const { listSessions, getSession, getOpenSession, startSession, patchOpenSession, buildSummary, endSession, sessionStats, openActiveDurationMs, exportSession, exportSessionsPeriod } = require("./sessions");
+const {
+  sendShortChat,
+  summarizeRecent,
+  listOpenChats,
+  estimateDialogueContext,
+} = require("./chat");
+const { listSessions, getSession, getOpenSession, startSession, patchOpenSession, buildSummary, endSession, sessionStats, openActiveDurationMs, exportSession, exportSessionsPeriod, idleReadAdvance } = require("./sessions");
 const { buildBackup, previewBackup, restoreFromBackup } = require("./backup");
 const { listWorld, replaceWorld } = require("./world");
+const {
+  getPassLore,
+  setPassLore,
+  generatePassLoreDraft,
+  appendSessionToPassLore,
+} = require("./pass-lore");
 const { docxToText, explainDocxError, DOCX_MAX_BYTES } = require("./docx-text");
+const { epubToText, explainEpubError, EPUB_MAX_BYTES } = require("./epub-text");
 const {
   gateEnabled,
   passwordMatches,
@@ -367,8 +380,247 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // 二进制 .epub → 纯文本（本地书 / 挂正文）
+  if (req.method === "POST" && urlPath === "/api/v1/import/epub") {
+    try {
+      const buf = await readBodyBuffer(req, EPUB_MAX_BYTES);
+      const result = epubToText(buf);
+      sendJson(res, 200, {
+        ok: true,
+        text: result.text,
+        title: result.title,
+        chars: result.chars,
+        chapters: result.chapters || [],
+      });
+    } catch (e) {
+      const code = e.code || "epub_bad";
+      const status =
+        code === "epub_too_large" ? 413 : code === "epub_empty" ? 400 : 400;
+      sendJson(res, status, {
+        ok: false,
+        error: code,
+        message: explainEpubError(code),
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/books") {
     sendJson(res, 200, listBooksNormalized());
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/books/import-local") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const text = body.text != null ? body.text : body.body;
+      const result = createLocalBookFromText(text, {
+        filename: body.filename,
+        title: body.title,
+        author: body.author,
+        chapters: body.chapters,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "empty_body" ||
+        e.code === "body_too_large" ||
+        e.code === "bad_book_id";
+      sendJson(res, bad ? 400 : 500, {
+        ok: false,
+        error: e.code || "import_local_failed",
+        message: e.message || "导入本地书失败",
+        max_chars: BODY_MAX_CHARS,
+      });
+    }
+    return;
+  }
+
+  const bookPassLore = urlPath.match(/^\/api\/v1\/books\/([^/]+)\/pass-lore$/);
+  if (bookPassLore && req.method === "GET") {
+    try {
+      const bookKey = decodeURIComponent(bookPassLore[1]);
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const pass = q.get("pass") || q.get("pass_ordinal") || undefined;
+      const data = getPassLore(bookKey, pass);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (e) {
+      sendJson(res, e.code === "book_not_found" ? 404 : 500, {
+        ok: false,
+        error: e.code || "pass_lore_failed",
+        message: e.message || "读取本刷摘要失败",
+      });
+    }
+    return;
+  }
+  if (bookPassLore && req.method === "PUT") {
+    try {
+      const bookKey = decodeURIComponent(bookPassLore[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const pass = body.pass ?? body.pass_ordinal;
+      const text = body.text != null ? body.text : body.lore != null ? body.lore : "";
+      const data = setPassLore(bookKey, pass, text);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "book_not_found" ? 404 : 500, {
+        ok: false,
+        error: e.code || "pass_lore_save_failed",
+        message: e.message || "保存本刷摘要失败",
+      });
+    }
+    return;
+  }
+
+  const bookPassLoreGen = urlPath.match(
+    /^\/api\/v1\/books\/([^/]+)\/pass-lore\/generate$/
+  );
+  if (bookPassLoreGen && req.method === "POST") {
+    try {
+      const bookKey = decodeURIComponent(bookPassLoreGen[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const think = body.think === true;
+      const model =
+        typeof body.model === "string" && body.model.trim()
+          ? body.model.trim()
+          : undefined;
+      const pass = body.pass ?? body.pass_ordinal;
+      const result = await generatePassLoreDraft(bookKey, {
+        passOrdinal: pass,
+        think,
+        model,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "llm_not_configured" ||
+        e.code === "no_open_session" ||
+        e.code === "book_not_found" ||
+        e.code === "book_mismatch" ||
+        e.code === "budget_exhausted" ||
+        e.code === "nothing_to_summarize" ||
+        e.code === "door_locked";
+      sendJson(res, bad ? 400 : 502, {
+        ok: false,
+        error: e.code || "pass_lore_generate_failed",
+        message: e.message || "生成摘要失败",
+      });
+    }
+    return;
+  }
+
+  const bookOne = urlPath.match(/^\/api\/v1\/books\/([^/]+)$/);
+  if (bookOne && req.method === "PATCH") {
+    try {
+      const bookKey = decodeURIComponent(bookOne[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const title = body.title != null ? body.title : body.name;
+      const result = renameLocalBook(bookKey, title);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "book_not_found"
+          ? 404
+          : e.code === "not_local_book" || e.code === "empty_title"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "rename_failed",
+        message: e.message || "改名失败",
+      });
+    }
+    return;
+  }
+  if (bookOne && req.method === "DELETE") {
+    try {
+      const bookKey = decodeURIComponent(bookOne[1]);
+      const result = deleteLocalBook(bookKey);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      const status =
+        e.code === "book_not_found"
+          ? 404
+          : e.code === "not_local_book" || e.code === "session_open"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "delete_failed",
+        message: e.message || "删除失败",
+      });
+    }
+    return;
+  }
+
+  const bookBody = urlPath.match(/^\/api\/v1\/books\/([^/]+)\/body$/);
+  if (bookBody && req.method === "GET") {
+    try {
+      const bookKey = decodeURIComponent(bookBody[1]);
+      const data = getBookBody(bookKey);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (e) {
+      const status =
+        e.code === "book_not_found" || e.code === "no_body"
+          ? 404
+          : e.code === "bad_book_id"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "body_get_failed",
+        message: e.message || "读正文失败",
+      });
+    }
+    return;
+  }
+  if (bookBody && req.method === "PUT") {
+    try {
+      const bookKey = decodeURIComponent(bookBody[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const text = body.text != null ? body.text : body.body;
+      const result = putBookBody(bookKey, text, {
+        filename: body.filename,
+        chapters: body.chapters,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "book_not_found" ||
+        e.code === "empty_body" ||
+        e.code === "body_too_large" ||
+        e.code === "bad_book_id";
+      sendJson(res, e.code === "book_not_found" ? 404 : bad ? 400 : 500, {
+        ok: false,
+        error: e.code || "body_put_failed",
+        message: e.message || "保存正文失败",
+        max_chars: BODY_MAX_CHARS,
+      });
+    }
     return;
   }
 
@@ -504,6 +756,70 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && highlightGet) {
     const bookKey = decodeURIComponent(highlightGet[1]);
     sendJson(res, 200, getHighlights(bookKey));
+    return;
+  }
+  if (req.method === "POST" && highlightGet) {
+    try {
+      const bookKey = decodeURIComponent(highlightGet[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const text = body.text != null ? body.text : body.markText;
+      const result = addLocalHighlight(bookKey, text);
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "book_not_found"
+          ? 404
+          : e.code === "empty_mark"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "local_mark_failed",
+        message: e.message || "加划线失败",
+      });
+    }
+    return;
+  }
+
+  const ideaPost = urlPath.match(/^\/api\/v1\/books\/([^/]+)\/ideas$/);
+  if (req.method === "POST" && ideaPost) {
+    try {
+      const bookKey = decodeURIComponent(ideaPost[1]);
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const idea = body.idea != null ? body.idea : body.content;
+      const quote =
+        body.quote != null
+          ? body.quote
+          : body.text != null
+            ? body.text
+            : body.markText != null
+              ? body.markText
+              : body.anchor;
+      const result = addLocalIdea(bookKey, idea, { text: quote });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "book_not_found"
+          ? 404
+          : e.code === "empty_idea"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "local_idea_failed",
+        message: e.message || "写想法失败",
+      });
+    }
     return;
   }
 
@@ -751,6 +1067,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/sessions/context") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const thinkRaw = String(q.get("think") || "").toLowerCase();
+      const think =
+        thinkRaw === "1" || thinkRaw === "true" || thinkRaw === "yes";
+      const ctx = estimateDialogueContext({ think });
+      sendJson(res, 200, { ok: true, ...ctx });
+    } catch (e) {
+      sendJson(res, e.code === "no_open_session" ? 400 : 500, {
+        ok: false,
+        error: e.code || "context_failed",
+        message: e.message || "无法估算上下文",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat") {
     try {
       const raw = await readBody(req);
@@ -941,6 +1275,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && urlPath === "/api/v1/sessions/idle-read") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const result = idleReadAdvance({
+        chunkChars: body.chunkChars != null ? body.chunkChars : body.chunk_chars,
+      });
+      sendJson(res, 200, { ok: true, ...result });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "door_locked"
+          ? 403
+          : e.code === "no_open_session" || e.code === "no_body"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "idle_read_failed",
+        message: e.message || "空闲自读失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/sessions/preview") {
     try {
       const raw = await readBody(req);
@@ -991,12 +1353,18 @@ const server = http.createServer(async (req, res) => {
       }
       const startedAt = Number(body.startedAt || body.started_at) || undefined;
       const session = endSession(bookKey, startedAt);
-      let lore_summary;
+      let pass_lore;
       if (body.append_lore || body.write_lore || body.writeLore) {
-        const s = appendSessionToLore(session);
-        lore_summary = s.lore_summary;
+        pass_lore = appendSessionToPassLore(session);
       }
-      sendJson(res, 200, { ok: true, session, lore_written: !!lore_summary, lore_summary });
+      sendJson(res, 200, {
+        ok: true,
+        session,
+        lore_written: !!pass_lore,
+        pass_lore: pass_lore || undefined,
+        // 兼容旧前端字段名
+        lore_summary: pass_lore ? pass_lore.text : undefined,
+      });
     } catch (e) {
       if (e instanceof SyntaxError) {
         sendJson(res, 400, { ok: false, error: "invalid_json" });

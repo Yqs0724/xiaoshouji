@@ -475,6 +475,13 @@ async function syncHighlights(apiKey, bookKey) {
       h.pass_ordinal = stampPass;
     }
   }
+  // 微信同步不得冲掉 PWA 本地划线
+  const wereadIds = new Set(merged.map((h) => h.id));
+  for (const h of prev) {
+    if (!isLocalHighlight(h) || wereadIds.has(h.id)) continue;
+    merged.push(h);
+  }
+  merged.sort((a, b) => (a.created_at || 0) - (b.created_at || 0));
   all.byBook[book.id] = merged;
   writeAll(all);
 
@@ -484,6 +491,160 @@ async function syncHighlights(apiKey, bookKey) {
     count: merged.length,
     highlights: merged,
     active_pass: stampPass,
+  };
+}
+
+const LOCAL_MARK_MAX = 2000;
+
+function isLocalHighlight(h) {
+  if (!h) return false;
+  if (h.source === "local") return true;
+  return String(h.id || "").startsWith("local-");
+}
+
+/** 删书时清掉该书全部划线/想法 */
+function removeBookHighlights(bookKey) {
+  const book = findBook(bookKey);
+  const key = book ? book.id : String(bookKey || "");
+  if (!key) return { book_id: key, removed: 0 };
+  const all = readAll();
+  const n = Array.isArray(all.byBook[key]) ? all.byBook[key].length : 0;
+  if (n || all.byBook[key]) {
+    delete all.byBook[key];
+    writeAll(all);
+  }
+  return { book_id: key, removed: n };
+}
+
+/**
+ * PWA 沉浸选中 → 本地划线（不写微信）。跟批走现有 followPending。
+ */
+function addLocalHighlight(bookKey, textIn) {
+  const book = findBook(bookKey);
+  if (!book) {
+    const err = new Error("找不到这本书");
+    err.code = "book_not_found";
+    throw err;
+  }
+  let text = String(textIn == null ? "" : textIn).replace(/^\uFEFF/, "").trim();
+  if (!text) {
+    const err = new Error("请先选中一段正文");
+    err.code = "empty_mark";
+    throw err;
+  }
+  if (text.length > LOCAL_MARK_MAX) {
+    text = text.slice(0, LOCAL_MARK_MAX);
+  }
+
+  const all = readAll();
+  const list = Array.isArray(all.byBook[book.id]) ? all.byBook[book.id].slice() : [];
+  const dup = list.find((h) => isLocalHighlight(h) && h.text === text);
+  if (dup) {
+    return {
+      book_id: book.id,
+      highlight: dup,
+      deduped: true,
+      highlights: getHighlights(book.id).highlights,
+    };
+  }
+
+  const h = {
+    id:
+      "local-" +
+      Date.now().toString(36) +
+      "-" +
+      Math.random().toString(36).slice(2, 7),
+    book_id: book.id,
+    weread_id: book.weread_id ? String(book.weread_id) : null,
+    weread_mark_id: null,
+    source: "local",
+    kind: "highlight",
+    text,
+    idea: null,
+    chapter_uid: null,
+    chapter_title: null,
+    created_at: Math.floor(Date.now() / 1000),
+    pass_ordinal: resolvePassOrdinal(book),
+  };
+  list.push(h);
+  all.byBook[book.id] = list;
+  writeAll(all);
+  return {
+    book_id: book.id,
+    highlight: h,
+    deduped: false,
+    highlights: getHighlights(book.id).highlights,
+  };
+}
+
+/**
+ * 本地想法（不写微信）。可选原文锚点 text；跟批靠 idea 字段（kind===idea）。
+ */
+function addLocalIdea(bookKey, ideaIn, { text: quoteIn } = {}) {
+  const book = findBook(bookKey);
+  if (!book) {
+    const err = new Error("找不到这本书");
+    err.code = "book_not_found";
+    throw err;
+  }
+  let idea = String(ideaIn == null ? "" : ideaIn).replace(/^\uFEFF/, "").trim();
+  if (!idea) {
+    const err = new Error("请先写一句想法");
+    err.code = "empty_idea";
+    throw err;
+  }
+  if (idea.length > LOCAL_MARK_MAX) {
+    idea = idea.slice(0, LOCAL_MARK_MAX);
+  }
+  let text = String(quoteIn == null ? "" : quoteIn).replace(/^\uFEFF/, "").trim();
+  if (text.length > LOCAL_MARK_MAX) {
+    text = text.slice(0, LOCAL_MARK_MAX);
+  }
+
+  const all = readAll();
+  const list = Array.isArray(all.byBook[book.id]) ? all.byBook[book.id].slice() : [];
+  const dup = list.find(
+    (h) =>
+      isLocalHighlight(h) &&
+      h.kind === "idea" &&
+      h.idea === idea &&
+      String(h.text || "") === text
+  );
+  if (dup) {
+    return {
+      book_id: book.id,
+      highlight: dup,
+      deduped: true,
+      highlights: getHighlights(book.id).highlights,
+    };
+  }
+
+  const h = {
+    id:
+      "local-" +
+      Date.now().toString(36) +
+      "-" +
+      Math.random().toString(36).slice(2, 7),
+    book_id: book.id,
+    weread_id: book.weread_id ? String(book.weread_id) : null,
+    weread_mark_id: null,
+    source: "local",
+    kind: "idea",
+    text,
+    idea,
+    chapter_uid: null,
+    chapter_title: null,
+    created_at: Math.floor(Date.now() / 1000),
+    pass_ordinal: resolvePassOrdinal(book),
+  };
+  list.push(h);
+  all.byBook[book.id] = list;
+  writeAll(all);
+  return {
+    book_id: book.id,
+    highlight: h,
+    deduped: false,
+    highlights: getHighlights(book.id).highlights,
   };
 }
 
@@ -539,6 +700,9 @@ if (require.main === module) {
   console.assert(passOfHighlight({}) === 1);
   console.assert(passOfHighlight({ pass_ordinal: 2 }) === 2);
   console.assert(passOfHighlight({ pass_ordinal: "3" }) === 3);
+  console.assert(isLocalHighlight({ source: "local" }));
+  console.assert(isLocalHighlight({ id: "local-abc" }));
+  console.assert(!isLocalHighlight({ id: "12345", source: "weread" }));
   // setHighlightPass：无书时应 book_not_found
   try {
     setHighlightPass("__no_book_xyz__", "h1", 1);
@@ -546,6 +710,39 @@ if (require.main === module) {
   } catch (e) {
     console.assert(e.code === "book_not_found", e.code);
   }
+  const { createLocalBookFromText, readBooks, writeBooks } = require("./books");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const prevBooks = readBooks().books;
+  const prevAll = readAll();
+  const put = createLocalBookFromText("选中这句话做本地划线。", {
+    filename: "划线自检.txt",
+  });
+  const mark = addLocalHighlight(put.book.id, "选中这句话做本地划线。");
+  console.assert(mark.highlight && mark.highlight.source === "local", mark);
+  console.assert(mark.highlight.text.includes("本地划线"));
+  const again = addLocalHighlight(put.book.id, "选中这句话做本地划线。");
+  console.assert(again.deduped === true);
+  const idea = addLocalIdea(put.book.id, "这句话让我想起别处。", {
+    text: "选中这句话做本地划线。",
+  });
+  console.assert(idea.highlight && idea.highlight.kind === "idea", idea);
+  console.assert(idea.highlight.idea.includes("别处"));
+  const ideaAgain = addLocalIdea(put.book.id, "这句话让我想起别处。", {
+    text: "选中这句话做本地划线。",
+  });
+  console.assert(ideaAgain.deduped === true);
+  try {
+    addLocalIdea(put.book.id, "   ");
+    throw new Error("expected empty_idea");
+  } catch (e) {
+    console.assert(e.code === "empty_idea", e.code);
+  }
+  try {
+    fs.unlinkSync(path.join(__dirname, "..", "data", "bodies", put.book.id + ".txt"));
+  } catch (_) {}
+  writeBooks(prevBooks);
+  writeAll(prevAll);
   const empty = searchNotes("");
   console.assert(empty.mode === "index" && Array.isArray(empty.books));
   const found = searchNotes("___no_such_token_xyz___");
@@ -585,6 +782,11 @@ module.exports = {
   exportNotesAll,
   syncHighlights,
   setHighlightPass,
+  addLocalHighlight,
+  addLocalIdea,
+  removeBookHighlights,
+  isLocalHighlight,
+  LOCAL_MARK_MAX,
   findBook,
   readAll,
   writeAll,

@@ -33,13 +33,16 @@ async function main() {
   const { tools } = await client.listTools();
   const names = tools.map((t) => t.name).sort();
   const need = [
+    "ask_idle_read",
     "end_coread",
     "get_last_session",
     "get_progress",
+    "get_recent_coread_context",
     "get_session_summary",
     "health_check",
     "list_bookshelf",
     "list_notes",
+    "open_book",
     "search_notes",
     "set_budget",
     "set_door_lock",
@@ -129,6 +132,15 @@ async function main() {
       }
     }
 
+    {
+      const opened = parseTool(
+        await client.callTool({ name: "open_book", arguments: { book_id: book.id } })
+      );
+      if (!opened.ok || !opened.selected || !opened.links || !opened.links.pwa_url) {
+        throw new Error("open_book failed: " + JSON.stringify(opened));
+      }
+    }
+
     const started = parseTool(
       await client.callTool({ name: "start_coread", arguments: { book_id: book.id } })
     );
@@ -156,6 +168,33 @@ async function main() {
     if (!resumed.ok || !resumed.resumed) throw new Error("resume expected");
     if (resumed.open.follow_mode !== "ideas") throw new Error("mode not persisted on resume");
 
+    {
+      const idle = parseTool(
+        await client.callTool({ name: "ask_idle_read", arguments: { limit: 3 } })
+      );
+      if (!idle.ok || idle.open !== true || !Array.isArray(idle.entries)) {
+        throw new Error("ask_idle_read open: " + JSON.stringify(idle));
+      }
+    }
+
+    {
+      const ctx = parseTool(
+        await client.callTool({
+          name: "get_recent_coread_context",
+          arguments: { limit: 5 },
+        })
+      );
+      if (
+        !ctx.ok ||
+        ctx.open !== true ||
+        !ctx.book ||
+        ctx.book.id !== book.id ||
+        !Array.isArray(ctx.entries)
+      ) {
+        throw new Error("get_recent_coread_context open: " + JSON.stringify(ctx));
+      }
+    }
+
     const ended = parseTool(await client.callTool({ name: "end_coread", arguments: {} }));
     if (!ended.ok || !ended.session) throw new Error("end_coread failed");
     if (ended.lore_written) throw new Error("end without write_lore should not write lore");
@@ -163,6 +202,24 @@ async function main() {
     const last = parseTool(await client.callTool({ name: "get_last_session", arguments: {} }));
     if (!last.session || last.session.id !== ended.session.id) {
       throw new Error("get_last_session mismatch");
+    }
+
+    {
+      const ctx = parseTool(
+        await client.callTool({
+          name: "get_recent_coread_context",
+          arguments: { limit: 5 },
+        })
+      );
+      if (
+        !ctx.ok ||
+        ctx.open !== false ||
+        !ctx.session ||
+        ctx.session.id !== ended.session.id ||
+        !Array.isArray(ctx.entries)
+      ) {
+        throw new Error("get_recent_coread_context closed: " + JSON.stringify(ctx));
+      }
     }
 
     const byOmit = parseTool(
@@ -191,7 +248,15 @@ async function main() {
     }
 
     {
-      const lorePrev = String(readSettings().lore_summary || "");
+      const idleClosed = parseTool(
+        await client.callTool({ name: "ask_idle_read", arguments: {} })
+      );
+      if (!idleClosed.ok || idleClosed.open !== false) {
+        throw new Error("ask_idle_read closed: " + JSON.stringify(idleClosed));
+      }
+    }
+
+    {
       const started2 = parseTool(
         await client.callTool({ name: "start_coread", arguments: { book_id: book.id } })
       );
@@ -202,11 +267,14 @@ async function main() {
           arguments: { write_lore: true },
         })
       );
-      if (!withLore.ok || !withLore.lore_written || !String(withLore.lore_summary || "").includes("【本场")) {
-        patchSettings({ lore_summary: lorePrev });
+      if (
+        !withLore.ok ||
+        !withLore.lore_written ||
+        !withLore.pass_lore ||
+        !String(withLore.pass_lore.text || withLore.lore_summary || "").includes("【本场")
+      ) {
         throw new Error("end_coread write_lore failed: " + JSON.stringify(withLore));
       }
-      patchSettings({ lore_summary: lorePrev });
     }
   } finally {
     if (wasLocked) {
