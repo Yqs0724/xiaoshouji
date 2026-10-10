@@ -1,0 +1,30 @@
+  <div class="view" id="view-cal">
+    <header class="cal-bar">
+      <button type="button" class="back" id="btnCalBack" title="回桌面" aria-label="回桌面">←</button>
+      <div class="cal-nav">
+        <button type="button" id="btnCalPrev" aria-label="上一月">‹</button>
+        <div class="ym" id="calYm">—</div>
+        <button type="button" id="btnCalNext" aria-label="下一月">›</button>
+      </div>
+      <img class="mascot" src="/assets/cafe/fresh-shake.png?v=fresh1" alt="" />
+    </header>
+    <section class="cal-month" aria-label="月历">
+      <img class="cal-float a" src="/assets/cafe/fresh-biscuit.png?v=fresh1" alt="" />
+      <img class="cal-float b" src="/assets/cafe/fresh-cookie.png?v=fresh1" alt="" />
+      <img class="cal-float c" src="/assets/cafe/fresh-cat.png?v=fresh1" alt="" />
+      <div class="cal-weekhead" aria-hidden="true">
+        <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+    </section>
+    <section class="cal-agenda" aria-label="当日安排">
+      <div class="cal-day-head"><span id="calDayHead">今日</span><img src="/assets/cafe/fresh-cup.png?v=fresh1" alt="" /></div>
+      <ul class="cal-list" id="calDayList"></ul>
+      <div class="cal-add">
+        <input id="calNewTitle" type="text" maxlength="120" placeholder="写点今天的安排…" autocomplete="off" />
+        <button type="button" id="btnCalAdd">添加</button>
+      </div>
+      <div class="cal-msg" id="calMsg"></div>
+      <p class="cal-note">只记现实时间。剧情日程请放 Chatbox / 剧情摘要。</p>
+    </section>
+  </div>

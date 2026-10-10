@@ -1,0 +1,13 @@
+  <div class="view" id="view-chat">
+    <header class="wx-bar">
+      <button type="button" class="back" id="btnChatBack" title="回桌面" aria-label="回桌面">←</button>
+      <div class="who" id="chatPeerName">家机</div>
+      <div class="hint">日常短讯<br />非正剧</div>
+    </header>
+    <div class="wx-thread" id="chatThread" aria-live="polite"></div>
+    <div class="wx-err" id="chatErr" hidden></div>
+    <form class="wx-composer" id="chatForm">
+      <input id="dailyChatInput" type="text" maxlength="800" placeholder="发条短讯…" autocomplete="off" />
+      <button type="submit" id="btnChatSend">发送</button>
+    </form>
+  </div>

@@ -1,0 +1,20 @@
+  <div class="view" id="view-cowatch-play">
+    <header class="cw-bar">
+      <button type="button" class="back" id="btnCowatchPlayBack" title="回片库" aria-label="回片库">←</button>
+      <div class="title" id="cowatchPlayTitle">共看</div>
+      <button type="button" class="fs" id="btnCowatchFs" title="全屏弹幕">全屏</button>
+      <button type="button" class="end" id="btnCowatchEnd" title="结束本场">结束本场</button>
+    </header>
+    <div class="cwp-stage">
+      <video id="cowatchVideo" controls playsinline preload="metadata"></video>
+      <div class="cwp-danmaku" id="cowatchDanmaku" aria-hidden="true"></div>
+    </div>
+    <div class="cwp-chat" aria-label="本场吐槽">
+      <div class="thread" id="cowatchSpitThread"></div>
+      <form class="composer" id="cowatchSpitForm">
+        <input type="text" id="cowatchSpitInput" maxlength="400" placeholder="说句吐槽…" autocomplete="off" />
+        <button type="button" class="plus" id="btnCowatchPlus" title="本场设置" aria-label="本场设置">＋</button>
+        <button type="submit" id="btnCowatchSpit">发送</button>
+      </form>
+    </div>
+  </div>

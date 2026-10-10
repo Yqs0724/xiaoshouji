@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-  <title>共读小屋 · 素材试用 DEMO（复古卡片）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Ariadne 小手机 · UI DEMO（素材皮）</title>
   <style>
     :root {
       --bg: #2a2420;
@@ -12,955 +12,1037 @@
       --ink: #3a2e24;
       --muted: #8a7a6a;
       --line: #e5d9c8;
-      --accent: #8b5a3c;
-      --ok: #6a8f6e;
-      --cafe-wall: #ebe4d6;
-      --cafe-floor: #c4a882;
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --accent: #5c4033;
+      --mint: #9ec9bc;
+      --mint-deep: #6fa896;
+      --mint-bg: rgba(158, 201, 188, 0.4);
+      --choc: #5c4033;
+      --card: rgba(255, 252, 247, 0.94);
+      --A: "assets/cafe/";
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     * { scrollbar-width: none; }
-    *::-webkit-scrollbar {
-      width: 0;
-      height: 0;
-      display: none;
-    }
+    *::-webkit-scrollbar { width: 0; height: 0; display: none; }
     body {
       min-height: 100vh;
-      background: radial-gradient(ellipse at 50% 10%, #4a3f36 0%, var(--bg) 65%);
+      background: radial-gradient(ellipse at 50% 8%, #4a3f36 0%, var(--bg) 65%);
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--ink);
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 20px 12px 36px;
-      gap: 14px;
+      padding: 14px 10px 24px;
+      gap: 10px;
     }
     .banner {
       max-width: 400px;
       color: #d4c4b0;
-      font-size: 12.5px;
+      font-size: 12px;
       line-height: 1.55;
       text-align: center;
     }
     .banner strong { color: #f0e6d8; }
     .phone {
       width: min(390px, 100%);
-      height: min(780px, 92vh);
-      background: var(--shell);
-      border-radius: 36px;
-      padding: 10px;
+      height: min(800px, 93vh);
+      background: linear-gradient(160deg, #4a3f36, #2e2822);
+      border-radius: 38px;
+      padding: 11px;
       box-shadow: 0 24px 60px rgba(0,0,0,.45);
     }
     .screen {
       height: 100%;
       background: var(--paper);
-      border-radius: 28px;
+      border-radius: 30px;
       overflow: hidden;
       position: relative;
-      display: flex;
-      flex-direction: column;
     }
-    .view { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .view {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      min-height: 0;
+    }
     .view.active { display: flex; }
 
-    /* 待机 */
-    .standby {
-      background: linear-gradient(180deg, #d5e0e8 0%, var(--paper) 40%);
-    }
-    .ambient {
-      height: 56px;
-      margin: 14px 16px 0;
-      border-radius: 14px;
-      background: linear-gradient(90deg, rgba(255,255,255,.4), rgba(255,210,150,.5), rgba(255,255,255,.25));
-      animation: breathe 4.2s ease-in-out infinite;
-    }
-    @keyframes breathe {
-      0%,100% { opacity: .7; }
-      50% { opacity: 1; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .ambient { animation: none; }
-    }
-    .standby-body {
-      flex: 1;
+    .topbar {
       display: flex;
-      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 24px;
-      text-align: center;
-      padding: 20px;
-    }
-    .greet { font-size: 26px; font-weight: 500; }
-    .continue-row {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
+      gap: 8px;
+      padding: 11px 12px 9px;
       font-size: 15px;
-      color: var(--accent);
-      padding: 8px 16px 8px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(139,90,60,.3);
-      background: rgba(139,90,60,.08);
-      cursor: pointer;
-    }
-    .continue-row img { width: 36px; height: 36px; object-fit: contain; }
-    .swipe-hint {
-      padding-bottom: calc(24px + var(--safe-bottom));
-      color: var(--muted);
-      font-size: 13px;
-      text-align: center;
-      cursor: pointer;
-    }
-
-    /* 小屋 · 复古卡片 + 底栏 Tab · 壁纸嵌在边框里不铺满 */
-    #view-cabin {
-      background: linear-gradient(180deg, #f3ebe0 0%, #ebe2d4 100%);
-    }
-    .cabin-top {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 12px 16px 8px;
-      font-size: 22px;
-      font-weight: 700;
+      font-weight: 600;
+      border-bottom: 1px solid var(--line);
+      background: rgba(247, 241, 232, 0.94);
       flex-shrink: 0;
-      background: transparent;
       z-index: 2;
     }
-    .cabin-top .spacer { flex: 1; }
-    .cabin-top .down {
-      color: var(--muted); cursor: pointer; font-weight: 400; font-size: 22px;
-      padding: 4px 8px 4px 0; line-height: 1;
+    .topbar .back {
+      border: 0; background: transparent; color: var(--choc);
+      font-size: 18px; cursor: pointer; padding: 4px 6px;
     }
-    .cabin-top .deco-mini {
-      width: 28px; height: 28px; object-fit: contain; opacity: .9;
-    }
-
-    /* 壁纸画框：四周留奶油边 + 和纸/角贴 */
-    .cabin-frame {
-      flex: 1;
-      min-height: 0;
-      margin: 0 10px;
-      position: relative;
-      display: flex;
-      flex-direction: column;
-      border-radius: 18px;
-      overflow: hidden;
-      background-color: #c5d4cc;
-      background-image: url("assets/cafe/wall.jpg");
-      background-size: 140px;
-      background-repeat: repeat;
-      border: 2px solid rgba(180,150,120,.45);
-      box-shadow:
-        0 6px 18px rgba(90,70,50,.12),
-        inset 0 0 0 1px rgba(255,255,255,.35);
-    }
-    .frame-washi {
-      flex-shrink: 0;
-      height: 20px;
-      background: url("assets/cafe/washi.png") center / auto 100% repeat-x;
-      opacity: .95;
-      z-index: 2;
-    }
-    .frame-washi.bot {
-      background-image: url("assets/cafe/washi2.png");
-    }
-    .frame-corner {
-      position: absolute;
-      width: 36px;
-      height: 36px;
-      object-fit: contain;
-      z-index: 3;
-      pointer-events: none;
-      filter: drop-shadow(0 1px 2px rgba(60,40,20,.2));
-    }
-    .frame-corner.tl {
-      top: 14px;
-      left: 6px;
-      width: 50px;
-      height: 38px;
-      transform: rotate(-6deg);
-      opacity: .96;
-      filter: brightness(0) invert(1)
-        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
-        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
-    }
-    .frame-corner.tr {
-      top: 10px;
-      right: 4px;
-      width: 50px;
-      height: 38px;
-      transform: rotate(6deg);
-      opacity: .96;
-      filter: brightness(0) invert(1)
-        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
-        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
-    }
-    .frame-corner.bl { bottom: 14px; left: 6px; transform: rotate(6deg); }
-    .frame-corner.br { bottom: 14px; right: 6px; transform: rotate(-12deg); width: 34px; height: 34px; }
-
-    .cabin-body {
-      flex: 1;
-      min-height: 0;
-      overflow: auto;
-      padding: 10px 12px 8px;
-      position: relative;
-      z-index: 1;
-    }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-
-    .r-card {
-      background: rgba(255,252,247,.94);
-      border: 1px solid rgba(200,180,160,.55);
-      border-radius: 18px;
-      padding: 14px;
-      margin-bottom: 12px;
-      box-shadow: 0 4px 14px rgba(90,70,50,.08);
-    }
-    .r-card.continue {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-    }
-    .r-card.continue img.cover {
-      width: 52px; height: 52px; object-fit: contain;
-      flex-shrink: 0;
-    }
-    .r-card .t { font-weight: 700; font-size: 15px; }
-    .r-card .s { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
-    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .pill-tag {
-      font-size: 11px;
-      padding: 3px 10px;
-      border-radius: 999px;
-      border: 0;
-      cursor: pointer;
-      color: #5c4030;
-    }
-    .pill-tag.a { background: #e8d5f0; }
-    .pill-tag.b { background: #d5ebe3; }
-    .pill-tag.c { background: #f5e0c8; }
-    .pill-tag.d { background: #f0d5d8; }
-
-    .book-row {
-      display: flex;
-      gap: 12px;
-      align-items: flex-start;
-      cursor: pointer;
-    }
-    .book-row .thumb {
-      width: 56px; height: 72px;
-      border-radius: 10px;
-      background: linear-gradient(160deg, #c4a070, #8b5a3c);
-      flex-shrink: 0;
-      display: grid; place-items: center;
-      overflow: hidden;
-      border: 1px solid rgba(90,70,50,.2);
-    }
-    .book-row .thumb img { width: 70%; height: auto; object-fit: contain; }
-    .book-row .meta {
-      font-size: 11px; color: var(--muted); margin-top: 8px;
+    .topbar .spacer { flex: 1; }
+    .topbar .act {
+      border: 0; background: transparent; color: var(--muted);
+      font-size: 12px; cursor: pointer;
     }
 
-    .stat-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-    .stat-card {
-      background: rgba(255,252,247,.92);
-      border: 1px solid rgba(200,180,160,.55);
-      border-radius: 18px;
-      padding: 14px 12px;
-      text-align: center;
-      box-shadow: 0 4px 12px rgba(90,70,50,.07);
-    }
-    .stat-card .ico {
-      width: 40px; height: 40px; margin: 0 auto 8px;
-      border-radius: 50%;
-      background: rgba(180,210,200,.35);
-      display: grid; place-items: center;
-    }
-    .stat-card .ico img { width: 26px; height: 26px; object-fit: contain; }
-    .stat-card .lab { font-size: 11px; color: var(--muted); }
-    .stat-card .num { font-size: 18px; font-weight: 700; margin-top: 4px; color: #5c4030; }
-
-    .seg {
-      display: flex;
-      background: rgba(255,252,247,.85);
-      border-radius: 999px;
-      padding: 3px;
-      margin-bottom: 12px;
-      border: 1px solid rgba(200,180,160,.45);
-      gap: 2px;
-    }
-    .seg button {
-      flex: 1; border: 0; background: transparent;
-      border-radius: 999px; padding: 6px 0;
-      font-size: 11px; color: var(--muted); cursor: pointer;
-    }
-    .seg button.on {
-      background: rgba(180,210,200,.55);
-      color: #3d2818; font-weight: 600;
-    }
-
-    .bars {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 6px;
-      height: 100px;
-      margin-top: 12px;
-      padding: 0 4px;
-    }
-    .bars .col {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-    }
-    .bars .v { font-size: 9px; color: var(--muted); }
-    .bars .bar {
-      width: 100%;
-      max-width: 28px;
-      border-radius: 8px 8px 4px 4px;
-      background: linear-gradient(180deg, #8fbf9a, #6a8f6e);
-      min-height: 8px;
-    }
-    .bars .d { font-size: 10px; color: var(--muted); }
-
-    .settings .row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 0; border-bottom: 1px solid rgba(200,180,160,.4); font-size: 14px;
-    }
-    .settings .row:last-child { border-bottom: 0; }
-    .settings .row small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
-    .toggle {
-      width: 42px; height: 24px; border-radius: 999px;
-      background: #ccc; border: 0; position: relative; cursor: pointer;
-    }
-    .toggle.on { background: var(--ok); }
-    .toggle::after {
-      content: ""; position: absolute; top: 3px; left: 3px;
-      width: 18px; height: 18px; border-radius: 50%; background: #fff;
-    }
-    .toggle.on::after { left: 21px; }
-
-    .tabs-dock {
-      flex-shrink: 0;
-      padding: 8px 14px calc(10px + var(--safe-bottom));
-      background: transparent;
-    }
-    .tabs {
-      display: flex;
-      align-items: center;
-      justify-content: space-around;
-      background: rgba(255,252,247,.78);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid rgba(255,255,255,.65);
-      border-radius: 999px;
-      padding: 8px 6px 6px;
-      box-shadow: 0 6px 20px rgba(90,70,50,.12);
-    }
-    .tabs button {
-      flex: 1;
-      border: 0;
-      background: transparent;
-      cursor: pointer;
-      color: var(--muted);
-      font-size: 10px;
-      padding: 2px 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-    }
-    .tabs button img {
-      width: 22px; height: 22px; object-fit: contain; opacity: .7;
-    }
-    .tabs button.on { color: #5c4030; font-weight: 600; }
-    .tabs button.on img { opacity: 1; }
-
-    /* 共读 · 薄荷巧克力点缀，正文区仍干净 */
-    .coread {
-      background-color: #f3f6f4;
-      background-image:
-        linear-gradient(180deg, rgba(243,246,244,.92) 0%, rgba(250,246,240,.94) 40%, rgba(250,246,240,.96) 100%),
-        url("assets/cafe/wall.jpg");
-      background-size: auto, 220px;
-      background-repeat: no-repeat, repeat;
-    }
-    .cr-top {
-      display: flex; align-items: center; gap: 8px;
-      padding: 12px;
-      border-bottom: none;
-      background: rgba(247,241,232,.92);
-      position: relative;
-      z-index: 2;
-    }
-    .cr-top .title {
-      flex: 1; font-size: 14px; font-weight: 600;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .cr-top .clock-slot { font-size: 12px; color: var(--muted); min-width: 36px; }
-    .cr-top .more { border: 0; background: transparent; font-size: 20px; cursor: pointer; }
-    .cr-washi {
-      height: 18px;
-      background: url("assets/cafe/washi2.png") center / auto 100% repeat-x;
-      flex-shrink: 0;
-      opacity: .9;
-    }
-    .cr-filter {
-      padding: 6px 12px;
-      font-size: 11px;
-      color: var(--muted);
-      background: rgba(196, 220, 210, .35);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .cr-filter img { width: 18px; height: 18px; object-fit: contain; opacity: .85; }
-    .msgs {
-      flex: 1; overflow: auto; padding: 12px 14px 8px;
-      display: flex; flex-direction: column; gap: 14px;
-      position: relative;
-    }
-    .msgs-deco {
-      position: absolute;
-      width: 52px; height: 52px;
-      opacity: .22;
-      pointer-events: none;
-      z-index: 0;
-    }
-    .msgs-deco.tl { top: 8px; right: 6px; }
-    .msgs-deco.br { bottom: 12px; left: 4px; width: 44px; height: 44px; }
-    .msg { display: flex; gap: 8px; position: relative; z-index: 1; }
-    .av {
-      width: 32px; height: 32px; border-radius: 50%;
-      overflow: hidden; flex-shrink: 0; background: #e8dfd4;
-      box-shadow: 0 0 0 2px rgba(180, 210, 200, .5);
-    }
-    .av img { width: 100%; height: 100%; object-fit: cover; }
-    .bubble-wrap { flex: 1; min-width: 0; }
-    .bubble-head {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-    .bubble-head .think {
-      font-size: 11px; color: #7a6b3a; margin: 0; flex: 1;
-    }
-    .variant-pager {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      color: var(--muted);
-      flex-shrink: 0;
+    /* —— 锁屏（iPhone：状态栏 + 时日靠上） —— */
+    #view-lock {
+      background: #222 center / cover no-repeat;
+      color: #fff;
+      justify-content: flex-start;
+      padding: 0 0 26px;
       user-select: none;
     }
-    .variant-pager button {
-      border: 0;
-      background: transparent;
-      color: var(--muted);
-      cursor: pointer;
-      padding: 2px 4px;
+    .status-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px 0;
+      font-size: 12px;
+      font-weight: 600;
+      flex-shrink: 0;
+      text-shadow: 0 1px 3px rgba(0,0,0,.35);
+      z-index: 2;
+    }
+    .status-bar .right { display: flex; gap: 7px; align-items: center; font-weight: 500; font-size: 11px; }
+    .lock-body {
+      text-align: center;
+      margin-top: 28px;
+      padding: 0 18px;
+      text-shadow: 0 2px 10px rgba(0,0,0,.35);
+    }
+    .lock-time { font-size: 72px; font-weight: 200; letter-spacing: 1px; line-height: 1; }
+    .lock-date { margin-top: 6px; font-size: 16px; font-weight: 500; opacity: .96; }
+    .lock-agenda {
+      margin: 18px auto 0; max-width: 280px;
+      padding: 9px 14px; border-radius: 14px;
+      background: rgba(255,255,255,.22);
+      backdrop-filter: blur(8px);
       font-size: 13px;
-      line-height: 1;
     }
-    .variant-pager button:disabled { opacity: .35; cursor: default; }
-    .variant-pager .n { min-width: 2.6em; text-align: center; font-variant-numeric: tabular-nums; }
-    .think { font-size: 11px; color: #7a6b3a; margin-bottom: 4px; }
-    .quote {
-      font-size: 12px; color: var(--muted);
-      border-left: 3px solid #a8c9bc; padding-left: 8px; margin-bottom: 6px;
-    }
-    .bubble {
-      background: rgba(255,255,255,.94);
-      border-radius: 12px; padding: 10px 12px;
-      font-size: 14px; line-height: 1.55;
-      border: 1px solid rgba(200, 185, 170, .65);
-      box-shadow: 0 1px 0 rgba(168, 201, 188, .25);
-    }
-    .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
-    .actions {
-      display: inline-flex; margin-top: 6px;
-      background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
-    }
-    .actions button {
-      border: 0; background: transparent; padding: 7px 11px; font-size: 14px;
-      cursor: pointer; color: #5c4a3a; line-height: 1;
-    }
-    .actions button:hover { background: #f3eee6; }
-    .actions button + button { border-left: 1px solid var(--line); }
-    .session-tape {
-      align-self: center;
-      width: min(220px, 70%);
-      height: 14px;
-      background: url("assets/cafe/washi3.png") center / cover no-repeat;
-      margin: 4px 0 2px;
-      opacity: .75;
-      position: relative; z-index: 1;
-    }
-    .composer {
-      margin: 0 10px calc(10px + var(--safe-bottom));
-      background: rgba(235, 227, 214, .95);
-      border-radius: 16px;
-      padding: 0 10px 8px;
-      border: 1px solid rgba(168, 201, 188, .35);
-      position: relative;
+    .lock-spacer { flex: 1; }
+    .lock-hint { text-align: center; font-size: 13px; opacity: .9; padding-bottom: 4px; }
+
+    /* —— 桌面：一屏铺满不纵向滚动；组件保留；图标改清爽方块 —— */
+    #view-home {
+      background: #ddd center / cover no-repeat;
       overflow: hidden;
     }
-    .composer-washi {
-      height: 14px;
-      margin: 0 -10px 6px;
-      background: url("assets/cafe/washi.png") center / auto 100% repeat-x;
-      opacity: .88;
-    }
-    .composer .row-input {
+    .home-main {
+      position: relative; z-index: 1;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      padding: 6px 12px 0;
       display: flex;
-      align-items: center;
-      min-width: 0;
-      padding: 4px 0 2px;
+      flex-direction: column;
+      gap: 8px;
     }
-    .composer input {
-      flex: 1; border: 0; background: transparent; font-size: 14px;
-      padding: 8px 4px; outline: none; width: 100%;
-    }
-    .composer .tools {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: nowrap;
-      padding: 2px 0 0;
-      overflow-x: auto;
-    }
-    .tools button {
-      border: 0; background: transparent; font-size: 12px; color: var(--muted);
-      cursor: pointer; padding: 4px; flex-shrink: 0;
-    }
-    .tools button.on { color: var(--accent); font-weight: 600; }
-    .tools .tool-ico {
-      width: 20px; height: 20px; object-fit: contain; vertical-align: middle;
-      margin-right: 2px; opacity: .9;
-    }
-    .tools .pill {
+    #view-home > .status-bar {
+      color: var(--choc);
+      text-shadow: 0 1px 0 rgba(255,255,255,.35);
       flex-shrink: 0;
-      background: #5c4a3a; color: #fff; border-radius: 999px;
-      padding: 5px 10px; font-size: 11px; cursor: pointer; border: 0;
-      white-space: nowrap;
     }
-    .tools .send {
-      margin-left: auto;
-      width: 32px; height: 32px; border-radius: 50%;
-      border: 0; background: #5c4a3a; color: #fff; cursor: pointer;
-      font-size: 14px; flex-shrink: 0; padding: 0;
+    .widget-row {
+      display: grid;
+      grid-template-columns: 1.12fr 0.88fr;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .wid {
+      background: var(--card);
+      border-radius: 16px;
+      border: 1.5px solid rgba(92,64,51,.18);
+      box-shadow: 0 3px 12px rgba(58,46,36,.1);
+      overflow: hidden;
+    }
+    .wid-cal .hero {
+      height: 52px;
+      background: linear-gradient(120deg, #d8efe6, #f0ebe3);
+      position: relative;
+    }
+    .wid-cal .hero img {
+      position: absolute; right: 4px; bottom: -6px; height: 58px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,.12));
+    }
+    .wid-cal .panel { padding: 6px 9px 8px; }
+    .wid-cal .title {
+      font-size: 12px; font-weight: 700; color: var(--choc);
+    }
+    .wid-cal .sub { font-size: 9px; color: var(--muted); margin-top: 1px; }
+    .week {
+      display: flex;
+      margin-top: 6px; font-size: 8px; color: var(--muted);
+    }
+    .week > span {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center;
+      gap: 2px; min-width: 0;
+    }
+    .week b {
+      display: grid; place-items: center;
+      width: 16px; height: 16px; border-radius: 50%;
+      font-weight: 600; color: var(--ink); font-size: 9px;
+    }
+    .week b.on { background: var(--choc); color: #fff; }
+    .wid-menu {
+      padding: 7px 8px 8px;
+      background:
+        linear-gradient(180deg, rgba(158,201,188,.35), transparent 40%),
+        var(--card);
+    }
+    .wid-menu h4 {
+      font-size: 11px; color: var(--choc);
+      border-bottom: 1px dashed var(--line); padding-bottom: 3px; margin-bottom: 4px;
+    }
+    .wid-menu li {
+      list-style: none; font-size: 10px; padding: 2px 0;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .wid-menu li img { width: 14px; height: 14px; object-fit: contain; }
+    .avatars {
+      display: flex; justify-content: center; gap: 22px;
+      padding: 0; flex-shrink: 0;
+    }
+    .av { text-align: center; cursor: pointer; user-select: none; }
+    .av .face {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 2px solid var(--mint);
+      background: #fff;
+      box-shadow: 0 3px 10px rgba(0,0,0,.1);
+      position: relative; overflow: visible;
+    }
+    .av .face img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .av .deco {
+      position: absolute; right: -6px; bottom: -3px; width: 20px; height: 20px;
+      object-fit: contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,.2));
+    }
+    .av .lab { font-size: 10px; color: var(--choc); margin-top: 4px; font-weight: 600; }
+    .capsule {
+      align-self: center;
+      background: rgba(92,64,51,.82);
+      color: #f7f1e8; font-size: 11px;
+      padding: 5px 12px; border-radius: 999px;
+      cursor: pointer; border: 0;
+      flex-shrink: 0;
+    }
+    .pager {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      display: flex;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+      cursor: grab;
+    }
+    .pager:active { cursor: grabbing; }
+    .page {
+      flex: 0 0 100%;
+      width: 100%;
+      min-width: 100%;
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: auto auto;
+      gap: 10px 4px;
+      padding: 4px 0 0;
+      align-content: center;
+      justify-items: center;
+      box-sizing: border-box;
+    }
+    .app-ico {
+      border: 0; background: transparent; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      color: var(--ink); position: relative;
+      width: 100%;
+      max-width: 72px;
+    }
+    .app-ico .ico {
+      width: 54px; height: 54px;
+      display: grid; place-items: center;
+      position: relative;
+      border-radius: 16px;
+      background: #fff9f3;
+      border: 2px dashed #c4a484;
+      box-shadow: 0 4px 10px rgba(58,46,36,.1);
+    }
+    .app-ico .ico img {
+      width: 70%; height: 70%; object-fit: contain;
+      position: relative; z-index: 1;
+      filter: drop-shadow(0 2px 3px rgba(58,46,36,.12));
+    }
+    .app-ico .name {
+      font-size: 10px; color: var(--choc); font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .app-ico .badge {
+      position: absolute; top: -2px; right: calc(50% - 30px);
+      min-width: 15px; height: 15px; padding: 0 3px;
+      border-radius: 8px; background: #c45c4a; color: #fff;
+      font-size: 9px; line-height: 15px; z-index: 2;
+    }
+    .pager-dots {
+      display: flex; justify-content: center; gap: 6px;
+      padding: 6px 0 2px;
+      flex-shrink: 0;
+    }
+    .pager-dots i {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(92,64,51,.25);
+    }
+    .pager-dots i.on { background: var(--choc); }
+    .dock {
+      flex-shrink: 0;
+      margin: 0 14px 4px;
+      height: 58px; border-radius: 18px;
+      background: rgba(255, 252, 247, .72);
+      border: 1px solid rgba(255,255,255,.75);
+      box-shadow: 0 4px 14px rgba(58,46,36,.08);
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 0 6px;
+      backdrop-filter: blur(8px);
+    }
+    .dock .app-ico .ico { width: 46px; height: 46px; }
+    .dock .app-ico .ico img { width: 68%; height: 68%; }
+    .dock .app-ico .name { display: none; }
+    .home-ind {
+      width: 100px; height: 4px; border-radius: 2px;
+      background: rgba(92,64,51,.35);
+      margin: 0 auto 10px; flex-shrink: 0;
+    }
+    .app-ico .name {
+      font-size: 10px; color: var(--choc); font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+    .app-ico .badge {
+      position: absolute; top: -2px; right: calc(50% - 30px);
+      min-width: 15px; height: 15px; padding: 0 3px;
+      border-radius: 8px; background: #c45c4a; color: #fff;
+      font-size: 9px; line-height: 15px; z-index: 2;
+    }
+    .pager-dots {
+      display: flex; justify-content: center; gap: 6px;
+      padding: 6px 0 2px;
+      flex-shrink: 0;
+    }
+    .pager-dots i {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: rgba(92,64,51,.25);
+    }
+    .pager-dots i.on { background: var(--choc); }
+    .dock {
+      flex-shrink: 0;
+      margin: 0 14px 4px;
+      height: 58px; border-radius: 18px;
+      background: rgba(255, 252, 247, .72);
+      border: 1px solid rgba(255,255,255,.75);
+      box-shadow: 0 4px 14px rgba(58,46,36,.08);
+      display: flex; align-items: center; justify-content: space-around;
+      padding: 0 6px;
+      backdrop-filter: blur(8px);
+    }
+    .dock .app-ico .ico { width: 46px; height: 46px; }
+    .dock .app-ico .ico img { width: 68%; height: 68%; }
+    .dock .app-ico .name { display: none; }
+    .home-ind {
+      width: 100px; height: 4px; border-radius: 2px;
+      background: rgba(92,64,51,.35);
+      margin: 0 auto 10px; flex-shrink: 0;
     }
 
-    .sheet, .toast-wrap, .drawer {
-      position: absolute; inset: 0; background: rgba(0,0,0,.35);
-      display: none; z-index: 20;
+    .body {
+      flex: 1; overflow-y: auto; padding: 12px 14px 16px; min-height: 0;
     }
-    .sheet { align-items: flex-end; }
-    .sheet.open, .toast-wrap.open { display: flex; }
-    .drawer.open { display: flex; justify-content: flex-end; }
-    .sheet-panel {
-      width: 100%; background: #fff; border-radius: 16px 16px 0 0;
-      padding: 8px 0 calc(16px + var(--safe-bottom));
+    .row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 12px; background: var(--card);
+      border-radius: 12px; margin-bottom: 8px;
+      border: 1px solid var(--line); cursor: pointer;
     }
-    .sheet-panel button {
-      display: block; width: 100%; border: 0; background: transparent;
-      padding: 14px 20px; text-align: left; font-size: 15px; cursor: pointer;
-      border-bottom: 1px solid var(--line);
+    .row img.thumb { width: 36px; height: 36px; object-fit: contain; }
+    .row .meta { font-size: 12px; color: var(--muted); }
+    .hint { font-size: 12px; color: var(--muted); line-height: 1.5; padding: 6px 2px; }
+    .chip {
+      display: inline-block; font-size: 11px; padding: 2px 8px;
+      border-radius: 999px; background: var(--mint-bg); color: var(--ink);
     }
-    .sheet-panel button.danger { color: #a33; }
-    .sheet-panel .cancel { text-align: center; color: var(--muted); border: 0; }
-    .toast {
-      margin: auto 24px calc(80px + var(--safe-bottom));
-      background: rgba(58,46,36,.92); color: #fff;
-      padding: 12px 16px; border-radius: 12px; font-size: 13px;
+
+    .profile-faces {
+      display: flex; justify-content: center; gap: 28px; padding: 18px 0 10px;
     }
-    .drawer-panel {
-      width: 78%; height: 100%; background: var(--paper);
-      padding: 20px 16px; box-shadow: -8px 0 24px rgba(0,0,0,.15);
+    .profile-faces .big {
+      width: 92px; height: 92px; border-radius: 50%;
+      border: 3px solid var(--mint); overflow: hidden; background: #fff;
     }
-    .drawer-panel .close {
-      margin-top: 16px; width: 100%; padding: 10px;
-      border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer;
+    .profile-faces .big img { width: 100%; height: 100%; object-fit: cover; }
+    .deco-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .deco-bar button {
+      border: 1px solid var(--line); background: var(--card);
+      border-radius: 12px; padding: 6px; cursor: pointer; width: 48px; height: 48px;
+    }
+    .deco-bar button img { width: 100%; height: 100%; object-fit: contain; }
+    .deco-bar button.on { outline: 2px solid var(--mint-deep); }
+
+    #view-cabin .cabin-stage {
+      flex: 1; margin: 10px; border-radius: 16px;
+      background: center/cover no-repeat;
+      border: 1px solid var(--line); position: relative; overflow: hidden;
+    }
+    #view-cabin .cabin-stage::after {
+      content: ""; position: absolute; inset: 0;
+      background: rgba(247,241,232,.42);
+    }
+    .hot {
+      position: absolute; z-index: 2;
+      border: 1px dashed rgba(92,64,51,.4);
+      border-radius: 8px; background: rgba(255,255,255,.35);
+      font-size: 11px; color: var(--ink);
+      display: grid; place-items: center; cursor: pointer; text-align: center;
+    }
+    .sprite {
+      position: absolute; z-index: 3; width: 40px; height: 40px;
+      border-radius: 50%; border: 2px solid var(--mint);
+      overflow: hidden; background: #fff;
+      transition: left .35s ease, top .35s ease;
+    }
+    .sprite img { width: 100%; height: 100%; object-fit: cover; }
+    .bubble-toast {
+      position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+      background: var(--card); border: 1px solid var(--line);
+      border-radius: 12px; padding: 8px 12px; font-size: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.12); z-index: 5;
+      display: none; max-width: 82%;
+    }
+    .bubble-toast.show { display: block; }
+
+    #view-cowatch-play { background: #1a1816; color: #f7f1e8; }
+    #view-cowatch-play .topbar { background: #24201c; border-color: #333; color: #f7f1e8; }
+    #view-cowatch-play .back { color: #d4c4b0; }
+    .cw-split { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .cw-video { flex: 0 0 60%; background: #0d0c0b; display: flex; flex-direction: column; min-height: 0; }
+    .cw-screen {
+      flex: 1; display: grid; place-items: center; text-align: center;
+      background: radial-gradient(ellipse at 40% 30%, #3a3530, #0d0c0b 70%);
+      color: #a89888; font-size: 13px; padding: 12px;
+    }
+    .cw-controls {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: #1e1b18; font-size: 12px;
+    }
+    .cw-controls button {
+      border: 0; background: #3a342c; color: #f7f1e8;
+      border-radius: 8px; padding: 6px 10px; cursor: pointer;
+    }
+    .cw-bar { flex: 1; height: 4px; border-radius: 2px; background: #444; overflow: hidden; }
+    .cw-bar i { display: block; width: 35%; height: 100%; background: var(--mint); }
+    .cw-chat {
+      flex: 0 0 40%; display: flex; flex-direction: column;
+      background: var(--paper); color: var(--ink); min-height: 0;
+      border-top: 2px solid var(--mint);
+    }
+    .cw-msgs {
+      flex: 1; overflow-y: auto; padding: 10px 12px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .bubble {
+      max-width: 82%; padding: 8px 10px; border-radius: 12px;
+      font-size: 13px; line-height: 1.4;
+    }
+    .bubble.bot { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+    .bubble.me { align-self: flex-end; background: var(--mint-bg); }
+    .cw-compose {
+      display: flex; gap: 8px;
+      padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid var(--line); background: var(--paper);
+    }
+    .cw-compose input {
+      flex: 1; border: 1px solid var(--line); border-radius: 10px;
+      padding: 8px 10px; background: #fff; font-size: 13px;
+    }
+    .cw-compose button {
+      border: 0; background: var(--choc); color: #fff;
+      border-radius: 10px; padding: 0 12px; cursor: pointer;
+    }
+
+    #view-cowatch-fs { background: #000; color: #fff; }
+    .fs-stage { flex: 1; position: relative; display: grid; place-items: center; background: #111; }
+    .danmaku {
+      position: absolute; right: 0; white-space: nowrap; font-size: 14px;
+      text-shadow: 0 1px 2px #000; animation: fly 8s linear forwards; pointer-events: none;
+    }
+    @keyframes fly {
+      from { transform: translateX(0); }
+      to { transform: translateX(-120vw); }
+    }
+    .fs-exit {
+      position: absolute; top: 12px; right: 12px; z-index: 3;
+      border: 0; background: rgba(0,0,0,.5); color: #fff;
+      border-radius: 8px; padding: 6px 10px; cursor: pointer;
+    }
+
+    /* 日历手帐 */
+    #view-cal, #view-cal-day {
+      background: #e8f2ee center/cover no-repeat;
+    }
+    #view-cal .body, #view-cal-day .body {
+      background: rgba(247,241,232,.78);
+      margin: 8px; border-radius: 14px;
+      border: 1px solid rgba(92,64,51,.12);
+    }
+    .cal-deco {
+      float: right; width: 52px; margin: 0 0 8px 8px;
+      filter: drop-shadow(0 2px 3px rgba(0,0,0,.1));
+    }
+    .cal-month {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      gap: 4px; text-align: center; font-size: 12px; clear: both;
+    }
+    .cal-month .hd { color: var(--muted); padding: 4px 0; }
+    .cal-month .day {
+      border: 0; background: transparent; padding: 8px 0;
+      border-radius: 10px; cursor: pointer; color: var(--ink); position: relative;
+    }
+    .cal-month .day.on { background: var(--mint-bg); font-weight: 700; }
+    .cal-month .day .dot {
+      width: 4px; height: 4px; border-radius: 50%;
+      background: var(--choc); margin: 2px auto 0;
+    }
+    .note {
+      background: #fff8c8; border: 1px solid #e8d98a;
+      border-radius: 8px; padding: 8px 10px; font-size: 12px;
+      margin: 6px 0; box-shadow: 1px 2px 0 rgba(0,0,0,.04);
+    }
+    .note .who { color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .event {
+      background: rgba(255,252,247,.95);
+      border-left: 3px solid var(--mint-deep);
+      padding: 10px 12px; border-radius: 0 10px 10px 0;
+      margin-bottom: 8px; font-size: 13px;
+    }
+    .event .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .washi-bar {
+      height: 10px; margin: 0 12px 8px;
+      background: center/auto 100% repeat-x;
+      opacity: .9; border-radius: 2px;
     }
   </style>
 </head>
 <body>
   <p class="banner">
-    <strong>素材试用 · 非正式定稿</strong><br />
-    复古卡片 + 底部 Tab；壁纸嵌在画框里不铺满，上下和纸 + 角贴。上滑进小屋试效果。
+    <strong>Ariadne DEMO · 薄荷巧克力素材皮</strong><br />
+    壁纸：素材锁屏/主题（经 cafe 映射）· 图标贴纸来自 <code>assets/cafe</code> · 桌面参考网友手帐机布局<br />
+    浏览器打开本文件；素材路径相对 <code>Ariadne/</code>
   </p>
 
   <div class="phone">
     <div class="screen">
-      <div class="view standby active" id="view-standby">
-        <div class="ambient" onclick="toast('网关正常 · 呼吸中')"></div>
-        <div class="standby-body">
-          <div class="greet">嗨，我在这儿</div>
-          <button type="button" class="continue-row" onclick="showView('coread')">
-            <img src="assets/cafe/cup.png" alt="" />
-            《三体》· 继续
-          </button>
+
+      <div class="view active" id="view-lock" style="background-image:url('demo-assets/lock-wall-src.jpg')">
+        <div class="status-bar">
+          <span id="lockStatusTime">22:38</span>
+          <span class="right"><span>▮▮▮▮</span><span>Wi‑Fi</span><span>84%</span></span>
         </div>
-        <div class="swipe-hint" id="swipeHint">∧ 上滑进入小屋</div>
+        <div class="lock-body">
+          <div class="lock-time" id="lockTime">22:38</div>
+          <div class="lock-date" id="lockDate">星期四 · 10月1日</div>
+          <div class="lock-agenda">明天 09:00 开会</div>
+        </div>
+        <div class="lock-spacer"></div>
+        <div class="lock-hint" id="lockHint">∧ 上滑解锁</div>
+      </div>
+
+      <div class="view" id="view-home" style="background-image:url('demo-assets/home-wall-src.jpg')">
+        <div class="status-bar">
+          <span id="homeStatusTime">10:17</span>
+          <span class="right"><span>▮▮▮▮</span><span>5G</span><span>84%</span></span>
+        </div>
+        <div class="home-main" id="homeMain">
+          <div class="widget-row">
+            <button type="button" class="wid wid-cal" data-go="cal" style="text-align:left;cursor:pointer;font:inherit;color:inherit">
+              <div class="hero">
+                <img src="assets/cafe/decor-sundae.png" alt="" />
+              </div>
+              <div class="panel">
+                <div class="title">薄荷巧克力</div>
+                <div class="sub">相遇第 128 天 · 今日便签</div>
+                <div class="week">
+                  <span>S<b>28</b></span>
+                  <span>M<b>29</b></span>
+                  <span>T<b>30</b></span>
+                  <span>W<b class="on">1</b></span>
+                  <span>T<b>2</b></span>
+                  <span>F<b>3</b></span>
+                  <span>S<b>4</b></span>
+                </div>
+              </div>
+            </button>
+            <div class="wid wid-menu">
+              <h4>今日</h4>
+              <ul>
+                <li><img src="assets/cafe/sticker-bean.png" alt="" />09:00 开会</li>
+                <li><img src="assets/cafe/deco-cupcake-mint.png" alt="" />便签·记得带伞</li>
+                <li><img src="assets/cafe/treat.png" alt="" />共看·进行中</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="avatars">
+            <div class="av" id="avYou">
+              <div class="face">
+                <img src="assets/cafe/avatar-you.png" alt="" />
+                <img class="deco" id="decoYou" src="assets/cafe/deco-shake.png" alt="" />
+              </div>
+              <div class="lab">你</div>
+            </div>
+            <div class="av" id="avBot">
+              <div class="face">
+                <img src="assets/cafe/avatar-bot.png" alt="" />
+                <img class="deco" id="decoBot" src="assets/cafe/deco-shake.png" alt="" />
+              </div>
+              <div class="lab">家机</div>
+            </div>
+          </div>
+
+          <button type="button" class="capsule" id="btnCapsule">共看中 · 示范片 →</button>
+
+          <div class="pager" id="pager">
+            <div class="page">
+              <button type="button" class="app-ico" data-go="coread"><span class="ico"><img src="assets/cafe/shelf.png" alt="" /></span><span class="name">共读</span></button>
+              <button type="button" class="app-ico" data-go="chat"><span class="badge">2</span><span class="ico"><img src="assets/cafe/decor-bear.png" alt="" /></span><span class="name">聊天</span></button>
+              <button type="button" class="app-ico" data-go="cal"><span class="ico"><img src="assets/cafe/duration.png" alt="" /></span><span class="name">日历</span></button>
+              <button type="button" class="app-ico" data-go="cowatch"><span class="ico"><img src="assets/cafe/decor-case.png" alt="" /></span><span class="name">共看</span></button>
+              <button type="button" class="app-ico" data-go="colisten"><span class="ico"><img src="assets/cafe/deco-espresso.png" alt="" /></span><span class="name">共听</span></button>
+              <button type="button" class="app-ico" data-go="comic"><span class="ico"><img src="assets/cafe/deco-macaron.png" alt="" /></span><span class="name">共漫</span></button>
+              <button type="button" class="app-ico" data-go="cabin"><span class="ico"><img src="assets/cafe/deco-bag.png" alt="" /></span><span class="name">小屋</span></button>
+              <button type="button" class="app-ico" data-go="pet"><span class="ico"><img src="assets/cafe/decor-flower.png" alt="" /></span><span class="name">花宠</span></button>
+            </div>
+            <div class="page">
+              <button type="button" class="app-ico" data-go="todo"><span class="ico"><img src="assets/cafe/deco-stamp.png" alt="" /></span><span class="name">待办</span></button>
+              <button type="button" class="app-ico" data-go="shop"><span class="ico"><img src="assets/cafe/cup.png" alt="" /></span><span class="name">购物</span></button>
+              <button type="button" class="app-ico" data-go="ledger"><span class="ico"><img src="assets/cafe/deco-cookies.png" alt="" /></span><span class="name">记账</span></button>
+              <button type="button" class="app-ico" data-go="album"><span class="ico"><img src="assets/cafe/deco-paw.png" alt="" /></span><span class="name">相册</span></button>
+              <button type="button" class="app-ico" data-go="eat"><span class="ico"><img src="assets/cafe/decor-croissant.png" alt="" /></span><span class="name">吃啥</span></button>
+              <button type="button" class="app-ico" data-go="map"><span class="ico"><img src="assets/cafe/sticker-flower.png" alt="" /></span><span class="name">足迹</span></button>
+              <button type="button" class="app-ico" data-go="settings"><span class="ico"><img src="assets/cafe/settings.png" alt="" /></span><span class="name">设置</span></button>
+            </div>
+          </div>
+          <div class="pager-dots" id="dots"><i class="on"></i><i></i></div>
+        </div>
+        <div class="dock">
+          <button type="button" class="app-ico" data-go="chat"><span class="ico"><img src="assets/cafe/decor-bear.png" alt="" /></span></button>
+          <button type="button" class="app-ico" data-go="cal"><span class="ico"><img src="assets/cafe/duration.png" alt="" /></span></button>
+          <button type="button" class="app-ico" data-go="cabin"><span class="ico"><img src="assets/cafe/deco-bag.png" alt="" /></span></button>
+          <button type="button" class="app-ico" data-go="settings"><span class="ico"><img src="assets/cafe/settings.png" alt="" /></span></button>
+        </div>
+        <div class="home-ind"></div>
+      </div>
+
+      <div class="view" id="view-profile">
+        <div class="topbar"><button type="button" class="back" data-back="home">←</button>我们</div>
+        <div class="washi-bar" style="background-image:url('assets/cafe/washi2.png')"></div>
+        <div class="body">
+          <div class="profile-faces">
+            <div class="big"><img src="assets/cafe/avatar-you.png" alt="" /></div>
+            <div class="big"><img src="assets/cafe/avatar-bot.png" alt="" /></div>
+          </div>
+          <p class="hint">正在做什么：<span class="chip">共看中</span></p>
+          <p class="hint">装饰槽 · 点选（素材）</p>
+          <div class="deco-bar" id="decoBar">
+            <button type="button" class="on" data-src="assets/cafe/deco-shake.png"><img src="assets/cafe/deco-shake.png" alt="" /></button>
+            <button type="button" data-src="assets/cafe/deco-donut.png"><img src="assets/cafe/deco-donut.png" alt="" /></button>
+            <button type="button" data-src="assets/cafe/treat.png"><img src="assets/cafe/treat.png" alt="" /></button>
+            <button type="button" data-src="assets/cafe/deco-cupcake-mint.png"><img src="assets/cafe/deco-cupcake-mint.png" alt="" /></button>
+            <button type="button" data-src=""><span style="font-size:11px;color:#8a7a6a">无</span></button>
+          </div>
+          <p class="hint" style="margin-top:14px">桌面 <strong>长按</strong>头像 → 小屋</p>
+        </div>
       </div>
 
       <div class="view" id="view-cabin">
-        <div class="cabin-top" id="cabinTop">
-          <span class="down" onclick="showView('standby')" title="回锁屏">←</span>
-          <div class="spacer"></div>
-          <div id="cabinTitle">书架</div>
+        <div class="topbar">
+          <button type="button" class="back" data-back="home">←</button>小屋
+          <span class="spacer"></span>
+          <button type="button" class="act" id="btnCabinReset">归位</button>
         </div>
-        <div class="cabin-frame">
-          <div class="frame-washi" aria-hidden="true"></div>
-          <img class="frame-corner tl" src="assets/cafe/bow-corner-tl.png?v=4" alt="" />
-          <img class="frame-corner br" src="assets/cafe/deco-cupcake-mint.png" alt="" />
-          <div class="cabin-body" id="cabinBody">
-            <div class="tab-panel active" id="tab-shelf">
-              <div class="r-card">
-                <div class="book-row" onclick="toast('打开书详情（示意）')">
-                  <div class="thumb"><img src="assets/cafe/decor-case.png" alt="" /></div>
-                  <div style="flex:1;min-width:0">
-                    <div class="t">三体 · 刘慈欣</div>
-                    <div class="pill-row">
-                      <button type="button" class="pill-tag a" onclick="event.stopPropagation();showView('coread')">一刷</button>
-                      <button type="button" class="pill-tag b" onclick="event.stopPropagation();toast('二刷（示意）')">二刷</button>
-                      <button type="button" class="pill-tag c" onclick="event.stopPropagation();toast('开始下一刷？')">+ 下一刷</button>
-                    </div>
-                    <div class="meta">导入示意 · 昨天 21:40 · 进度 62%</div>
-                  </div>
-                </div>
-              </div>
-              <div class="r-card">
-                <div class="book-row" onclick="toast('占位书（示意）')">
-                  <div class="thumb"><img src="assets/cafe/decor-croissant.png" alt="" /></div>
-                  <div style="flex:1;min-width:0">
-                    <div class="t">占位书 · 待导入</div>
-                    <div class="pill-row">
-                      <span class="pill-tag d">示意</span>
-                      <span class="pill-tag b">未开刷</span>
-                    </div>
-                    <div class="meta">— · — · 进度 0%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="tab-panel" id="tab-notes">
-              <div class="r-card">
-                <div class="t">笔记 · 《三体》</div>
-                <div class="s">按书汇总划线与跟批</div>
-              </div>
-              <div class="r-card" onclick="toast('打开第3章笔记')">
-                <div class="t">第3章</div>
-                <div class="s">划线 4 · 跟批 3</div>
-                <div class="meta" style="margin-top:8px;font-size:11px;color:var(--muted)">最近 · 本场</div>
-              </div>
-              <div class="r-card" onclick="toast('打开第2章笔记')">
-                <div class="t">第2章</div>
-                <div class="s">划线 2 · 跟批 1</div>
-              </div>
-            </div>
-
-            <div class="tab-panel" id="tab-records">
-              <div class="seg" id="statSeg">
-                <button type="button" class="on" onclick="setSeg(this)">总</button>
-                <button type="button" onclick="setSeg(this)">日</button>
-                <button type="button" onclick="setSeg(this)">周</button>
-                <button type="button" onclick="setSeg(this)">月</button>
-                <button type="button" onclick="setSeg(this)">年</button>
-              </div>
-              <div class="r-card">
-                <div class="s">共读了 12 场 · 光影映岁月</div>
-              </div>
-              <div class="stat-grid">
-                <div class="stat-card">
-                  <div class="ico"><img src="assets/cafe/duration.png" alt="" /></div>
-                  <div class="lab">累计时长</div>
-                  <div class="num">18.6h</div>
-                </div>
-                <div class="stat-card">
-                  <div class="ico"><img src="assets/cafe/shelf.png" alt="" /></div>
-                  <div class="lab">书架册数</div>
-                  <div class="num">2</div>
-                </div>
-                <div class="stat-card">
-                  <div class="ico"><img src="assets/cafe/notes.png" alt="" /></div>
-                  <div class="lab">划线</div>
-                  <div class="num">47</div>
-                </div>
-                <div class="stat-card">
-                  <div class="ico"><img src="assets/cafe/records.png" alt="" /></div>
-                  <div class="lab">摘要卡</div>
-                  <div class="num">12</div>
-                </div>
-              </div>
-              <div class="r-card">
-                <div class="t">近 7 日</div>
-                <div class="bars">
-                  <div class="col"><span class="v">0.4h</span><div class="bar" style="height:20%"></div><span class="d">一</span></div>
-                  <div class="col"><span class="v">1.2h</span><div class="bar" style="height:55%"></div><span class="d">二</span></div>
-                  <div class="col"><span class="v">0.8h</span><div class="bar" style="height:36%"></div><span class="d">三</span></div>
-                  <div class="col"><span class="v">2.1h</span><div class="bar" style="height:92%"></div><span class="d">四</span></div>
-                  <div class="col"><span class="v">1.5h</span><div class="bar" style="height:68%"></div><span class="d">五</span></div>
-                  <div class="col"><span class="v">0.3h</span><div class="bar" style="height:14%"></div><span class="d">六</span></div>
-                  <div class="col"><span class="v">1.0h</span><div class="bar" style="height:45%"></div><span class="d">日</span></div>
-                </div>
-              </div>
-              <div class="r-card" onclick="toast('摘要卡（示意）')">
-                <div class="t">三体 · 一刷 · 本场</div>
-                <div class="s">3/12 · 62%</div>
-              </div>
-            </div>
-
-            <div class="tab-panel" id="tab-settings">
-              <div class="r-card settings">
-                <div class="row"><div>连接与健康</div><span style="color:var(--ok)">●</span></div>
-                <div class="row"><div>预算上限<small>默认 ¥5 / 场</small></div><span>›</span></div>
-                <div class="row">
-                  <div>共读顶栏显示时间</div>
-                  <button type="button" class="toggle" id="clockToggle" onclick="toggleClock(this)"></button>
-                </div>
-                <div class="row"><div>外观 · 主题<small>壁纸画框 · 复古卡片</small></div><span>›</span></div>
-              </div>
-            </div>
-          </div>
-          <div class="frame-washi bot" aria-hidden="true"></div>
+        <div class="cabin-stage" id="cabinStage" style="background-image:url('assets/cafe/shop-scene.jpg')">
+          <div class="hot" style="left:8%;top:12%;width:22%;height:14%" data-msg="空调 · 室温 26℃">空调</div>
+          <div class="hot" style="left:70%;top:10%;width:20%;height:12%" data-msg="灯 · 暖光">灯</div>
+          <div class="hot" style="left:38%;top:28%;width:28%;height:18%" data-msg="电视 · 待机（不跳共看）">电视</div>
+          <div class="hot" style="left:12%;top:55%;width:24%;height:16%" data-msg="电脑 · 在线中">电脑</div>
+          <div class="hot" style="left:62%;top:58%;width:26%;height:18%" data-msg="床 · 叠好了">床</div>
+          <div class="hot" style="left:42%;top:78%;width:16%;height:12%" data-msg="花盆 · 水分还好">花</div>
+          <div class="sprite" id="spYou" style="left:30%;top:48%"><img src="assets/cafe/avatar-you.png" alt="" /></div>
+          <div class="sprite" id="spBot" style="left:55%;top:42%"><img src="assets/cafe/avatar-bot.png" alt="" /></div>
+          <div class="bubble-toast" id="cabinBubble"></div>
         </div>
-        <div class="tabs-dock">
-          <nav class="tabs" id="tabs">
-            <button type="button" class="on" data-tab="shelf" onclick="openPage('shelf')">
-              <img src="assets/cafe/shelf.png" alt="" />书架
-            </button>
-            <button type="button" data-tab="notes" onclick="openPage('notes')">
-              <img src="assets/cafe/deco-macaron.png" alt="" />笔记
-            </button>
-            <button type="button" data-tab="records" onclick="openPage('records')">
-              <img src="assets/cafe/records.png" alt="" />记录
-            </button>
-            <button type="button" data-tab="settings" onclick="openPage('settings')">
-              <img src="assets/cafe/settings.png" alt="" />设定
-            </button>
-          </nav>
-        </div>
+        <p class="hint" style="padding:0 14px 10px">底图试用 shop-scene · 以后换小屋专用成品图</p>
       </div>
 
-      <div class="view coread" id="view-coread">
-        <div class="cr-top">
-          <div class="title">《三体》·一刷 · 62%</div>
-          <div class="clock-slot" id="crClock"></div>
-          <button type="button" class="more" onclick="openSheet()">···</button>
+      <div class="view" id="view-cowatch">
+        <div class="topbar">
+          <button type="button" class="back" data-back="home">←</button>共看
+          <span class="spacer"></span>
+          <button type="button" class="act">↑上传</button>
         </div>
-        <div class="cr-washi" aria-hidden="true"></div>
-        <div class="cr-filter">
-          <img src="assets/cafe/sticker-bean.png" alt="" />
-          默认只看本场 · 薄荷巧克力皮
-        </div>
-        <div class="msgs" id="msgs">
-          <img class="msgs-deco tl" src="assets/cafe/sticker-flower.png" alt="" />
-          <img class="msgs-deco br" src="assets/cafe/treat.png" alt="" />
-          <div class="session-tape" title="本场分隔"></div>
-          <div class="msg">
-            <div class="av"><img src="assets/cafe/avatar-you.png" alt="" /></div>
-            <div class="bubble-wrap">
-              <div class="quote">划线：「给岁月以文明，而不是给文明以岁月。」</div>
-              <div class="meta">3 words</div>
+        <div class="washi-bar" style="background-image:url('assets/cafe/composer-washi.png')"></div>
+        <div class="body">
+          <div class="row" data-go="cowatch-play">
+            <img class="thumb" src="assets/cafe/decor-case.png" alt="" />
+            <div>
+              <div>示范片 · 本地库</div>
+              <div class="meta">在看 · 35% · 原片不备份</div>
             </div>
           </div>
-          <div class="msg" data-variants>
-            <div class="av"><img src="assets/cafe/avatar-bot.png" alt="" /></div>
-            <div class="bubble-wrap">
-              <div class="bubble-head">
-                <div class="think">💡 已深度思考</div>
-                <div class="variant-pager">
-                  <button type="button" aria-label="上一条" onclick="variantStep(this,-1)">‹</button>
-                  <span class="n"><span data-vi>1</span> / <span data-vt>2</span></span>
-                  <button type="button" aria-label="下一条" onclick="variantStep(this,1)">›</button>
-                </div>
-              </div>
-              <div class="bubble" data-body>这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。</div>
-              <div class="meta">412 tokens · 380 cached</div>
-              <div class="actions">
-                <button type="button" title="再生成一条" onclick="variantRegen(this)">↻</button>
-                <button type="button" title="编辑" onclick="toast('编辑（示意）')">✎</button>
-                <button type="button" title="复制" onclick="toast('已复制')">⧉</button>
-                <button type="button" title="更多" onclick="toast('更多：踩 / 看上一刷…')">⋮</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="composer">
-          <div class="composer-washi" aria-hidden="true"></div>
-          <div class="row-input">
-            <input id="chatInput" placeholder="在这里输入…" />
-          </div>
-          <div class="tools">
-            <button type="button" onclick="openPlus()"><img class="tool-ico" src="assets/cafe/treat.png" alt="" />＋</button>
-            <button type="button" class="on" onclick="this.classList.toggle('on')">深思</button>
-            <button type="button" onclick="toast('对话设置')">对话</button>
-            <button type="button" onclick="toast('上下文 12K')">↑12K</button>
-            <button type="button" class="pill" onclick="toast('模型')">Deep… ▾</button>
-            <button type="button" class="send" onclick="sendMsg()">↑</button>
+          <div class="row">
+            <img class="thumb" src="assets/cafe/decor-cake.png" alt="" />
+            <div><div>另一部想看</div><div class="meta">想看</div></div>
           </div>
         </div>
       </div>
 
-      <div class="sheet" id="sheet" onclick="if(event.target===this)closeSheet()">
-        <div class="sheet-panel">
-          <button type="button" onclick="toast('已暂停');closeSheet()">暂停跟批</button>
-          <button type="button" onclick="toast('改模式');closeSheet()">改本场模式</button>
-          <button type="button" class="danger" onclick="endSession()">结束本场</button>
-          <button type="button" class="cancel" onclick="closeSheet()">取消</button>
+      <div class="view" id="view-cowatch-play">
+        <div class="topbar">
+          <button type="button" class="back" data-back="cowatch">←</button>
+          示范片 · 35%
+          <span class="spacer"></span>
+          <button type="button" class="act" id="btnFs" style="color:#d4c4b0">全屏</button>
+        </div>
+        <div class="cw-split">
+          <div class="cw-video">
+            <div class="cw-screen">本地视频占位<br />上 60%</div>
+            <div class="cw-controls">
+              <button type="button">❚❚</button>
+              <div class="cw-bar"><i></i></div>
+              <span>24:10</span>
+            </div>
+          </div>
+          <div class="cw-chat">
+            <div class="cw-msgs" id="cwMsgs">
+              <div class="bubble bot">家机：这句配乐好好听</div>
+              <div class="bubble me">你：嗯</div>
+            </div>
+            <div class="cw-compose">
+              <input id="cwInput" placeholder="本场吐槽（与日常聊天分开）" />
+              <button type="button" id="cwSend">发送</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="drawer" id="plusDrawer" onclick="if(event.target===this)closePlus()">
-        <div class="drawer-panel">
-          <h4>＋</h4>
-          <p style="font-size:13px;color:var(--muted);margin:8px 0 12px">总结刚才、本章笔记</p>
-          <button type="button" class="chip" onclick="toast('总结刚才');closePlus()">总结刚才</button>
-          <button type="button" class="chip" style="margin-left:6px" onclick="toast('笔记滑出');closePlus()">本章笔记</button>
-          <button type="button" class="close" onclick="closePlus()">关闭</button>
+
+      <div class="view" id="view-cowatch-fs">
+        <div class="fs-stage" id="fsStage">
+          <button type="button" class="fs-exit" data-back="cowatch-play">退出全屏</button>
+          <div style="opacity:.5;font-size:13px">全屏 · 弹幕演示</div>
         </div>
       </div>
-      <div class="toast-wrap" id="toastWrap" onclick="this.classList.remove('open')">
-        <div class="toast" id="toastText"></div>
+
+      <div class="view" id="view-cal" style="background-image:url('demo-assets/hand-frame.jpg')">
+        <div class="topbar">
+          <button type="button" class="back" data-back="home">←</button>日历
+          <span class="spacer"></span>
+          <button type="button" class="act">+</button>
+        </div>
+        <div class="body">
+          <img class="cal-deco" src="assets/cafe/deco-cupcake-mint.png" alt="" />
+          <img class="cal-deco" src="assets/cafe/bow-corner-tr.png" alt="" style="width:40px" />
+          <p class="hint">2026年10月 · 手帐框底图试用 · 点 <strong>1</strong> 日</p>
+          <div class="cal-month" id="calMonth"></div>
+        </div>
       </div>
+
+      <div class="view" id="view-cal-day" style="background-image:url('demo-assets/hand-frame.jpg')">
+        <div class="topbar">
+          <button type="button" class="back" data-back="cal">←</button>10月1日
+          <span class="spacer"></span>
+          <button type="button" class="act">便签</button>
+        </div>
+        <div class="body">
+          <img class="cal-deco" src="assets/cafe/sticker-bean.png" alt="" />
+          <div class="event">
+            09:00 开会 <span class="chip">你</span>
+            <div class="sub">绑定便签</div>
+            <div class="note">记得带伞 · 会议室 A<div class="who">你 · ♥ 家机可赞</div></div>
+          </div>
+          <div class="event">全天 · 相遇第 128 天 <span class="chip">两人</span></div>
+          <div class="note">绑日：晚上想吃火锅<div class="who">家机 · 提议待确认</div></div>
+          <p class="hint">贴纸拖转 / DIY 扣图 · 二期；MCP see 用日页 PNG。</p>
+        </div>
+      </div>
+
+      <div class="view" id="view-chat">
+        <div class="topbar"><button type="button" class="back" data-back="home">←</button>聊天</div>
+        <div class="body">
+          <div class="row" data-go="chat-thread">
+            <img class="thumb" src="assets/cafe/avatar-bot.png" alt="" />
+            <div><div>家机 <span class="chip">2</span></div><div class="meta">日常 · 非剧情 RP</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="view" id="view-chat-thread">
+        <div class="topbar"><button type="button" class="back" data-back="chat">←</button>家机</div>
+        <div class="body" style="display:flex;flex-direction:column;gap:8px">
+          <div class="bubble bot">今天日历我看见开会啦</div>
+          <div class="bubble me">嗯，日常聊就好</div>
+        </div>
+        <div class="cw-compose">
+          <input placeholder="日常消息…" />
+          <button type="button">发送</button>
+        </div>
+      </div>
+
+      <div class="view" id="view-settings">
+        <div class="topbar"><button type="button" class="back" data-back="home">←</button>设置</div>
+        <div class="body">
+          <div class="row"><img class="thumb" src="assets/cafe/health.png" alt="" /><div>连接与健康</div></div>
+          <div class="row"><img class="thumb" src="assets/cafe/deco-espresso.png" alt="" /><div>Apple Music <span class="meta">未授权</span></div></div>
+          <div class="row"><div>人设 / 相识日 / 门禁</div></div>
+          <div class="row"><div>备份 · 影片仅元数据</div></div>
+          <div class="row"><div>剧情摘要粘贴</div></div>
+        </div>
+      </div>
+
+      <div class="view" id="view-stub">
+        <div class="topbar"><button type="button" class="back" data-back="home">←</button><span id="stubTitle">App</span></div>
+        <div class="body"><p class="hint" id="stubHint">灰盒占位</p></div>
+      </div>
+
     </div>
   </div>
 
   <script>
-    const titles = { shelf: "书架", notes: "笔记", records: "记录", settings: "设定", living: "书架" };
-    let showCrClock = false;
+    const $ = (s, el = document) => el.querySelector(s);
+    const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
-    function showView(name) {
-      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-      if (name === "standby") document.getElementById("view-standby").classList.add("active");
-      else if (name === "cabin") document.getElementById("view-cabin").classList.add("active");
-      else if (name === "coread") {
-        document.getElementById("view-coread").classList.add("active");
-        updateCrClock();
-        const m = document.getElementById("msgs");
-        m.scrollTop = m.scrollHeight;
-      }
-      closeSheet(); closePlus();
+    function show(name) {
+      $$(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + name));
     }
-    function goLiving() { openPage("shelf"); }
-    function openPage(page) {
-      if (page === "living") page = "shelf";
-      showView("cabin");
-      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
-      document.getElementById("tab-" + page).classList.add("active");
-      document.getElementById("cabinTitle").textContent = titles[page] || "书架";
-      document.querySelectorAll("#tabs button").forEach(b => {
-        b.classList.toggle("on", b.dataset.tab === page);
+
+    function tick() {
+      const n = new Date();
+      const hm =
+        String(n.getHours()).padStart(2, "0") + ":" + String(n.getMinutes()).padStart(2, "0");
+      $("#lockTime").textContent = hm;
+      const st = $("#lockStatusTime");
+      if (st) st.textContent = hm;
+      const hs = $("#homeStatusTime");
+      if (hs) hs.textContent = hm;
+      const w = ["日", "一", "二", "三", "四", "五", "六"][n.getDay()];
+      $("#lockDate").textContent = "星期" + w + " · " + (n.getMonth() + 1) + "月" + n.getDate() + "日";
+    }
+    tick();
+    setInterval(tick, 30000);
+
+    (function lockSwipe() {
+      const lock = $("#view-lock");
+      let y0 = null;
+      const start = (y) => { y0 = y; };
+      const move = (y) => {
+        if (y0 == null) return;
+        if (y0 - y > 48) { y0 = null; show("home"); }
+      };
+      lock.addEventListener("touchstart", (e) => start(e.touches[0].clientY), { passive: true });
+      lock.addEventListener("touchmove", (e) => move(e.touches[0].clientY), { passive: true });
+      lock.addEventListener("mousedown", (e) => start(e.clientY));
+      lock.addEventListener("mousemove", (e) => { if (e.buttons === 1) move(e.clientY); });
+      $("#lockHint").addEventListener("click", () => show("home"));
+    })();
+
+    (function homeLock() {
+      const home = $("#view-home");
+      let y0 = null, x0 = null;
+      home.addEventListener("touchstart", (e) => {
+        y0 = e.touches[0].clientY;
+        x0 = e.touches[0].clientX;
+      }, { passive: true });
+      home.addEventListener("touchmove", (e) => {
+        if (y0 == null) return;
+        const dy = e.touches[0].clientY - y0;
+        const dx = e.touches[0].clientX - x0;
+        if (dy > 72 && Math.abs(dy) > Math.abs(dx) * 1.4) {
+          y0 = null;
+          show("lock");
+        }
+      }, { passive: true });
+    })();
+
+    const pager = $("#pager");
+    const dots = $$("#dots i");
+    pager.addEventListener("scroll", () => {
+      const i = Math.round(pager.scrollLeft / Math.max(pager.clientWidth, 1));
+      dots.forEach((d, n) => d.classList.toggle("on", n === i));
+    });
+    (function pagerDrag() {
+      let down = false, startX = 0, startLeft = 0, moved = false;
+      pager.addEventListener("pointerdown", (e) => {
+        if (e.target.closest("button.app-ico")) return;
+        down = true;
+        moved = false;
+        startX = e.clientX;
+        startLeft = pager.scrollLeft;
+        try { pager.setPointerCapture(e.pointerId); } catch (_) {}
       });
+      pager.addEventListener("pointermove", (e) => {
+        if (!down) return;
+        const dx = e.clientX - startX;
+        if (Math.abs(dx) > 4) moved = true;
+        pager.scrollLeft = startLeft - dx;
+      });
+      const end = () => {
+        if (!down) return;
+        down = false;
+        const w = Math.max(pager.clientWidth, 1);
+        const page = Math.round(pager.scrollLeft / w);
+        pager.scrollTo({ left: page * w, behavior: "smooth" });
+      };
+      pager.addEventListener("pointerup", end);
+      pager.addEventListener("pointercancel", end);
+    })();
+    dots.forEach((d, n) => {
+      d.style.cursor = "pointer";
+      d.addEventListener("click", () => {
+        pager.scrollTo({ left: n * pager.clientWidth, behavior: "smooth" });
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      const back = e.target.closest("[data-back]");
+      if (back) { show(back.getAttribute("data-back")); return; }
+      const go = e.target.closest("[data-go]");
+      if (!go) return;
+      const t = go.getAttribute("data-go");
+      const stubs = {
+        coread: ["共读", "进现行共读 App（本 DEMO 不嵌真页）。"],
+        colisten: ["共听", "Apple Music · 灰盒"],
+        comic: ["共漫", "库+吐槽 · 灰盒"],
+        pet: ["花宠", "浇水喂食 · 灰盒"],
+        todo: ["待办", "灰盒"],
+        shop: ["购物", "灰盒"],
+        ledger: ["记账", "灰盒"],
+        album: ["相册", "灰盒"],
+        eat: ["吃啥", "灰盒"],
+        map: ["足迹", "灰盒"],
+      };
+      if (stubs[t]) {
+        $("#stubTitle").textContent = stubs[t][0];
+        $("#stubHint").textContent = stubs[t][1];
+        show("stub");
+        return;
+      }
+      show(t);
+    });
+
+    $("#btnCapsule").addEventListener("click", () => show("cowatch-play"));
+
+    function bindAvatar(el) {
+      let timer = null, long = false;
+      const down = () => {
+        long = false;
+        timer = setTimeout(() => { long = true; show("cabin"); }, 480);
+      };
+      const up = () => { clearTimeout(timer); if (!long) show("profile"); };
+      el.addEventListener("mousedown", down);
+      el.addEventListener("mouseup", up);
+      el.addEventListener("mouseleave", () => clearTimeout(timer));
+      el.addEventListener("touchstart", (e) => { e.preventDefault(); down(); }, { passive: false });
+      el.addEventListener("touchend", up);
     }
-    function setSeg(btn) {
-      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("on"));
-      btn.classList.add("on");
-    }
-    function toast(msg) {
-      document.getElementById("toastText").textContent = msg;
-      const w = document.getElementById("toastWrap");
-      w.classList.add("open");
-      clearTimeout(toast._t);
-      toast._t = setTimeout(() => w.classList.remove("open"), 1600);
-    }
-    function openSheet() { document.getElementById("sheet").classList.add("open"); }
-    function closeSheet() { document.getElementById("sheet").classList.remove("open"); }
-    function openPlus() { document.getElementById("plusDrawer").classList.add("open"); }
-    function closePlus() { document.getElementById("plusDrawer").classList.remove("open"); }
-    function endSession() {
-      closeSheet();
-      toast("摘要卡 → 回书架");
-      setTimeout(() => openPage("living"), 500);
-    }
-    function toggleClock(btn) {
-      btn.classList.toggle("on");
-      showCrClock = btn.classList.contains("on");
-      updateCrClock();
-    }
-    function updateCrClock() {
-      const el = document.getElementById("crClock");
-      if (!showCrClock) { el.textContent = ""; return; }
-      const d = new Date();
-      el.textContent = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
-    }
-    function variantStep(btn, delta) {
-      const wrap = btn.closest("[data-variants]");
-      const texts = wrap._texts || (
-        wrap._texts = [
-          "这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。",
-          "把「岁月」放前面，语气更软一点——像在劝，而不是在训。"
-        ]
-      );
-      let i = wrap._i || 0;
-      i = (i + delta + texts.length) % texts.length;
-      wrap._i = i;
-      wrap.querySelector("[data-body]").textContent = texts[i];
-      wrap.querySelector("[data-vi]").textContent = String(i + 1);
-      wrap.querySelector("[data-vt]").textContent = String(texts.length);
-    }
-    function variantRegen(btn) {
-      const wrap = btn.closest("[data-variants]");
-      const texts = wrap._texts || (
-        wrap._texts = [
-          "这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。",
-          "把「岁月」放前面，语气更软一点——像在劝，而不是在训。"
-        ]
-      );
-      texts.push("候选 " + (texts.length + 1) + "：文明是在岁月里慢慢长出来的，不是用来量岁月的尺子。");
-      wrap._texts = texts;
-      wrap._i = texts.length - 1;
-      wrap.querySelector("[data-body]").textContent = texts[wrap._i];
-      wrap.querySelector("[data-vi]").textContent = String(texts.length);
-      wrap.querySelector("[data-vt]").textContent = String(texts.length);
-      toast("已追加候选 · 用 ‹ › 翻看");
-    }
-    function sendMsg() {
-      const input = document.getElementById("chatInput");
+    bindAvatar($("#avYou"));
+    bindAvatar($("#avBot"));
+
+    $("#decoBar").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-src]");
+      if (!b) return;
+      $$("#decoBar button").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on");
+      const src = b.getAttribute("data-src");
+      ["decoYou", "decoBot"].forEach((id) => {
+        const img = document.getElementById(id);
+        if (!src) { img.style.display = "none"; return; }
+        img.style.display = "";
+        img.src = src;
+      });
+    });
+
+    const stage = $("#cabinStage");
+    const bubble = $("#cabinBubble");
+    let bubbleTimer = null;
+    stage.addEventListener("click", (e) => {
+      const hot = e.target.closest(".hot");
+      if (hot) {
+        bubble.textContent = hot.getAttribute("data-msg");
+        bubble.classList.add("show");
+        clearTimeout(bubbleTimer);
+        bubbleTimer = setTimeout(() => bubble.classList.remove("show"), 2200);
+        return;
+      }
+      if (e.target.closest(".sprite") || e.target === bubble) return;
+      const rect = stage.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      const sp = $("#spYou");
+      sp.style.left = Math.max(4, Math.min(88, x)) + "%";
+      sp.style.top = Math.max(8, Math.min(85, y)) + "%";
+    });
+    $("#btnCabinReset").addEventListener("click", () => {
+      $("#spYou").style.left = "30%";
+      $("#spYou").style.top = "48%";
+      $("#spBot").style.left = "55%";
+      $("#spBot").style.top = "42%";
+    });
+
+    $("#cwSend").addEventListener("click", () => {
+      const input = $("#cwInput");
       const t = input.value.trim();
       if (!t) return;
-      const msgs = document.getElementById("msgs");
-      const div = document.createElement("div");
-      div.className = "msg";
-      div.innerHTML = `<div class="av"><img src="assets/cafe/avatar-you.png" alt="" /></div><div class="bubble-wrap"><div class="bubble"></div></div>`;
-      div.querySelector(".bubble").textContent = t;
-      msgs.appendChild(div);
+      const el = document.createElement("div");
+      el.className = "bubble me";
+      el.textContent = "你：" + t;
+      $("#cwMsgs").appendChild(el);
       input.value = "";
-      msgs.scrollTop = msgs.scrollHeight;
-    }
-    document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMsg(); });
+      $("#cwMsgs").scrollTop = $("#cwMsgs").scrollHeight;
+    });
+    $("#btnFs").addEventListener("click", () => {
+      show("cowatch-fs");
+      [["家机：好好笑", 0], ["你：弹幕", 400], ["家机：全屏也行", 900]].forEach(([text, ms]) => {
+        setTimeout(() => {
+          const d = document.createElement("div");
+          d.className = "danmaku";
+          d.textContent = text;
+          d.style.top = 12 + Math.random() * 56 + "%";
+          $("#fsStage").appendChild(d);
+          setTimeout(() => d.remove(), 8200);
+        }, ms);
+      });
+    });
 
-    (function () {
-      const el = document.getElementById("view-standby");
-      let y0 = null;
-      el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
-      el.addEventListener("touchend", e => {
-        if (y0 == null) return;
-        if (y0 - e.changedTouches[0].clientY > 48) openPage("living");
-        y0 = null;
+    (function buildCal() {
+      const root = $("#calMonth");
+      ["一","二","三","四","五","六","日"].forEach((h) => {
+        const d = document.createElement("div");
+        d.className = "hd";
+        d.textContent = h;
+        root.appendChild(d);
       });
-      let my = null;
-      el.addEventListener("pointerdown", e => { my = e.clientY; });
-      el.addEventListener("pointerup", e => {
-        if (my != null && my - e.clientY > 48) openPage("living");
-        my = null;
-      });
-      document.getElementById("swipeHint").onclick = () => openPage("living");
+      for (let i = 0; i < 3; i++) root.appendChild(document.createElement("div"));
+      for (let day = 1; day <= 31; day++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "day" + (day === 1 ? " on" : "");
+        b.innerHTML = day + (day === 1 || day === 3 ? '<div class="dot"></div>' : "");
+        b.addEventListener("click", () => { if (day === 1) show("cal-day"); });
+        root.appendChild(b);
+      }
     })();
   </script>
 </body>

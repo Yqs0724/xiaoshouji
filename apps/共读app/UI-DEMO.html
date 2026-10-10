@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>共读小屋 · 素材试用 DEMO（复古卡片）</title>
+  <style>
+    :root {
+      --bg: #2a2420;
+      --shell: #3d342c;
+      --paper: #f7f1e8;
+      --ink: #3a2e24;
+      --muted: #8a7a6a;
+      --line: #e5d9c8;
+      --accent: #8b5a3c;
+      --ok: #6a8f6e;
+      --cafe-wall: #ebe4d6;
+      --cafe-floor: #c4a882;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { scrollbar-width: none; }
+    *::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+      display: none;
+    }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(ellipse at 50% 10%, #4a3f36 0%, var(--bg) 65%);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px 12px 36px;
+      gap: 14px;
+    }
+    .banner {
+      max-width: 400px;
+      color: #d4c4b0;
+      font-size: 12.5px;
+      line-height: 1.55;
+      text-align: center;
+    }
+    .banner strong { color: #f0e6d8; }
+    .phone {
+      width: min(390px, 100%);
+      height: min(780px, 92vh);
+      background: var(--shell);
+      border-radius: 36px;
+      padding: 10px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    }
+    .screen {
+      height: 100%;
+      background: var(--paper);
+      border-radius: 28px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+    .view { display: none; flex: 1; flex-direction: column; min-height: 0; }
+    .view.active { display: flex; }
+
+    /* 待机 */
+    .standby {
+      background: linear-gradient(180deg, #d5e0e8 0%, var(--paper) 40%);
+    }
+    .ambient {
+      height: 56px;
+      margin: 14px 16px 0;
+      border-radius: 14px;
+      background: linear-gradient(90deg, rgba(255,255,255,.4), rgba(255,210,150,.5), rgba(255,255,255,.25));
+      animation: breathe 4.2s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%,100% { opacity: .7; }
+      50% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .ambient { animation: none; }
+    }
+    .standby-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      text-align: center;
+      padding: 20px;
+    }
+    .greet { font-size: 26px; font-weight: 500; }
+    .continue-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 15px;
+      color: var(--accent);
+      padding: 8px 16px 8px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(139,90,60,.3);
+      background: rgba(139,90,60,.08);
+      cursor: pointer;
+    }
+    .continue-row img { width: 36px; height: 36px; object-fit: contain; }
+    .swipe-hint {
+      padding-bottom: calc(24px + var(--safe-bottom));
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    /* 小屋 · 复古卡片 + 底栏 Tab · 壁纸嵌在边框里不铺满 */
+    #view-cabin {
+      background: linear-gradient(180deg, #f3ebe0 0%, #ebe2d4 100%);
+    }
+    .cabin-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px 8px;
+      font-size: 22px;
+      font-weight: 700;
+      flex-shrink: 0;
+      background: transparent;
+      z-index: 2;
+    }
+    .cabin-top .spacer { flex: 1; }
+    .cabin-top .down {
+      color: var(--muted); cursor: pointer; font-weight: 400; font-size: 22px;
+      padding: 4px 8px 4px 0; line-height: 1;
+    }
+    .cabin-top .deco-mini {
+      width: 28px; height: 28px; object-fit: contain; opacity: .9;
+    }
+
+    /* 壁纸画框：四周留奶油边 + 和纸/角贴 */
+    .cabin-frame {
+      flex: 1;
+      min-height: 0;
+      margin: 0 10px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border-radius: 18px;
+      overflow: hidden;
+      background-color: #c5d4cc;
+      background-image: url("assets/cafe/wall.jpg");
+      background-size: 140px;
+      background-repeat: repeat;
+      border: 2px solid rgba(180,150,120,.45);
+      box-shadow:
+        0 6px 18px rgba(90,70,50,.12),
+        inset 0 0 0 1px rgba(255,255,255,.35);
+    }
+    .frame-washi {
+      flex-shrink: 0;
+      height: 20px;
+      background: url("assets/cafe/washi.png") center / auto 100% repeat-x;
+      opacity: .95;
+      z-index: 2;
+    }
+    .frame-washi.bot {
+      background-image: url("assets/cafe/washi2.png");
+    }
+    .frame-corner {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      z-index: 3;
+      pointer-events: none;
+      filter: drop-shadow(0 1px 2px rgba(60,40,20,.2));
+    }
+    .frame-corner.tl {
+      top: 14px;
+      left: 6px;
+      width: 50px;
+      height: 38px;
+      transform: rotate(-6deg);
+      opacity: .96;
+      filter: brightness(0) invert(1)
+        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
+        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
+    }
+    .frame-corner.tr {
+      top: 10px;
+      right: 4px;
+      width: 50px;
+      height: 38px;
+      transform: rotate(6deg);
+      opacity: .96;
+      filter: brightness(0) invert(1)
+        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
+        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
+    }
+    .frame-corner.bl { bottom: 14px; left: 6px; transform: rotate(6deg); }
+    .frame-corner.br { bottom: 14px; right: 6px; transform: rotate(-12deg); width: 34px; height: 34px; }
+
+    .cabin-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 10px 12px 8px;
+      position: relative;
+      z-index: 1;
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .r-card {
+      background: rgba(255,252,247,.94);
+      border: 1px solid rgba(200,180,160,.55);
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 12px;
+      box-shadow: 0 4px 14px rgba(90,70,50,.08);
+    }
+    .r-card.continue {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      cursor: pointer;
+    }
+    .r-card.continue img.cover {
+      width: 52px; height: 52px; object-fit: contain;
+      flex-shrink: 0;
+    }
+    .r-card .t { font-weight: 700; font-size: 15px; }
+    .r-card .s { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.4; }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .pill-tag {
+      font-size: 11px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      border: 0;
+      cursor: pointer;
+      color: #5c4030;
+    }
+    .pill-tag.a { background: #e8d5f0; }
+    .pill-tag.b { background: #d5ebe3; }
+    .pill-tag.c { background: #f5e0c8; }
+    .pill-tag.d { background: #f0d5d8; }
+
+    .book-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      cursor: pointer;
+    }
+    .book-row .thumb {
+      width: 56px; height: 72px;
+      border-radius: 10px;
+      background: linear-gradient(160deg, #c4a070, #8b5a3c);
+      flex-shrink: 0;
+      display: grid; place-items: center;
+      overflow: hidden;
+      border: 1px solid rgba(90,70,50,.2);
+    }
+    .book-row .thumb img { width: 70%; height: auto; object-fit: contain; }
+    .book-row .meta {
+      font-size: 11px; color: var(--muted); margin-top: 8px;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .stat-card {
+      background: rgba(255,252,247,.92);
+      border: 1px solid rgba(200,180,160,.55);
+      border-radius: 18px;
+      padding: 14px 12px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(90,70,50,.07);
+    }
+    .stat-card .ico {
+      width: 40px; height: 40px; margin: 0 auto 8px;
+      border-radius: 50%;
+      background: rgba(180,210,200,.35);
+      display: grid; place-items: center;
+    }
+    .stat-card .ico img { width: 26px; height: 26px; object-fit: contain; }
+    .stat-card .lab { font-size: 11px; color: var(--muted); }
+    .stat-card .num { font-size: 18px; font-weight: 700; margin-top: 4px; color: #5c4030; }
+
+    .seg {
+      display: flex;
+      background: rgba(255,252,247,.85);
+      border-radius: 999px;
+      padding: 3px;
+      margin-bottom: 12px;
+      border: 1px solid rgba(200,180,160,.45);
+      gap: 2px;
+    }
+    .seg button {
+      flex: 1; border: 0; background: transparent;
+      border-radius: 999px; padding: 6px 0;
+      font-size: 11px; color: var(--muted); cursor: pointer;
+    }
+    .seg button.on {
+      background: rgba(180,210,200,.55);
+      color: #3d2818; font-weight: 600;
+    }
+
+    .bars {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 6px;
+      height: 100px;
+      margin-top: 12px;
+      padding: 0 4px;
+    }
+    .bars .col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .bars .v { font-size: 9px; color: var(--muted); }
+    .bars .bar {
+      width: 100%;
+      max-width: 28px;
+      border-radius: 8px 8px 4px 4px;
+      background: linear-gradient(180deg, #8fbf9a, #6a8f6e);
+      min-height: 8px;
+    }
+    .bars .d { font-size: 10px; color: var(--muted); }
+
+    .settings .row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 0; border-bottom: 1px solid rgba(200,180,160,.4); font-size: 14px;
+    }
+    .settings .row:last-child { border-bottom: 0; }
+    .settings .row small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .toggle {
+      width: 42px; height: 24px; border-radius: 999px;
+      background: #ccc; border: 0; position: relative; cursor: pointer;
+    }
+    .toggle.on { background: var(--ok); }
+    .toggle::after {
+      content: ""; position: absolute; top: 3px; left: 3px;
+      width: 18px; height: 18px; border-radius: 50%; background: #fff;
+    }
+    .toggle.on::after { left: 21px; }
+
+    .tabs-dock {
+      flex-shrink: 0;
+      padding: 8px 14px calc(10px + var(--safe-bottom));
+      background: transparent;
+    }
+    .tabs {
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      background: rgba(255,252,247,.78);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.65);
+      border-radius: 999px;
+      padding: 8px 6px 6px;
+      box-shadow: 0 6px 20px rgba(90,70,50,.12);
+    }
+    .tabs button {
+      flex: 1;
+      border: 0;
+      background: transparent;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 10px;
+      padding: 2px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+    .tabs button img {
+      width: 22px; height: 22px; object-fit: contain; opacity: .7;
+    }
+    .tabs button.on { color: #5c4030; font-weight: 600; }
+    .tabs button.on img { opacity: 1; }
+
+    /* 共读 · 薄荷巧克力点缀，正文区仍干净 */
+    .coread {
+      background-color: #f3f6f4;
+      background-image:
+        linear-gradient(180deg, rgba(243,246,244,.92) 0%, rgba(250,246,240,.94) 40%, rgba(250,246,240,.96) 100%),
+        url("assets/cafe/wall.jpg");
+      background-size: auto, 220px;
+      background-repeat: no-repeat, repeat;
+    }
+    .cr-top {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px;
+      border-bottom: none;
+      background: rgba(247,241,232,.92);
+      position: relative;
+      z-index: 2;
+    }
+    .cr-top .title {
+      flex: 1; font-size: 14px; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cr-top .clock-slot { font-size: 12px; color: var(--muted); min-width: 36px; }
+    .cr-top .more { border: 0; background: transparent; font-size: 20px; cursor: pointer; }
+    .cr-washi {
+      height: 18px;
+      background: url("assets/cafe/washi2.png") center / auto 100% repeat-x;
+      flex-shrink: 0;
+      opacity: .9;
+    }
+    .cr-filter {
+      padding: 6px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      background: rgba(196, 220, 210, .35);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .cr-filter img { width: 18px; height: 18px; object-fit: contain; opacity: .85; }
+    .msgs {
+      flex: 1; overflow: auto; padding: 12px 14px 8px;
+      display: flex; flex-direction: column; gap: 14px;
+      position: relative;
+    }
+    .msgs-deco {
+      position: absolute;
+      width: 52px; height: 52px;
+      opacity: .22;
+      pointer-events: none;
+      z-index: 0;
+    }
+    .msgs-deco.tl { top: 8px; right: 6px; }
+    .msgs-deco.br { bottom: 12px; left: 4px; width: 44px; height: 44px; }
+    .msg { display: flex; gap: 8px; position: relative; z-index: 1; }
+    .av {
+      width: 32px; height: 32px; border-radius: 50%;
+      overflow: hidden; flex-shrink: 0; background: #e8dfd4;
+      box-shadow: 0 0 0 2px rgba(180, 210, 200, .5);
+    }
+    .av img { width: 100%; height: 100%; object-fit: cover; }
+    .bubble-wrap { flex: 1; min-width: 0; }
+    .bubble-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .bubble-head .think {
+      font-size: 11px; color: #7a6b3a; margin: 0; flex: 1;
+    }
+    .variant-pager {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .variant-pager button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 4px;
+      font-size: 13px;
+      line-height: 1;
+    }
+    .variant-pager button:disabled { opacity: .35; cursor: default; }
+    .variant-pager .n { min-width: 2.6em; text-align: center; font-variant-numeric: tabular-nums; }
+    .think { font-size: 11px; color: #7a6b3a; margin-bottom: 4px; }
+    .quote {
+      font-size: 12px; color: var(--muted);
+      border-left: 3px solid #a8c9bc; padding-left: 8px; margin-bottom: 6px;
+    }
+    .bubble {
+      background: rgba(255,255,255,.94);
+      border-radius: 12px; padding: 10px 12px;
+      font-size: 14px; line-height: 1.55;
+      border: 1px solid rgba(200, 185, 170, .65);
+      box-shadow: 0 1px 0 rgba(168, 201, 188, .25);
+    }
+    .meta { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .actions {
+      display: inline-flex; margin-top: 6px;
+      background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    }
+    .actions button {
+      border: 0; background: transparent; padding: 7px 11px; font-size: 14px;
+      cursor: pointer; color: #5c4a3a; line-height: 1;
+    }
+    .actions button:hover { background: #f3eee6; }
+    .actions button + button { border-left: 1px solid var(--line); }
+    .session-tape {
+      align-self: center;
+      width: min(220px, 70%);
+      height: 14px;
+      background: url("assets/cafe/washi3.png") center / cover no-repeat;
+      margin: 4px 0 2px;
+      opacity: .75;
+      position: relative; z-index: 1;
+    }
+    .composer {
+      margin: 0 10px calc(10px + var(--safe-bottom));
+      background: rgba(235, 227, 214, .95);
+      border-radius: 16px;
+      padding: 0 10px 8px;
+      border: 1px solid rgba(168, 201, 188, .35);
+      position: relative;
+      overflow: hidden;
+    }
+    .composer-washi {
+      height: 14px;
+      margin: 0 -10px 6px;
+      background: url("assets/cafe/washi.png") center / auto 100% repeat-x;
+      opacity: .88;
+    }
+    .composer .row-input {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      padding: 4px 0 2px;
+    }
+    .composer input {
+      flex: 1; border: 0; background: transparent; font-size: 14px;
+      padding: 8px 4px; outline: none; width: 100%;
+    }
+    .composer .tools {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+      padding: 2px 0 0;
+      overflow-x: auto;
+    }
+    .tools button {
+      border: 0; background: transparent; font-size: 12px; color: var(--muted);
+      cursor: pointer; padding: 4px; flex-shrink: 0;
+    }
+    .tools button.on { color: var(--accent); font-weight: 600; }
+    .tools .tool-ico {
+      width: 20px; height: 20px; object-fit: contain; vertical-align: middle;
+      margin-right: 2px; opacity: .9;
+    }
+    .tools .pill {
+      flex-shrink: 0;
+      background: #5c4a3a; color: #fff; border-radius: 999px;
+      padding: 5px 10px; font-size: 11px; cursor: pointer; border: 0;
+      white-space: nowrap;
+    }
+    .tools .send {
+      margin-left: auto;
+      width: 32px; height: 32px; border-radius: 50%;
+      border: 0; background: #5c4a3a; color: #fff; cursor: pointer;
+      font-size: 14px; flex-shrink: 0; padding: 0;
+    }
+
+    .sheet, .toast-wrap, .drawer {
+      position: absolute; inset: 0; background: rgba(0,0,0,.35);
+      display: none; z-index: 20;
+    }
+    .sheet { align-items: flex-end; }
+    .sheet.open, .toast-wrap.open { display: flex; }
+    .drawer.open { display: flex; justify-content: flex-end; }
+    .sheet-panel {
+      width: 100%; background: #fff; border-radius: 16px 16px 0 0;
+      padding: 8px 0 calc(16px + var(--safe-bottom));
+    }
+    .sheet-panel button {
+      display: block; width: 100%; border: 0; background: transparent;
+      padding: 14px 20px; text-align: left; font-size: 15px; cursor: pointer;
+      border-bottom: 1px solid var(--line);
+    }
+    .sheet-panel button.danger { color: #a33; }
+    .sheet-panel .cancel { text-align: center; color: var(--muted); border: 0; }
+    .toast {
+      margin: auto 24px calc(80px + var(--safe-bottom));
+      background: rgba(58,46,36,.92); color: #fff;
+      padding: 12px 16px; border-radius: 12px; font-size: 13px;
+    }
+    .drawer-panel {
+      width: 78%; height: 100%; background: var(--paper);
+      padding: 20px 16px; box-shadow: -8px 0 24px rgba(0,0,0,.15);
+    }
+    .drawer-panel .close {
+      margin-top: 16px; width: 100%; padding: 10px;
+      border: 1px solid var(--line); border-radius: 10px; background: #fff; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <p class="banner">
+    <strong>素材试用 · 非正式定稿</strong><br />
+    复古卡片 + 底部 Tab；壁纸嵌在画框里不铺满，上下和纸 + 角贴。上滑进小屋试效果。
+  </p>
+
+  <div class="phone">
+    <div class="screen">
+      <div class="view standby active" id="view-standby">
+        <div class="ambient" onclick="toast('网关正常 · 呼吸中')"></div>
+        <div class="standby-body">
+          <div class="greet">嗨，我在这儿</div>
+          <button type="button" class="continue-row" onclick="showView('coread')">
+            <img src="assets/cafe/cup.png" alt="" />
+            《三体》· 继续
+          </button>
+        </div>
+        <div class="swipe-hint" id="swipeHint">∧ 上滑进入小屋</div>
+      </div>
+
+      <div class="view" id="view-cabin">
+        <div class="cabin-top" id="cabinTop">
+          <span class="down" onclick="showView('standby')" title="回锁屏">←</span>
+          <div class="spacer"></div>
+          <div id="cabinTitle">书架</div>
+        </div>
+        <div class="cabin-frame">
+          <div class="frame-washi" aria-hidden="true"></div>
+          <img class="frame-corner tl" src="assets/cafe/bow-corner-tl.png?v=4" alt="" />
+          <img class="frame-corner br" src="assets/cafe/deco-cupcake-mint.png" alt="" />
+          <div class="cabin-body" id="cabinBody">
+            <div class="tab-panel active" id="tab-shelf">
+              <div class="r-card">
+                <div class="book-row" onclick="toast('打开书详情（示意）')">
+                  <div class="thumb"><img src="assets/cafe/decor-case.png" alt="" /></div>
+                  <div style="flex:1;min-width:0">
+                    <div class="t">三体 · 刘慈欣</div>
+                    <div class="pill-row">
+                      <button type="button" class="pill-tag a" onclick="event.stopPropagation();showView('coread')">一刷</button>
+                      <button type="button" class="pill-tag b" onclick="event.stopPropagation();toast('二刷（示意）')">二刷</button>
+                      <button type="button" class="pill-tag c" onclick="event.stopPropagation();toast('开始下一刷？')">+ 下一刷</button>
+                    </div>
+                    <div class="meta">导入示意 · 昨天 21:40 · 进度 62%</div>
+                  </div>
+                </div>
+              </div>
+              <div class="r-card">
+                <div class="book-row" onclick="toast('占位书（示意）')">
+                  <div class="thumb"><img src="assets/cafe/decor-croissant.png" alt="" /></div>
+                  <div style="flex:1;min-width:0">
+                    <div class="t">占位书 · 待导入</div>
+                    <div class="pill-row">
+                      <span class="pill-tag d">示意</span>
+                      <span class="pill-tag b">未开刷</span>
+                    </div>
+                    <div class="meta">— · — · 进度 0%</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="tab-notes">
+              <div class="r-card">
+                <div class="t">笔记 · 《三体》</div>
+                <div class="s">按书汇总划线与跟批</div>
+              </div>
+              <div class="r-card" onclick="toast('打开第3章笔记')">
+                <div class="t">第3章</div>
+                <div class="s">划线 4 · 跟批 3</div>
+                <div class="meta" style="margin-top:8px;font-size:11px;color:var(--muted)">最近 · 本场</div>
+              </div>
+              <div class="r-card" onclick="toast('打开第2章笔记')">
+                <div class="t">第2章</div>
+                <div class="s">划线 2 · 跟批 1</div>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="tab-records">
+              <div class="seg" id="statSeg">
+                <button type="button" class="on" onclick="setSeg(this)">总</button>
+                <button type="button" onclick="setSeg(this)">日</button>
+                <button type="button" onclick="setSeg(this)">周</button>
+                <button type="button" onclick="setSeg(this)">月</button>
+                <button type="button" onclick="setSeg(this)">年</button>
+              </div>
+              <div class="r-card">
+                <div class="s">共读了 12 场 · 光影映岁月</div>
+              </div>
+              <div class="stat-grid">
+                <div class="stat-card">
+                  <div class="ico"><img src="assets/cafe/duration.png" alt="" /></div>
+                  <div class="lab">累计时长</div>
+                  <div class="num">18.6h</div>
+                </div>
+                <div class="stat-card">
+                  <div class="ico"><img src="assets/cafe/shelf.png" alt="" /></div>
+                  <div class="lab">书架册数</div>
+                  <div class="num">2</div>
+                </div>
+                <div class="stat-card">
+                  <div class="ico"><img src="assets/cafe/notes.png" alt="" /></div>
+                  <div class="lab">划线</div>
+                  <div class="num">47</div>
+                </div>
+                <div class="stat-card">
+                  <div class="ico"><img src="assets/cafe/records.png" alt="" /></div>
+                  <div class="lab">摘要卡</div>
+                  <div class="num">12</div>
+                </div>
+              </div>
+              <div class="r-card">
+                <div class="t">近 7 日</div>
+                <div class="bars">
+                  <div class="col"><span class="v">0.4h</span><div class="bar" style="height:20%"></div><span class="d">一</span></div>
+                  <div class="col"><span class="v">1.2h</span><div class="bar" style="height:55%"></div><span class="d">二</span></div>
+                  <div class="col"><span class="v">0.8h</span><div class="bar" style="height:36%"></div><span class="d">三</span></div>
+                  <div class="col"><span class="v">2.1h</span><div class="bar" style="height:92%"></div><span class="d">四</span></div>
+                  <div class="col"><span class="v">1.5h</span><div class="bar" style="height:68%"></div><span class="d">五</span></div>
+                  <div class="col"><span class="v">0.3h</span><div class="bar" style="height:14%"></div><span class="d">六</span></div>
+                  <div class="col"><span class="v">1.0h</span><div class="bar" style="height:45%"></div><span class="d">日</span></div>
+                </div>
+              </div>
+              <div class="r-card" onclick="toast('摘要卡（示意）')">
+                <div class="t">三体 · 一刷 · 本场</div>
+                <div class="s">3/12 · 62%</div>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="tab-settings">
+              <div class="r-card settings">
+                <div class="row"><div>连接与健康</div><span style="color:var(--ok)">●</span></div>
+                <div class="row"><div>预算上限<small>默认 ¥5 / 场</small></div><span>›</span></div>
+                <div class="row">
+                  <div>共读顶栏显示时间</div>
+                  <button type="button" class="toggle" id="clockToggle" onclick="toggleClock(this)"></button>
+                </div>
+                <div class="row"><div>外观 · 主题<small>壁纸画框 · 复古卡片</small></div><span>›</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="frame-washi bot" aria-hidden="true"></div>
+        </div>
+        <div class="tabs-dock">
+          <nav class="tabs" id="tabs">
+            <button type="button" class="on" data-tab="shelf" onclick="openPage('shelf')">
+              <img src="assets/cafe/shelf.png" alt="" />书架
+            </button>
+            <button type="button" data-tab="notes" onclick="openPage('notes')">
+              <img src="assets/cafe/deco-macaron.png" alt="" />笔记
+            </button>
+            <button type="button" data-tab="records" onclick="openPage('records')">
+              <img src="assets/cafe/records.png" alt="" />记录
+            </button>
+            <button type="button" data-tab="settings" onclick="openPage('settings')">
+              <img src="assets/cafe/settings.png" alt="" />设定
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      <div class="view coread" id="view-coread">
+        <div class="cr-top">
+          <div class="title">《三体》·一刷 · 62%</div>
+          <div class="clock-slot" id="crClock"></div>
+          <button type="button" class="more" onclick="openSheet()">···</button>
+        </div>
+        <div class="cr-washi" aria-hidden="true"></div>
+        <div class="cr-filter">
+          <img src="assets/cafe/sticker-bean.png" alt="" />
+          默认只看本场 · 薄荷巧克力皮
+        </div>
+        <div class="msgs" id="msgs">
+          <img class="msgs-deco tl" src="assets/cafe/sticker-flower.png" alt="" />
+          <img class="msgs-deco br" src="assets/cafe/treat.png" alt="" />
+          <div class="session-tape" title="本场分隔"></div>
+          <div class="msg">
+            <div class="av"><img src="assets/cafe/avatar-you.png" alt="" /></div>
+            <div class="bubble-wrap">
+              <div class="quote">划线：「给岁月以文明，而不是给文明以岁月。」</div>
+              <div class="meta">3 words</div>
+            </div>
+          </div>
+          <div class="msg" data-variants>
+            <div class="av"><img src="assets/cafe/avatar-bot.png" alt="" /></div>
+            <div class="bubble-wrap">
+              <div class="bubble-head">
+                <div class="think">💡 已深度思考</div>
+                <div class="variant-pager">
+                  <button type="button" aria-label="上一条" onclick="variantStep(this,-1)">‹</button>
+                  <span class="n"><span data-vi>1</span> / <span data-vt>2</span></span>
+                  <button type="button" aria-label="下一条" onclick="variantStep(this,1)">›</button>
+                </div>
+              </div>
+              <div class="bubble" data-body>这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。</div>
+              <div class="meta">412 tokens · 380 cached</div>
+              <div class="actions">
+                <button type="button" title="再生成一条" onclick="variantRegen(this)">↻</button>
+                <button type="button" title="编辑" onclick="toast('编辑（示意）')">✎</button>
+                <button type="button" title="复制" onclick="toast('已复制')">⧉</button>
+                <button type="button" title="更多" onclick="toast('更多：踩 / 看上一刷…')">⋮</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer">
+          <div class="composer-washi" aria-hidden="true"></div>
+          <div class="row-input">
+            <input id="chatInput" placeholder="在这里输入…" />
+          </div>
+          <div class="tools">
+            <button type="button" onclick="openPlus()"><img class="tool-ico" src="assets/cafe/treat.png" alt="" />＋</button>
+            <button type="button" class="on" onclick="this.classList.toggle('on')">深思</button>
+            <button type="button" onclick="toast('对话设置')">对话</button>
+            <button type="button" onclick="toast('上下文 12K')">↑12K</button>
+            <button type="button" class="pill" onclick="toast('模型')">Deep… ▾</button>
+            <button type="button" class="send" onclick="sendMsg()">↑</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet" id="sheet" onclick="if(event.target===this)closeSheet()">
+        <div class="sheet-panel">
+          <button type="button" onclick="toast('已暂停');closeSheet()">暂停跟批</button>
+          <button type="button" onclick="toast('改模式');closeSheet()">改本场模式</button>
+          <button type="button" class="danger" onclick="endSession()">结束本场</button>
+          <button type="button" class="cancel" onclick="closeSheet()">取消</button>
+        </div>
+      </div>
+      <div class="drawer" id="plusDrawer" onclick="if(event.target===this)closePlus()">
+        <div class="drawer-panel">
+          <h4>＋</h4>
+          <p style="font-size:13px;color:var(--muted);margin:8px 0 12px">总结刚才、本章笔记</p>
+          <button type="button" class="chip" onclick="toast('总结刚才');closePlus()">总结刚才</button>
+          <button type="button" class="chip" style="margin-left:6px" onclick="toast('笔记滑出');closePlus()">本章笔记</button>
+          <button type="button" class="close" onclick="closePlus()">关闭</button>
+        </div>
+      </div>
+      <div class="toast-wrap" id="toastWrap" onclick="this.classList.remove('open')">
+        <div class="toast" id="toastText"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const titles = { shelf: "书架", notes: "笔记", records: "记录", settings: "设定", living: "书架" };
+    let showCrClock = false;
+
+    function showView(name) {
+      document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+      if (name === "standby") document.getElementById("view-standby").classList.add("active");
+      else if (name === "cabin") document.getElementById("view-cabin").classList.add("active");
+      else if (name === "coread") {
+        document.getElementById("view-coread").classList.add("active");
+        updateCrClock();
+        const m = document.getElementById("msgs");
+        m.scrollTop = m.scrollHeight;
+      }
+      closeSheet(); closePlus();
+    }
+    function goLiving() { openPage("shelf"); }
+    function openPage(page) {
+      if (page === "living") page = "shelf";
+      showView("cabin");
+      document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+      document.getElementById("tab-" + page).classList.add("active");
+      document.getElementById("cabinTitle").textContent = titles[page] || "书架";
+      document.querySelectorAll("#tabs button").forEach(b => {
+        b.classList.toggle("on", b.dataset.tab === page);
+      });
+    }
+    function setSeg(btn) {
+      btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("on"));
+      btn.classList.add("on");
+    }
+    function toast(msg) {
+      document.getElementById("toastText").textContent = msg;
+      const w = document.getElementById("toastWrap");
+      w.classList.add("open");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => w.classList.remove("open"), 1600);
+    }
+    function openSheet() { document.getElementById("sheet").classList.add("open"); }
+    function closeSheet() { document.getElementById("sheet").classList.remove("open"); }
+    function openPlus() { document.getElementById("plusDrawer").classList.add("open"); }
+    function closePlus() { document.getElementById("plusDrawer").classList.remove("open"); }
+    function endSession() {
+      closeSheet();
+      toast("摘要卡 → 回书架");
+      setTimeout(() => openPage("living"), 500);
+    }
+    function toggleClock(btn) {
+      btn.classList.toggle("on");
+      showCrClock = btn.classList.contains("on");
+      updateCrClock();
+    }
+    function updateCrClock() {
+      const el = document.getElementById("crClock");
+      if (!showCrClock) { el.textContent = ""; return; }
+      const d = new Date();
+      el.textContent = String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
+    }
+    function variantStep(btn, delta) {
+      const wrap = btn.closest("[data-variants]");
+      const texts = wrap._texts || (
+        wrap._texts = [
+          "这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。",
+          "把「岁月」放前面，语气更软一点——像在劝，而不是在训。"
+        ]
+      );
+      let i = wrap._i || 0;
+      i = (i + delta + texts.length) % texts.length;
+      wrap._i = i;
+      wrap.querySelector("[data-body]").textContent = texts[i];
+      wrap.querySelector("[data-vi]").textContent = String(i + 1);
+      wrap.querySelector("[data-vt]").textContent = String(texts.length);
+    }
+    function variantRegen(btn) {
+      const wrap = btn.closest("[data-variants]");
+      const texts = wrap._texts || (
+        wrap._texts = [
+          "这句像把尺子翻过来——不是用文明去丈量时间，是让时间里真的长出文明。",
+          "把「岁月」放前面，语气更软一点——像在劝，而不是在训。"
+        ]
+      );
+      texts.push("候选 " + (texts.length + 1) + "：文明是在岁月里慢慢长出来的，不是用来量岁月的尺子。");
+      wrap._texts = texts;
+      wrap._i = texts.length - 1;
+      wrap.querySelector("[data-body]").textContent = texts[wrap._i];
+      wrap.querySelector("[data-vi]").textContent = String(texts.length);
+      wrap.querySelector("[data-vt]").textContent = String(texts.length);
+      toast("已追加候选 · 用 ‹ › 翻看");
+    }
+    function sendMsg() {
+      const input = document.getElementById("chatInput");
+      const t = input.value.trim();
+      if (!t) return;
+      const msgs = document.getElementById("msgs");
+      const div = document.createElement("div");
+      div.className = "msg";
+      div.innerHTML = `<div class="av"><img src="assets/cafe/avatar-you.png" alt="" /></div><div class="bubble-wrap"><div class="bubble"></div></div>`;
+      div.querySelector(".bubble").textContent = t;
+      msgs.appendChild(div);
+      input.value = "";
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    document.getElementById("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") sendMsg(); });
+
+    (function () {
+      const el = document.getElementById("view-standby");
+      let y0 = null;
+      el.addEventListener("touchstart", e => { y0 = e.touches[0].clientY; }, { passive: true });
+      el.addEventListener("touchend", e => {
+        if (y0 == null) return;
+        if (y0 - e.changedTouches[0].clientY > 48) openPage("living");
+        y0 = null;
+      });
+      let my = null;
+      el.addEventListener("pointerdown", e => { my = e.clientY; });
+      el.addEventListener("pointerup", e => {
+        if (my != null && my - e.clientY > 48) openPage("living");
+        my = null;
+      });
+      document.getElementById("swipeHint").onclick = () => openPage("living");
+    })();
+  </script>
+</body>
+</html>
