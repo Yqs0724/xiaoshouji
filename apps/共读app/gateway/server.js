@@ -16,11 +16,42 @@ const {
 const { listSessions, getSession, getOpenSession, startSession, patchOpenSession, buildSummary, endSession, sessionStats, openActiveDurationMs, exportSession, exportSessionsPeriod, idleReadAdvance, budgetExhausted } = require("./sessions");
 const { buildBackup, previewBackup, restoreFromBackup } = require("./backup");
 const { listWorld, replaceWorld } = require("./world");
-const { listEvents, createEvent, updateEvent, deleteEvent } = require("../../日历app/gateway/calendar");
+const {
+  listEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  proposeEvents,
+  listNotes,
+  getNote,
+  createNote,
+  updateNote,
+  deleteNote,
+  upsertNote,
+} = require("../../日历app/gateway/calendar");
+const { getBudgetSummary } = require("../../额度app/gateway/budget");
 const {
   listMessages,
+  searchMessages,
   createMessageWithReplyStream,
+  unreadCount,
+  markAllRead,
+  pokeDaily,
+  getChatPrefs,
+  setChatPrefs,
+  listAllStickers,
+  saveChatMedia,
+  resolveChatMediaPath,
+  claimIncomingMoney,
+  MEDIA_MAX_BYTES,
 } = require("../../聊天app/gateway/daily-chat");
+const {
+  addUserSticker,
+  resolveUserStickerPath,
+  STICKER_MAX_BYTES,
+} = require("../../聊天app/gateway/stickers");
+const { listChatTools } = require("../../聊天app/gateway/chat-tools");
+const { getWallet } = require("../../资产app/gateway/wallet");
 const { listCards, createCard, deleteCard } = require("./lore");
 const {
   listTitles,
@@ -662,10 +693,32 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, error: "invalid_json" });
         return;
       }
-      sendJson(res, e.code === "bad_budget" || e.code === "bad_meet_date" ? 400 : 500, {
+      sendJson(
+        res,
+        e.code === "bad_budget" ||
+        e.code === "bad_meet_date" ||
+        e.code === "bad_pin_day" ||
+        e.code === "bad_anniv"
+          ? 400
+          : 500,
+        {
+          ok: false,
+          error: e.code || "patch_failed",
+          message: e.message || "保存设定失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/budget/summary") {
+    try {
+      sendJson(res, 200, getBudgetSummary());
+    } catch (e) {
+      sendJson(res, 500, {
         ok: false,
-        error: e.code || "patch_failed",
-        message: e.message || "保存设定失败",
+        error: e.code || "budget_summary_failed",
+        message: e.message || "读取额度失败",
       });
     }
     return;
@@ -691,6 +744,101 @@ const server = http.createServer(async (req, res) => {
       });
     }
     return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/cal/propose") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, await proposeEvents(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_cal_date" ? 400 : 500, {
+        ok: false,
+        error: e.code || "cal_propose_failed",
+        message: e.message || "排程提议失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/cal/notes") {
+    try {
+      const q = new URL(req.url, "http://127.0.0.1").searchParams;
+      sendJson(res, 200, listNotes({ date: q.get("date") || undefined }));
+    } catch (e) {
+      sendJson(res, e.code === "bad_cal_date" ? 400 : 500, {
+        ok: false,
+        error: e.code || "cal_note_get_failed",
+        message: e.message || "读取便签失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/cal/notes") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, body && body.id ? upsertNote(body) : createNote(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "bad_cal_date" ||
+        e.code === "bad_cal_note" ||
+        e.code === "cal_not_found";
+      sendJson(res, bad ? (e.code === "cal_not_found" ? 404 : 400) : 500, {
+        ok: false,
+        error: e.code || "cal_note_upsert_failed",
+        message: e.message || "保存便签失败",
+      });
+    }
+    return;
+  }
+
+  const calNoteOne = urlPath.match(/^\/api\/v1\/cal\/notes\/([^/]+)$/);
+  if (calNoteOne) {
+    const nid = decodeURIComponent(calNoteOne[1]);
+    if (req.method === "PATCH") {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        sendJson(res, 200, updateNote(nid, body));
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const bad =
+          e.code === "bad_cal_date" ||
+          e.code === "bad_cal_note" ||
+          e.code === "cal_not_found";
+        sendJson(res, bad ? (e.code === "cal_not_found" ? 404 : 400) : 500, {
+          ok: false,
+          error: e.code || "cal_note_update_failed",
+          message: e.message || "更新便签失败",
+        });
+      }
+      return;
+    }
+    if (req.method === "DELETE") {
+      try {
+        sendJson(res, 200, deleteNote(nid));
+      } catch (e) {
+        sendJson(res, e.code === "cal_not_found" ? 404 : 500, {
+          ok: false,
+          error: e.code || "cal_note_delete_failed",
+          message: e.message || "删除便签失败",
+        });
+      }
+      return;
+    }
   }
 
   if (req.method === "POST" && urlPath === "/api/v1/cal/events") {
@@ -757,11 +905,246 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/chat/prefs") {
+    sendJson(res, 200, getChatPrefs());
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/tools") {
+    try {
+      const catalog = await listChatTools(readSettings());
+      sendJson(res, 200, catalog);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        tools: [],
+        error: "tools_failed",
+        message: (e && e.message) || "工具列表失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath === "/api/v1/chat/prefs") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, setChatPrefs(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_prefs_failed",
+        message: e.message || "保存失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/search") {
+    try {
+      const u = new URL(req.url || "/", "http://127.0.0.1");
+      sendJson(
+        res,
+        200,
+        searchMessages({
+          q: u.searchParams.get("q") || "",
+          kind: u.searchParams.get("kind") || "all",
+          from: u.searchParams.get("from") || "",
+          to: u.searchParams.get("to") || "",
+        })
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_search_failed",
+        message: e.message || "搜索失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/wallet") {
+    try {
+      sendJson(res, 200, getWallet());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "wallet_failed",
+        message: e.message || "读取钱包失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/stickers") {
+    sendJson(res, 200, { ok: true, stickers: listAllStickers() });
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/stickers") {
+    try {
+      const buf = await readBodyBuffer(req, STICKER_MAX_BYTES);
+      const label = String((req.headers["x-sticker-label"] || "")).trim();
+      const out = addUserSticker(buf, req.headers["content-type"], label);
+      sendJson(res, 200, out);
+    } catch (e) {
+      const status =
+        e.code === "sticker_too_large" || e.code === "docx_too_large"
+          ? 413
+          : e.code === "bad_sticker_media"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "sticker_upload_failed",
+        message: e.message || "贴纸上传失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const stickerFile = urlPath.match(/^\/api\/v1\/chat\/stickers\/file\/([^/]+)$/);
+    if (req.method === "GET" && stickerFile) {
+      const filePath = resolveUserStickerPath(decodeURIComponent(stickerFile[1]));
+      if (!filePath) {
+        sendJson(res, 404, { ok: false, error: "not_found", message: "贴纸不存在" });
+        return;
+      }
+      sendFile(res, filePath);
+      return;
+    }
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/media") {
+    try {
+      const buf = await readBodyBuffer(req, MEDIA_MAX_BYTES);
+      const out = saveChatMedia(buf, req.headers["content-type"]);
+      sendJson(res, 200, out);
+    } catch (e) {
+      const status =
+        e.code === "chat_media_too_large" || e.code === "docx_too_large"
+          ? 413
+          : e.code === "bad_chat_media"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "chat_media_failed",
+        message: e.message || "上传失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const mediaMatch = urlPath.match(/^\/api\/v1\/chat\/media\/([^/]+)$/);
+    if (req.method === "GET" && mediaMatch) {
+      const filePath = resolveChatMediaPath(decodeURIComponent(mediaMatch[1]));
+      if (!filePath) {
+        sendJson(res, 404, { ok: false, error: "not_found", message: "图片不存在" });
+        return;
+      }
+      sendFile(res, filePath);
+      return;
+    }
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/unread") {
+    try {
+      sendJson(res, 200, unreadCount());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_unread_failed",
+        message: e.message || "读取未读失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/read") {
+    try {
+      sendJson(res, 200, markAllRead());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_read_failed",
+        message: e.message || "标记已读失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/poke") {
+    try {
+      sendJson(res, 200, pokeDaily({}));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_poke_failed",
+        message: e.message || "主动短讯失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/money/claim") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, claimIncomingMoney(body && body.id));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_money_claim" || e.code === "bad_chat_body" ? 400 : 500, {
+        ok: false,
+        error: e.code || "money_claim_failed",
+        message: e.message || "领取失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat/messages") {
     try {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
-      if (!String(body && body.body != null ? body.body : "").trim()) {
+      const kindRaw = body && body.kind;
+      const kind =
+        kindRaw === "sticker" ||
+        kindRaw === "image" ||
+        kindRaw === "redpacket" ||
+        kindRaw === "transfer" ||
+        kindRaw === "location"
+          ? kindRaw
+          : "text";
+      body.kind = kind;
+      if (kind === "redpacket" || kind === "transfer") {
+        if (!(Number(body.amount) > 0)) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "bad_wallet_amount",
+            message: "请填写金额",
+          });
+          return;
+        }
+      } else if (kind === "location") {
+        if (!String(body.name || "").trim()) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "bad_chat_location",
+            message: "请填写位置名称",
+          });
+          return;
+        }
+      } else if (!String(body && body.body != null ? body.body : "").trim()) {
         sendJson(res, 400, {
           ok: false,
           error: "bad_chat_body",
@@ -808,7 +1191,15 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       if (!res.headersSent) {
-        sendJson(res, e.code === "bad_chat_body" ? 400 : 500, {
+        const bad =
+          e.code === "bad_chat_body" ||
+          e.code === "bad_chat_sticker" ||
+          e.code === "bad_chat_image" ||
+          e.code === "bad_chat_location" ||
+          e.code === "bad_wallet_amount" ||
+          e.code === "bad_wallet_party" ||
+          e.code === "wallet_insufficient";
+        sendJson(res, bad ? 400 : 500, {
           ok: false,
           error: e.code || "chat_create_failed",
           message: e.message || "发送失败",

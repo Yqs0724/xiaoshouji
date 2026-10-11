@@ -6,6 +6,8 @@
     showView: function () {},
     checkHealth: async function () {},
     loadSettings: async function () {},
+    openSettingsSub: null,
+    closeSettingsSub: null,
     collapseConn: function () {},
     collapsePersona: function () {},
     collapseMeetDate: function () {},
@@ -36,6 +38,13 @@
   }
 
   function collapse() {
+    if (typeof deps.closeSettingsSub === "function") {
+      const panel = document.getElementById("appleMusicPanel");
+      if (panel && panel.classList.contains("open")) {
+        deps.closeSettingsSub();
+        return;
+      }
+    }
     const panel = document.getElementById("appleMusicPanel");
     const row = document.getElementById("rowAppleMusic");
     if (panel) panel.classList.remove("open");
@@ -49,6 +58,10 @@
       msg.className = "save-msg";
     }
     applyHealth("shelved");
+    if (typeof deps.openSettingsSub === "function") {
+      deps.openSettingsSub("apple", "Apple Music", "appleMusicPanel");
+      return;
+    }
     deps.collapseConn();
     deps.collapsePersona();
     deps.collapseMeetDate();
@@ -473,7 +486,10 @@
             const hint = document.getElementById("colistenPlayerHint");
             if (hint) {
               hint.textContent =
-                "家机未接上：" + (ev.bot_error.message || ev.bot_error.code || "");
+                ev.bot_error.code === "budget_exhausted"
+                  ? ev.bot_error.message || "本场额度已用尽 · 你侧已留下"
+                  : "家机未接上：" +
+                    (ev.bot_error.message || ev.bot_error.code || "");
             }
           }
         }

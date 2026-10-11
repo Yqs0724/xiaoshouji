@@ -1,30 +1,117 @@
   <div class="view" id="view-cal">
+    <div class="cal-washi-top" aria-hidden="true"></div>
     <header class="cal-bar">
       <button type="button" class="back" id="btnCalBack" title="回桌面" aria-label="回桌面">←</button>
       <div class="cal-nav">
-        <button type="button" id="btnCalPrev" aria-label="上一月">‹</button>
+        <button type="button" id="btnCalPrev" aria-label="上一月">
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M8 2.2L3.8 6 8 9.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
         <div class="ym" id="calYm">—</div>
-        <button type="button" id="btnCalNext" aria-label="下一月">›</button>
+        <button type="button" id="btnCalNext" aria-label="下一月">
+          <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M4 2.2L8.2 6 4 9.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
-      <img class="mascot" src="/assets/cafe/fresh-shake.png?v=fresh1" alt="" />
+      <span class="cal-bar-spacer" aria-hidden="true"></span>
     </header>
     <section class="cal-month" aria-label="月历">
-      <img class="cal-float a" src="/assets/cafe/fresh-biscuit.png?v=fresh1" alt="" />
-      <img class="cal-float b" src="/assets/cafe/fresh-cookie.png?v=fresh1" alt="" />
-      <img class="cal-float c" src="/assets/cafe/fresh-cat.png?v=fresh1" alt="" />
       <div class="cal-weekhead" aria-hidden="true">
         <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
       </div>
       <div class="cal-grid" id="calGrid"></div>
     </section>
+    <section class="cal-today" id="calTodayCard" aria-label="当日摘要">
+      <img class="cal-today-deco" src="/assets/cal/sticker-choco-06.png?v=1" alt="" />
+      <div class="cal-today-hd">
+        <span id="calDaySummaryTitle">今日</span>
+      </div>
+      <ul class="cal-today-list" id="calTodayList"></ul>
+      <div class="cal-memo" id="calMemo" hidden>
+        <img class="cal-memo-art" src="/assets/cal/note-memo-02.png?v=9" alt="" />
+        <div class="cal-memo-panel" id="calMemoPanel">
+          <div class="cal-memo-lines" id="calMemoLines"></div>
+        </div>
+      </div>
+      <div class="cal-today-actions">
+        <button type="button" class="cal-sticky-add" id="btnCalNoteAdd">贴便签</button>
+        <button type="button" class="cal-day-edit" id="btnCalOpenDay" title="打开日页">添行程</button>
+        <button type="button" class="cal-ai-btn" id="btnCalProposeHub" title="让TA帮忙排">让TA排</button>
+        <button type="button" class="cal-bar-link" id="btnCalDoorAnniv" title="纪念日">纪念日</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="view" id="view-cal-agenda">
+    <div class="cal-washi-top" aria-hidden="true"></div>
+    <header class="cal-bar">
+      <button type="button" class="back" id="btnCalAgendaBack" title="回月历" aria-label="回月历">←</button>
+      <div class="cal-sub-title" id="calDayHead">—</div>
+      <button type="button" class="cal-ai-btn" id="btnCalProposeDay" title="让TA帮忙排">让TA排</button>
+    </header>
     <section class="cal-agenda" aria-label="当日安排">
-      <div class="cal-day-head"><span id="calDayHead">今日</span><img src="/assets/cafe/fresh-cup.png?v=fresh1" alt="" /></div>
       <ul class="cal-list" id="calDayList"></ul>
       <div class="cal-add">
-        <input id="calNewTitle" type="text" maxlength="120" placeholder="写点今天的安排…" autocomplete="off" />
+        <input id="calNewTitle" type="text" maxlength="120" placeholder="写点这天的安排…" autocomplete="off" />
         <button type="button" id="btnCalAdd">添加</button>
       </div>
       <div class="cal-msg" id="calMsg"></div>
-      <p class="cal-note">只记现实时间。剧情日程请放 Chatbox / 剧情摘要。</p>
+    </section>
+  </div>
+
+  <div class="view" id="view-cal-propose">
+    <div class="cal-washi-top" aria-hidden="true"></div>
+    <header class="cal-bar">
+      <button type="button" class="back" id="btnCalProposeBack" title="返回" aria-label="返回">←</button>
+      <div class="cal-sub-title">让TA排</div>
+      <img class="mascot" src="/assets/cal/decor-sundae.png" alt="" />
+    </header>
+    <section class="cal-propose-body">
+      <div class="cal-propose-card">
+        <p class="cal-propose-blurb">家机结合近聊/共听等自己想日程和便签。你确认了才写入。</p>
+        <div class="cal-propose-actions">
+          <button type="button" class="primary" id="btnCalProposeRun">家机想一想</button>
+          <span class="cal-msg" id="calProposeMsg"></span>
+        </div>
+      </div>
+      <ul class="cal-propose-list" id="calProposeList"></ul>
+    </section>
+  </div>
+
+  <div class="view" id="view-cal-anniv">
+    <div class="cal-washi-top" aria-hidden="true"></div>
+    <header class="cal-bar">
+      <button type="button" class="back" id="btnCalAnnivBack" title="回月历" aria-label="回月历">←</button>
+      <div class="cal-sub-title">纪念日</div>
+      <img class="mascot" src="/assets/cal/deco-bear-heart.png" alt="" />
+    </header>
+    <section class="cal-anniv-body">
+      <div class="cal-anniv-card">
+        <div class="cal-anniv-card-hd">
+          <img src="/assets/cal/deco-bear-heart.png" alt="" />
+          <div>
+            <strong>纪念日</strong>
+            <span class="cal-anniv-hint">自己增删改；钉一条到桌面相遇卡（已过=已经几天，未来=还有几天）</span>
+          </div>
+        </div>
+        <ul class="cal-anniv-list" id="calAnnivList"></ul>
+        <div class="cal-anniv-actions">
+          <button type="button" class="primary" id="btnAnnivAdd">加一条</button>
+          <button type="button" class="ghost" id="btnAnnivUnpin" hidden>卸桌面钉</button>
+          <span class="cal-msg" id="annivMsg"></span>
+        </div>
+        <div class="cal-anniv-compose" id="calAnnivCompose" hidden>
+          <div class="field">
+            <label for="inAnnivTitle">标题</label>
+            <input id="inAnnivTitle" type="text" maxlength="20" placeholder="如：相识日 / 他的生日" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="inAnnivDate">日期</label>
+            <input id="inAnnivDate" class="cal-date-input" type="text" readonly inputmode="none" placeholder="点选日期" autocomplete="off" />
+          </div>
+          <div class="cal-anniv-actions">
+            <button type="button" class="primary" id="btnAnnivSave">保存</button>
+            <button type="button" class="ghost" id="btnAnnivCancel">取消</button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>

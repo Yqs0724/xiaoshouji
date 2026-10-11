@@ -1,1 +1,1024 @@
-#view-chat {   --mint-green: #E1F6F1;   --mint-glass: rgba(225, 246, 241, 0.85);   --choco-brown: #b5a198;   --choco-dark: #6e584f;   --text-on-choco: #ffffff;   --text-on-mint: #43544c;   background-image: url("/assets/chat/skin/wallpaper.jpg");   background-size: cover;   background-position: center;   background-repeat: no-repeat;   color: var(--choco-dark); } .wx-bar {   display: flex;   align-items: center;   gap: 8px;   padding: 10px 12px 22px 8px;   background: var(--mint-glass);   backdrop-filter: blur(10px);   border-bottom: 2px solid var(--choco-brown);   flex-shrink: 0;   color: var(--choco-dark);   position: relative; } .wx-bar::after {   content: "Thin choco · 薄巧";   position: absolute;   bottom: 4px;   left: 50%;   transform: translateX(-50%);   font-size: 10px;   color: var(--choco-dark);   opacity: 0.65;   letter-spacing: 1px;   white-space: nowrap;   pointer-events: none; } .wx-bar .back {   border: 0;   background: transparent;   font: inherit;   font-size: 20px;   line-height: 1;   padding: 4px 8px;   cursor: pointer;   color: var(--choco-dark); } .wx-bar .who {   flex: 1;   min-width: 0;   text-align: center;   font-size: 17px;   font-weight: 600;   color: var(--choco-dark); } .wx-bar .hint {   font-size: 10px;   color: rgba(110, 88, 79, .55);   flex-shrink: 0;   max-width: 5.5em;   line-height: 1.25;   text-align: right; } .wx-thread {   flex: 1;   min-height: 0;   overflow: auto;   padding: 18px 16px 28px;   display: flex;   flex-direction: column;   gap: 22px; } .wx-empty {   margin: auto;   text-align: center;   color: rgba(110, 88, 79, .55);   font-size: 13px;   line-height: 1.5;   padding: 24px 16px; } .wx-time {   align-self: center;   font-size: 11px;   color: var(--choco-dark);   background: var(--mint-green);   border: 2px solid var(--choco-brown);   border-radius: 14px;   padding: 6px 48px;   position: relative;   min-height: 28px;   line-height: 1.3; } .wx-time::before, .wx-time::after {   content: "";   position: absolute;   top: 50%;   transform: translateY(-50%);   width: 36px;   height: 36px;   background-image: url("/assets/chat/skin/sys-deco.png");   background-size: contain;   background-repeat: no-repeat;   background-position: center;   pointer-events: none; } .wx-time::before { left: 4px; } .wx-time::after { right: 4px; } .wx-row {   display: flex;   align-items: flex-start;   gap: 10px;   max-width: 100%; } .wx-row.me {   flex-direction: row-reverse; } .wx-row .av {   position: relative;   width: 36px;   height: 36px;   flex-shrink: 0;   overflow: visible;   background: transparent;   box-shadow: none;   border-radius: 0; } .wx-row .av img {   width: 100%;   height: 100%;   object-fit: cover;   border-radius: 50%;   display: block;   border: 1px solid rgba(255, 255, 255, 0.5);   background: #f8fcfb; } .wx-row .av::after {   content: "";   position: absolute;   top: 50%;   left: 50%;   transform: translate(-50%, -50%);   width: 165%;   height: 165%;   background-image: url("/assets/chat/skin/avatar-frame.png");   background-size: contain;   background-repeat: no-repeat;   background-position: center;   pointer-events: none;   z-index: 2; } .wx-row .bubble {   max-width: calc(100% - 56px);   padding: 12px 14px 8px;   font-size: 15px;   line-height: 1.45;   word-break: break-word;   position: relative;   overflow: visible;   z-index: 1;   margin-top: 10px;   margin-bottom: 6px;   border-radius: 20px; } .wx-row.them .bubble {   background: var(--choco-brown);   color: var(--text-on-choco);   border: 1px solid rgba(255, 255, 255, 0.3);   box-shadow: 0 2px 8px rgba(181, 161, 152, 0.2); } .wx-row.me .bubble {   background: var(--mint-green);   color: var(--text-on-mint);   border: none;   box-shadow: 0 2px 8px rgba(225, 246, 241, 0.8);   font-weight: 500; } .wx-row.them .bubble::before {   content: "";   position: absolute;   top: -20px;   left: -14px;   width: 48px;   height: 48px;   background-image: url("/assets/chat/skin/bubble-deco-them.png");   background-size: cover;   background-repeat: no-repeat;   background-position: center;   pointer-events: none;   z-index: 10;   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1)); } .wx-row.me .bubble::after {   content: "";   position: absolute;   top: -20px;   right: -14px;   width: 48px;   height: 48px;   background-image: url("/assets/chat/skin/bubble-deco-me.png");   background-size: contain;   background-repeat: no-repeat;   background-position: center;   pointer-events: none;   z-index: 10;   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.05)); } .wx-composer {   display: flex;   align-items: flex-end;   gap: 8px;   padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));   background: var(--mint-green);   border-top: 2px solid var(--choco-brown);   flex-shrink: 0;   position: relative; } .wx-composer::before {   content: "";   position: absolute;   bottom: calc(100% - 12px);   left: 0;   width: 100%;   height: 52px;   background-image: url("/assets/chat/skin/input-deco.png");   background-size: contain;   background-repeat: no-repeat;   background-position: center bottom;   pointer-events: none;   z-index: 5; } .wx-composer input {   flex: 1;   min-width: 0;   border: 1px solid rgba(255, 255, 255, 0.3);   border-radius: 20px;   padding: 8px 14px;   font: inherit;   font-size: 14px;   background: var(--choco-brown);   color: var(--text-on-choco);   box-shadow: none; } .wx-composer input::placeholder {   color: rgba(255, 255, 255, 0.7); } .wx-composer input:focus { outline: none; border-color: rgba(255, 255, 255, 0.55); } .wx-composer button {   border: 2px solid var(--mint-green);   background: var(--choco-brown);   color: var(--text-on-choco);   border-radius: 20px;   padding: 7px 14px;   font: inherit;   font-size: 14px;   font-weight: 600;   cursor: pointer;   flex-shrink: 0;   box-shadow: 0 2px 8px rgba(110, 88, 79, 0.2); } .wx-composer button:disabled {   opacity: .45;   cursor: default; } .wx-err {   padding: 0 12px 6px;   font-size: 11px;   color: #a33;   background: var(--mint-green);   flex-shrink: 0;   min-height: 0; }   /* 共看片库 / 播放场 */
+#view-chat {
+   --mint-green: #E1F6F1;
+   --mint-glass: rgba(225, 246, 241, 0.85);
+   --mint-focus: #7eb8a8;
+   --choco-brown: #b5a198;
+   --choco-dark: #6e584f;
+   --text-on-choco: #ffffff;
+   --text-on-mint: #43544c;
+   --card-bg: #f8fcfb;
+   background-image: url("/assets/chat/skin/wallpaper.jpg");
+   background-size: cover;
+   background-position: center;
+   background-repeat: no-repeat;
+   color: var(--choco-dark);
+   position: relative;
+   accent-color: var(--mint-focus);
+ }
+ #view-chat input,
+ #view-chat textarea,
+ #view-chat select {
+   accent-color: var(--mint-focus);
+ }
+ #view-chat input:focus,
+ #view-chat textarea:focus,
+ #view-chat select:focus {
+   outline: none;
+   border-color: var(--mint-focus) !important;
+   box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.45);
+ }
+ .wx-bar {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   gap: 8px;
+   padding: 10px 12px;
+   background: var(--mint-glass);
+   backdrop-filter: blur(10px);
+   border-bottom: 2px solid var(--choco-brown);
+   flex-shrink: 0;
+   color: var(--choco-dark);
+   position: relative;
+ }
+ .wx-bar .back {
+   border: 0;
+   background: transparent;
+   font: inherit;
+   font-size: 20px;
+   line-height: 1;
+   padding: 4px 8px;
+   cursor: pointer;
+   color: var(--choco-dark);
+   position: absolute;
+   left: 4px;
+   top: 50%;
+   transform: translateY(-50%);
+   z-index: 1;
+ }
+ .wx-bar .who {
+   max-width: calc(100% - 72px);
+   min-width: 0;
+   text-align: center;
+   font-size: 17px;
+   font-weight: 600;
+   color: var(--choco-dark);
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
+ .wx-bar .who.is-typing {
+   font-size: 15px;
+   font-weight: 500;
+   opacity: 0.85;
+ }
+ .wx-row .wx-col {
+   display: flex;
+   flex-direction: column;
+   align-items: flex-start;
+   min-width: 0;
+   max-width: calc(100% - 56px);
+   gap: 4px;
+ }
+ .wx-row.me .wx-col {
+   align-items: flex-end;
+ }
+ .wx-row .wx-col .bubble {
+   max-width: 100%;
+ }
+ .wx-meta {
+   align-self: stretch;
+   margin: 0 8px;
+   font-size: 12px;
+   color: rgba(110, 88, 79, 0.72);
+   background: rgba(255, 255, 255, 0.55);
+   border: 1px solid rgba(181, 161, 152, 0.35);
+   border-radius: 10px;
+   padding: 8px 10px;
+   display: flex;
+   align-items: center;
+   gap: 8px;
+   line-height: 1.35;
+ }
+ .wx-meta .wx-meta-ico {
+   flex-shrink: 0;
+   width: 16px;
+   height: 16px;
+   border: 1.5px solid rgba(110, 88, 79, 0.45);
+   border-radius: 4px;
+   position: relative;
+ }
+ .wx-meta-tool .wx-meta-ico::before,
+ .wx-meta-tool .wx-meta-ico::after {
+   content: "";
+   position: absolute;
+   background: rgba(110, 88, 79, 0.55);
+ }
+ .wx-meta-tool .wx-meta-ico::before {
+   width: 8px;
+   height: 2px;
+   left: 3px;
+   top: 6px;
+   transform: rotate(-40deg);
+ }
+ .wx-meta-tool .wx-meta-ico::after {
+   width: 2px;
+   height: 8px;
+   left: 8px;
+   top: 3px;
+   transform: rotate(-40deg);
+ }
+ .wx-meta code {
+   font-family: ui-monospace, Consolas, monospace;
+   font-size: 11px;
+   color: var(--choco-dark);
+ }
+ .wx-meta-body {
+   flex: 1;
+   min-width: 0;
+ }
+ .wx-meta-sum {
+   color: rgba(110, 88, 79, 0.78);
+ }
+ .wx-meta-tool.is-bad {
+   border-color: rgba(160, 72, 72, 0.45);
+   color: rgba(140, 60, 60, 0.9);
+ }
+ .wx-meta-tool.is-bad .wx-meta-sum {
+   color: rgba(140, 60, 60, 0.85);
+ }
+ .wx-meta summary {
+   list-style: none;
+   cursor: default;
+   display: flex;
+   align-items: center;
+   gap: 8px;
+ }
+ .wx-meta summary::-webkit-details-marker { display: none; }
+ .wx-thread {
+   flex: 1;
+   min-height: 0;
+   overflow: auto;
+   /* 底垫刚好越过 input-deco，少留空 */
+   padding: 18px 16px 58px;
+   display: flex;
+   flex-direction: column;
+   gap: 22px;
+ }
+ #view-chat:has(.wx-panel:not([hidden])) .wx-thread {
+   padding-bottom: 68px;
+ }
+ .wx-empty {
+   margin: auto;
+   text-align: center;
+   color: rgba(110, 88, 79, .55);
+   font-size: 13px;
+   line-height: 1.5;
+   padding: 24px 16px;
+ }
+ .wx-time {
+   align-self: center;
+   font-size: 11px;
+   color: var(--choco-dark);
+   background: var(--mint-green);
+   border: 2px solid var(--choco-brown);
+   border-radius: 14px;
+   padding: 6px 48px;
+   position: relative;
+   min-height: 28px;
+   line-height: 1.3;
+ }
+ .wx-time::before,
+ .wx-time::after {
+   content: "";
+   position: absolute;
+   top: 50%;
+   transform: translateY(-50%);
+   width: 36px;
+   height: 36px;
+   background-image: url("/assets/chat/skin/sys-deco.png");
+   background-size: contain;
+   background-repeat: no-repeat;
+   background-position: center;
+   pointer-events: none;
+ }
+ .wx-time::before { left: 4px; }
+ .wx-time::after { right: 4px; }
+ .wx-row {
+   display: flex;
+   align-items: flex-start;
+   gap: 10px;
+   max-width: 100%;
+ }
+ .wx-row.me {
+   flex-direction: row-reverse;
+ }
+ .wx-row .av {
+   position: relative;
+   width: 36px;
+   height: 36px;
+   flex-shrink: 0;
+   overflow: visible;
+   background: transparent;
+   box-shadow: none;
+   border-radius: 0;
+ }
+ .wx-row .av img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   border-radius: 50%;
+   display: block;
+   border: 1px solid rgba(255, 255, 255, 0.5);
+   background: #f8fcfb;
+ }
+ .wx-row .av::after {
+   content: "";
+   position: absolute;
+   top: 50%;
+   left: 50%;
+   transform: translate(-50%, -50%);
+   width: 165%;
+   height: 165%;
+   background-image: url("/assets/chat/skin/avatar-frame.png");
+   background-size: contain;
+   background-repeat: no-repeat;
+   background-position: center;
+   pointer-events: none;
+   z-index: 2;
+ }
+ .wx-row .bubble {
+   max-width: calc(100% - 56px);
+   padding: 12px 14px 8px;
+   font-size: 15px;
+   line-height: 1.45;
+   word-break: break-word;
+   position: relative;
+   overflow: visible;
+   z-index: 1;
+   margin-top: 10px;
+   margin-bottom: 6px;
+   border-radius: 20px;
+ }
+ .wx-row.them .bubble {
+   background: var(--choco-brown);
+   color: var(--text-on-choco);
+   border: 1px solid rgba(255, 255, 255, 0.3);
+   box-shadow: 0 2px 8px rgba(181, 161, 152, 0.2);
+ }
+ .wx-row.me .bubble {
+   background: var(--mint-green);
+   color: var(--text-on-mint);
+   border: none;
+   box-shadow: 0 2px 8px rgba(225, 246, 241, 0.8);
+   font-weight: 500;
+ }
+ /* 家机气泡兔子改真实按钮，伪元素关掉避免点不中 */
+ .wx-row.them .bubble::before {
+   display: none;
+ }
+ .wx-bunny-deco {
+   position: absolute;
+   top: -20px;
+   left: -14px;
+   width: 48px;
+   height: 48px;
+   border: 0;
+   padding: 0;
+   margin: 0;
+   background: transparent url("/assets/chat/skin/bubble-deco-them.png") center / cover no-repeat;
+   cursor: pointer;
+   z-index: 12;
+   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+ }
+ .wx-bunny-deco[aria-expanded="true"] {
+   filter: drop-shadow(0 0 0 2px rgba(126, 184, 168, 0.55))
+     drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+ }
+ .wx-think-panel {
+   margin: 0 2px 4px;
+   padding: 8px 10px;
+   border-radius: 10px;
+   background: rgba(255, 255, 255, 0.72);
+   border: 1px solid rgba(181, 161, 152, 0.3);
+   font-size: 12px;
+   line-height: 1.45;
+   color: rgba(110, 88, 79, 0.82);
+   white-space: pre-wrap;
+   word-break: break-word;
+   max-height: 240px;
+   overflow: auto;
+   max-width: 100%;
+ }
+ .wx-think-panel[hidden] {
+   display: none !important;
+ }
+ .wx-row.me .bubble::after {
+   content: "";
+   position: absolute;
+   top: -20px;
+   right: -14px;
+   width: 48px;
+   height: 48px;
+   background-image: url("/assets/chat/skin/bubble-deco-me.png");
+   background-size: contain;
+   background-repeat: no-repeat;
+   background-position: center;
+   pointer-events: none;
+   z-index: 10;
+   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.05));
+ }
+ .wx-composer {
+   display: flex;
+   align-items: center;
+   gap: 6px;
+   padding: 8px;
+   background: var(--mint-green);
+   border-top: 2px solid var(--choco-brown);
+   flex-shrink: 0;
+   position: relative;
+   z-index: 2;
+ }
+ #view-chat:not(:has(.wx-panel:not([hidden]))) .wx-composer {
+   padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+ }
+ .wx-composer::before {
+   content: "";
+   position: absolute;
+   bottom: calc(100% - 12px);
+   left: 0;
+   width: 100%;
+   height: 52px;
+   background-image: url("/assets/chat/skin/input-deco.png");
+   background-size: contain;
+   background-repeat: no-repeat;
+   background-position: center bottom;
+   pointer-events: none;
+   z-index: 5;
+ }
+ .wx-composer #dailyChatInput {
+   flex: 1;
+   min-width: 0;
+   border: 1px solid rgba(255, 255, 255, 0.3);
+   border-radius: 8px;
+   padding: 8px 12px;
+   font: inherit;
+   font-size: 15px;
+   background: #fff;
+   color: var(--choco-dark);
+   box-shadow: none;
+ }
+ .wx-composer #dailyChatInput:focus {
+   outline: none;
+   border-color: var(--choco-brown);
+ }
+ .wx-composer .wx-icon-btn,
+ .wx-composer .wx-send {
+   border: 2px solid var(--choco-brown);
+   background: rgba(255, 255, 255, 0.65);
+   color: var(--choco-dark);
+   border-radius: 50%;
+   width: 34px;
+   height: 34px;
+   padding: 0;
+   font: inherit;
+   font-size: 11px;
+   font-weight: 700;
+   cursor: pointer;
+   flex-shrink: 0;
+   line-height: 1;
+ }
+ .wx-composer .wx-icon-btn[aria-pressed="true"] {
+   background: var(--choco-brown);
+   color: var(--text-on-choco);
+ }
+ .wx-composer .wx-send {
+   border-radius: 18px;
+   width: auto;
+   padding: 0 12px;
+   background: var(--choco-brown);
+   color: var(--text-on-choco);
+   font-size: 13px;
+ }
+ .wx-composer .wx-send[hidden],
+ .wx-composer .wx-icon-btn[hidden],
+ .wx-composer .wx-hold[hidden],
+ .wx-composer #dailyChatInput[hidden] {
+   display: none !important;
+ }
+ .wx-composer .wx-hold {
+   flex: 1;
+   min-width: 0;
+   border: 2px solid var(--choco-brown);
+   border-radius: 8px;
+   padding: 8px 12px;
+   font: inherit;
+   font-size: 15px;
+   font-weight: 600;
+   background: #fff;
+   color: var(--choco-dark);
+   cursor: pointer;
+   touch-action: none;
+   user-select: none;
+ }
+ .wx-composer .wx-hold.is-pressing {
+   background: var(--mint-green);
+ }
+ .wx-composer button:disabled {
+   opacity: .45;
+   cursor: default;
+ }
+ /* 表情/加号同高；内容再多也不撑高 */
+ .wx-panel {
+   --wx-dock-h: 168px;
+   background: var(--mint-green);
+   border-top: 1px solid rgba(181, 161, 152, 0.35);
+   flex-shrink: 0;
+   height: calc(var(--wx-dock-h) + env(safe-area-inset-bottom, 0px));
+   max-height: none;
+   box-sizing: border-box;
+   position: relative;
+   z-index: 3;
+   padding-bottom: env(safe-area-inset-bottom, 0px);
+   -webkit-overflow-scrolling: touch;
+ }
+ .wx-panel[hidden] { display: none !important; }
+ /* 表情：固定高度内上下滚 */
+ .wx-panel.wx-stickers {
+   display: grid;
+   grid-template-columns: repeat(4, 56px);
+   justify-content: center;
+   align-content: start;
+   gap: 8px 12px;
+   padding: 12px 12px 8px;
+   overflow-x: hidden;
+   overflow-y: auto;
+   width: 100%;
+ }
+ .wx-stickers button {
+   border: 0;
+   background: rgba(255, 255, 255, 0.55);
+   border-radius: 12px;
+   padding: 4px;
+   cursor: pointer;
+   min-height: 52px;
+   width: 56px;
+ }
+ .wx-stickers button.wx-sticker-add {
+   border: 2px dashed var(--choco-brown);
+   background: transparent;
+   color: var(--choco-dark);
+   font-size: 24px;
+   font-weight: 400;
+   line-height: 1;
+ }
+ .wx-stickers button img {
+   width: 100%;
+   height: 44px;
+   object-fit: contain;
+   display: block;
+ }
+ /* 加号：同高；每页 8 格（2×4），左右翻页 */
+ .wx-panel.wx-plus {
+   display: flex;
+   flex-direction: column;
+   overflow: hidden;
+   padding: 0;
+   padding-bottom: env(safe-area-inset-bottom, 0px);
+ }
+ .wx-plus-pages {
+   flex: 1;
+   min-height: 0;
+   display: flex;
+   overflow-x: auto;
+   overflow-y: hidden;
+   scroll-snap-type: x mandatory;
+   scroll-behavior: smooth;
+   -webkit-overflow-scrolling: touch;
+   scrollbar-width: none;
+ }
+ .wx-plus-pages::-webkit-scrollbar { display: none; }
+ .wx-plus-page {
+   flex: 0 0 100%;
+   width: 100%;
+   height: 100%;
+   scroll-snap-align: start;
+   scroll-snap-stop: always;
+   display: grid;
+   grid-template-columns: repeat(4, 56px);
+   grid-template-rows: repeat(2, auto);
+   justify-content: center;
+   align-content: center;
+   justify-items: center;
+   align-items: start;
+   column-gap: 18px;
+   row-gap: 14px;
+   box-sizing: border-box;
+   padding: 10px 12px;
+ }
+ .wx-plus-page button {
+   border: 0;
+   background: transparent;
+   padding: 0;
+   cursor: pointer;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   gap: 4px;
+   color: var(--choco-dark);
+   font: inherit;
+   font-size: 11px;
+   width: 56px;
+ }
+ .wx-plus-page .tile {
+   width: 48px;
+   height: 48px;
+   border-radius: 12px;
+   background: #fff;
+   border: 2px solid var(--choco-brown);
+   display: grid;
+   place-items: center;
+   font-size: 12px;
+   font-weight: 700;
+   color: var(--choco-dark);
+   flex-shrink: 0;
+ }
+ .wx-call-pick {
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+ }
+ .wx-call-pick-btn,
+ .wx-call-pick-cancel {
+   border: 2px solid var(--choco-brown);
+   border-radius: 14px;
+   padding: 10px;
+   font: inherit;
+   font-size: 15px;
+   cursor: pointer;
+   background: #fff;
+   color: var(--choco-dark);
+ }
+ .wx-call-pick-btn {
+   background: var(--mint-green);
+   font-weight: 600;
+ }
+ .wx-call-pick-cancel {
+   margin-top: 4px;
+   opacity: 0.9;
+ }
+ .wx-row .bubble.is-media,
+ .wx-row .bubble.is-card {
+   padding: 0;
+   background: transparent;
+   border: none;
+   box-shadow: none;
+   margin-top: 4px;
+ }
+ .wx-row .bubble.is-media::before,
+ .wx-row .bubble.is-media::after,
+ .wx-row .bubble.is-card::before,
+ .wx-row .bubble.is-card::after {
+   display: none;
+ }
+ .wx-row .bubble img.sticker {
+   width: 104px;
+   height: auto;
+   display: block;
+ }
+ .wx-row .bubble img.chat-pic {
+   max-width: min(180px, 52vw);
+   max-height: 220px;
+   border-radius: 14px;
+   display: block;
+   border: 2px solid var(--choco-brown);
+   background: #fff;
+ }
+ .wx-money-card,
+ .wx-loc-card {
+   background: var(--mint-green);
+   border: 3px solid var(--choco-brown);
+   border-radius: 24px;
+   padding: 14px 16px;
+   min-width: 168px;
+   max-width: min(220px, 62vw);
+   color: var(--choco-dark);
+   box-shadow: 0 4px 10px rgba(181, 161, 152, 0.3);
+ }
+ .wx-money-card .amt {
+   font-size: 22px;
+   font-weight: 700;
+   line-height: 1.2;
+ }
+ .wx-money-card .note,
+ .wx-loc-card .detail {
+   margin-top: 4px;
+   font-size: 13px;
+   opacity: 0.85;
+ }
+ .wx-money-card .tag,
+ .wx-loc-card .tag {
+   margin-top: 10px;
+   padding-top: 8px;
+   border-top: 1px solid rgba(181, 161, 152, 0.35);
+   font-size: 11px;
+   opacity: 0.75;
+ }
+ .wx-money-card.is-received {
+   opacity: 0.72;
+ }
+ .wx-money-card.is-received .tag {
+   opacity: 0.9;
+   font-weight: 600;
+ }
+ .wx-money-card.is-claimable {
+   cursor: pointer;
+ }
+ .wx-money-card.is-claimable:active {
+   transform: scale(0.98);
+ }
+ .wx-call-card {
+   width: min(260px, 100%);
+   background: var(--card-bg);
+   border: 2px solid var(--choco-brown);
+   border-radius: 20px;
+   padding: 28px 20px 20px;
+   text-align: center;
+   color: var(--choco-dark);
+   box-shadow: 0 12px 32px rgba(110, 88, 79, 0.28);
+ }
+ .wx-call-kind {
+   font-size: 13px;
+   opacity: 0.75;
+ }
+ .wx-call-peer {
+   margin-top: 10px;
+   font-size: 22px;
+   font-weight: 700;
+ }
+ .wx-call-state {
+   margin-top: 8px;
+   font-size: 14px;
+   opacity: 0.8;
+ }
+ .wx-call-hang {
+   margin-top: 22px;
+   border: 0;
+   border-radius: 22px;
+   padding: 10px 28px;
+   font: inherit;
+   font-size: 15px;
+   font-weight: 600;
+   background: #c47878;
+   color: #fff;
+   cursor: pointer;
+ }
+ .wx-sys-tip {
+   align-self: center;
+   max-width: 90%;
+   font-size: 12px;
+   color: rgba(110, 88, 79, 0.72);
+   background: rgba(255, 255, 255, 0.45);
+   border-radius: 10px;
+   padding: 4px 10px;
+   line-height: 1.35;
+   text-align: center;
+ }
+ .wx-loc-card .name {
+   font-size: 15px;
+   font-weight: 700;
+ }
+ .wx-modal {
+   position: absolute;
+   inset: 0;
+   z-index: 40;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: 28px 22px;
+   background: rgba(110, 88, 79, 0.38);
+   box-sizing: border-box;
+ }
+ .wx-modal[hidden] { display: none !important; }
+ .wx-sheet-card {
+   width: min(300px, 100%);
+   background: var(--card-bg);
+   border: 2px solid var(--choco-brown);
+   border-radius: 18px;
+   padding: 16px;
+   color: var(--choco-dark);
+   box-shadow: 0 12px 32px rgba(110, 88, 79, 0.28);
+ }
+ .wx-sheet-title {
+   font-size: 16px;
+   font-weight: 700;
+   margin-bottom: 12px;
+   text-align: center;
+ }
+ .wx-sheet-field {
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
+   margin-bottom: 10px;
+   font-size: 12px;
+ }
+ .wx-sheet-field[hidden] { display: none !important; }
+ .wx-sheet-field input {
+   border: 1px solid var(--choco-brown);
+   border-radius: 10px;
+   padding: 8px 10px;
+   font: inherit;
+   font-size: 14px;
+   background: #fff;
+   color: var(--choco-dark);
+ }
+ .wx-sheet-actions {
+   display: flex;
+   gap: 8px;
+   margin-top: 6px;
+ }
+ .wx-sheet-actions button {
+   flex: 1;
+   border: 2px solid var(--choco-brown);
+   border-radius: 14px;
+   padding: 8px;
+   font: inherit;
+   font-size: 14px;
+   background: #fff;
+   color: var(--choco-dark);
+   cursor: pointer;
+ }
+ .wx-sheet-actions button.primary {
+   background: var(--choco-brown);
+   color: var(--text-on-choco);
+ }
+ .wx-err {
+   padding: 0 12px 6px;
+   font-size: 11px;
+   color: #a33;
+   background: var(--mint-green);
+   flex-shrink: 0;
+   min-height: 0;
+ }
+ .wx-row.is-flash .bubble {
+   outline: 2px solid var(--mint-focus, #7eb8a8);
+   outline-offset: 2px;
+ }
+ .wx-hist {
+   position: absolute;
+   inset: 0;
+   z-index: 50;
+   display: flex;
+   flex-direction: column;
+   background: #f3f7f5;
+   color: var(--choco-dark);
+ }
+ .wx-hist[hidden] { display: none !important; }
+ .wx-hist-top {
+   display: flex;
+   align-items: center;
+   gap: 10px;
+   padding: 10px 12px;
+   background: var(--mint-green);
+   border-bottom: 1px solid rgba(181, 161, 152, 0.3);
+   flex-shrink: 0;
+ }
+ .wx-hist-top input[type="search"] {
+   flex: 1;
+   min-width: 0;
+   border: 0;
+   border-radius: 10px;
+   padding: 8px 12px;
+   font: inherit;
+   font-size: 15px;
+   background: #fff;
+   color: var(--choco-dark);
+ }
+ .wx-hist-top input[type="search"]:focus {
+   outline: none;
+   box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.45);
+ }
+ .wx-hist-top #chatHistCancel {
+   border: 0;
+   background: transparent;
+   font: inherit;
+   font-size: 15px;
+   color: #5a8f82;
+   cursor: pointer;
+   flex-shrink: 0;
+   padding: 4px 2px;
+ }
+ .wx-hist-home {
+   flex: 1;
+   min-height: 0;
+   overflow: auto;
+   padding: 28px 20px 24px;
+ }
+ .wx-hist-home[hidden],
+ .wx-hist-dates[hidden],
+ .wx-hist-list[hidden] {
+   display: none !important;
+ }
+ .wx-hist-sec {
+   text-align: center;
+   font-size: 13px;
+   color: rgba(110, 88, 79, 0.55);
+   margin-bottom: 18px;
+ }
+ .wx-hist-grid {
+   display: grid;
+   grid-template-columns: repeat(3, 1fr);
+   gap: 18px 8px;
+   justify-items: center;
+ }
+ .wx-hist-grid button {
+   border: 0;
+   background: transparent;
+   color: #5a8f82;
+   font: inherit;
+   font-size: 15px;
+   cursor: pointer;
+   padding: 6px 4px;
+ }
+ .wx-hist-dates {
+   flex: 1;
+   min-height: 0;
+   display: flex;
+   flex-direction: column;
+   background: #fff;
+ }
+ .wx-cal-head {
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   position: relative;
+   height: 46px;
+   flex-shrink: 0;
+   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+ }
+ .wx-cal-back {
+   position: absolute;
+   left: 8px;
+   top: 50%;
+   transform: translateY(-50%);
+   border: 0;
+   background: transparent;
+   font-size: 28px;
+   line-height: 1;
+   color: #333;
+   cursor: pointer;
+   padding: 4px 10px;
+ }
+ .wx-cal-head-title {
+   font-size: 17px;
+   font-weight: 600;
+   color: #111;
+ }
+ .wx-cal-sticky {
+   flex-shrink: 0;
+   padding: 10px 16px 0;
+   background: #fff;
+   border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+   position: relative;
+ }
+ .wx-cal-jump {
+   border: 0;
+   background: transparent;
+   font: inherit;
+   font-size: 15px;
+   color: #333;
+   cursor: pointer;
+   padding: 0 0 8px;
+   display: inline-flex;
+   align-items: center;
+   gap: 4px;
+ }
+ .wx-cal-chev {
+   font-size: 11px;
+   opacity: 0.55;
+ }
+ .wx-cal-month-input {
+   position: absolute;
+   left: 16px;
+   top: 8px;
+   width: 120px;
+   height: 28px;
+   opacity: 0;
+   border: 0;
+   padding: 0;
+ }
+ .wx-cal-wdays {
+   display: grid;
+   grid-template-columns: repeat(7, 1fr);
+   text-align: center;
+   font-size: 13px;
+   color: rgba(0, 0, 0, 0.35);
+   padding: 4px 0 8px;
+ }
+ .wx-cal-scroll {
+   flex: 1;
+   min-height: 0;
+   overflow: auto;
+   padding: 0 12px 28px;
+   -webkit-overflow-scrolling: touch;
+ }
+ .wx-cal-month {
+   padding-top: 18px;
+ }
+ .wx-cal-month-lab {
+   font-size: 13px;
+   color: rgba(0, 0, 0, 0.35);
+   padding: 0 4px 10px;
+ }
+ .wx-cal-grid {
+   display: grid;
+   grid-template-columns: repeat(7, 1fr);
+   row-gap: 6px;
+ }
+ .wx-cal-cell {
+   border: 0;
+   background: transparent;
+   font: inherit;
+   font-size: 16px;
+   height: 48px;
+   display: flex;
+   flex-direction: column;
+   align-items: center;
+   justify-content: center;
+   color: rgba(0, 0, 0, 0.22);
+   cursor: default;
+   padding: 0;
+   position: relative;
+   opacity: 1;
+ }
+ .wx-cal-cell:disabled {
+   opacity: 1;
+   color: rgba(0, 0, 0, 0.22);
+ }
+ .wx-cal-cell.is-active {
+   color: #111;
+   font-weight: 600;
+   cursor: pointer;
+ }
+ .wx-cal-cell.is-today {
+   color: #fff;
+   font-weight: 600;
+ }
+ .wx-cal-cell.is-today .wx-cal-num {
+   width: 32px;
+   height: 32px;
+   border-radius: 50%;
+   background: #07c160;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   color: #fff;
+ }
+ .wx-cal-today-tag {
+   position: absolute;
+   bottom: 1px;
+   font-size: 10px;
+   color: #07c160;
+   font-weight: 500;
+   line-height: 1;
+ }
+ .wx-cal-cell.is-today.is-active {
+   cursor: pointer;
+ }
+ .wx-hist-list {
+   flex: 1;
+   min-height: 0;
+   overflow: auto;
+   padding: 8px 10px 16px;
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+   background: #f3f7f5;
+ }
+ .wx-hist-row {
+   border: 0;
+   border-bottom: 1px solid rgba(181, 161, 152, 0.25);
+   background: transparent;
+   border-radius: 0;
+   padding: 12px 10px;
+   text-align: left;
+   cursor: pointer;
+   color: var(--choco-dark);
+   font: inherit;
+ }
+ .wx-hist-row .meta {
+   font-size: 11px;
+   opacity: 0.65;
+   margin-bottom: 4px;
+ }
+ .wx-hist-row .body {
+   font-size: 15px;
+   line-height: 1.4;
+   word-break: break-word;
+ }
+ .wx-hist-empty {
+   margin: 40px auto;
+   font-size: 13px;
+   opacity: 0.6;
+   text-align: center;
+ }
+   /* 共看片库 / 播放场 */

@@ -1,0 +1,134 @@
+#view-budget {
+  --bud-mint: #c6e7d1;
+  --bud-choco: #4b2c20;
+  --bud-cream: #fff9f2;
+  color: var(--bud-choco);
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(158, 201, 188, .35), transparent 55%),
+    linear-gradient(165deg, #f7faf8 0%, #eef4f0 50%, #f4ebe0 100%);
+}
+
+.bud-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  flex-shrink: 0;
+  background: rgba(198, 231, 209, .78);
+  border-bottom: 2px solid rgba(75, 44, 32, .14);
+}
+.bud-bar .back {
+  border: 0;
+  background: transparent;
+  color: var(--bud-choco);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px 6px 4px 0;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+.bud-bar .bud-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 16px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.bud-bar .mascot {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.bud-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.bud-total {
+  background: rgba(255, 249, 242, .94);
+  border: 2.5px solid var(--bud-choco);
+  border-radius: 18px;
+  padding: 16px 14px;
+  box-shadow: 2px 3px 0 rgba(75, 44, 32, .14);
+  margin-bottom: 14px;
+}
+.bud-total .lab {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(75, 44, 32, .7);
+}
+.bud-total .rmb {
+  margin-top: 4px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.bud-total .meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(75, 44, 32, .65);
+}
+
+.bud-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bud-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 249, 242, .92);
+  border: 1.5px solid rgba(75, 44, 32, .28);
+  border-radius: 14px;
+  padding: 12px 12px;
+  box-shadow: 1px 1px 0 rgba(75, 44, 32, .08);
+}
+.bud-list .name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.bud-list .name small {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(75, 44, 32, .55);
+}
+.bud-list .amt {
+  text-align: right;
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.bud-list .amt small {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(75, 44, 32, .55);
+}
+
+.bud-foot {
+  margin: 14px 2px 0;
+  font-size: 11px;
+  color: rgba(75, 44, 32, .55);
+  line-height: 1.45;
+}

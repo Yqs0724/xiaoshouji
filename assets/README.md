@@ -7,6 +7,7 @@
 | `cafe/` | `/assets/cafe/` | 壳/共读薄巧皮（壁纸、图标、弹窗框等） |
 | `chat/` | `/assets/chat/`（旧 `/assets-chat/` 仍兼容） | 日常聊天 / 共看吐槽 echoes 皮 |
 | `colisten/` | `/assets/colisten/` | 共听播控皮 |
+| `cal/` | `/assets/cal/` | 日历专用皮（壁纸/和纸/贴纸；勿复用壳与共听壁纸文件） |
 
 源文件库（购买包、预览、试片等）在母仓 [`../素材/`](../素材/)，按 App 分子目录，亦不放在 App 代码树内。
 

@@ -16,7 +16,8 @@
       --line: #e5d9c8;
       --card: rgba(255, 252, 247, .94);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
-      /* 角标点：跟主题走，换皮时改此变量即可 */
+      --phone-status-h: 22px; /* 状态带内容高，不含 safe-area */
+      --phone-status-pad: calc(var(--phone-status-h) + env(safe-area-inset-top, 0px));
       --badge-dot: var(--accent);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,6 +36,59 @@
       height: 0;
       display: none;
     }
+    /* 壳层状态带 · 方案 E：桌面浮层；App 顶栏吞状态区 */
+    #phoneStatus {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      box-sizing: border-box;
+      min-height: var(--phone-status-pad);
+      padding: env(safe-area-inset-top, 0px) 14px 0;
+      color: var(--chocolate);
+      background: transparent;
+      pointer-events: none;
+      z-index: 40;
+    }
+    #phoneStatus.is-off { display: none; }
+    /* App 方案1改：浅薄荷雾状态带（贴薄荷绿顶栏同系，避奶油在共听跳色） */
+    body.phone-status-app #phoneStatus {
+      background: rgba(223, 243, 232, .96); /* --cal-mint-soft 实色 */
+      border-bottom: 1px solid rgba(75, 44, 32, .12);
+    }
+    /* 日历纸感页：状态带改奶油，贴壁纸/卡片 */
+    body.phone-status-app:has(#view-cal.active) #phoneStatus,
+    body.phone-status-app:has(#view-cal-agenda.active) #phoneStatus,
+    body.phone-status-app:has(#view-cal-anniv.active) #phoneStatus,
+    body.phone-status-app:has(#view-cal-propose.active) #phoneStatus {
+      background: rgba(255, 249, 242, .96);
+    }
+    body.phone-status-app .cal-washi-top {
+      display: none;
+    }
+    body.phone-status-app .cal-bar,
+    body.phone-status-app .cabin-top,
+    body.phone-status-app .cr-top,
+    body.phone-status-app .wx-bar,
+    body.phone-status-app .cw-bar,
+    body.phone-status-app .bud-bar {
+      margin-top: var(--phone-status-pad);
+    }
+    #phoneStatus .phone-status-time {
+      font-size: 12px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: .02em;
+      line-height: var(--phone-status-h);
+      min-height: var(--phone-status-h);
+    }
+    #phoneStatus .lock-status {
+      margin-left: auto;
+    }
     .view {
       display: none !important;
       height: 100%;
@@ -43,6 +97,15 @@
       overflow: hidden;
     }
     .view.active { display: flex !important; }
+
+    /* 全局焦点：薄荷绿，别再用系统黄框 */
+    :root { accent-color: #7eb8a8; }
+    input, textarea, select { accent-color: #7eb8a8; }
+    input:focus, textarea:focus, select:focus {
+      outline: none;
+      border-color: #7eb8a8;
+      box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.4);
+    }
 
     /* —— 锁屏（壁纸 + 状态栏 + 时钟） —— */
     #view-standby {
@@ -160,7 +223,7 @@
       font-size: 14px;
       transition: transform .15s ease;
     }
-    .settings .row.tap.open .chev { transform: rotate(90deg); }
+    .settings .row.tap.open .chev { transform: none; }
     .settings .conn-panel {
       display: none;
       margin: 4px 0 10px;
@@ -168,6 +231,22 @@
       border: 1px solid rgba(139, 90, 60, .28);
       border-radius: 12px;
       background: rgba(139, 90, 60, .08);
+    }
+    /* 手机设置：主列表 + 子页 */
+    #phoneSettingsSub {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+    }
+    #phoneSettingsSub.is-open { display: block; }
+    #phoneSettingsList.is-hidden { display: none; }
+    #phoneSettingsSub .conn-panel.open {
+      display: block;
+      margin: 0;
+      border: 0;
+      background: transparent;
+      padding: 4px 2px 16px;
     }
     .settings .world-entry {
       margin-bottom: 12px;
@@ -295,6 +374,65 @@
       color: var(--muted);
       padding: 6px 0;
     }
+    .mcp-tool-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 6px;
+      max-height: 220px;
+      overflow: auto;
+    }
+    .mcp-tool-list .empty {
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .mcp-tool-item {
+      background: #fffaf4;
+      border: 1px solid rgba(229, 217, 200, .9);
+      border-radius: 12px;
+      padding: 8px 10px;
+    }
+    .mcp-tool-item .label-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mcp-tool-item .label-row input {
+      flex: 1;
+      min-width: 0;
+      margin: 0;
+      padding: 6px 8px;
+      font-size: 13px;
+      border: 1px solid rgba(200, 180, 160, .7);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--ink, #3d3229);
+    }
+    .mcp-tool-item code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+    .mcp-tool-item .desc {
+      margin-top: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.35;
+    }
+    .mcp-tool-item .src {
+      display: inline-block;
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    .mcp-tool-list .mcp-err {
+      font-size: 12px;
+      color: #a04848;
+      line-height: 1.35;
+      margin-bottom: 4px;
+    }
     .phone-lore-card {
       background: #fffaf4;
       border: 1px solid rgba(229, 217, 200, .9);
@@ -398,6 +536,22 @@
       letter-spacing: .06em;
       text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
     }
+    .lock-agenda {
+      margin-top: 16px;
+      max-width: 280px;
+      padding: 8px 14px;
+      border-radius: 14px;
+      background: rgba(255, 252, 247, .55);
+      color: #5c4a3a;
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: .04em;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, .45);
+      box-shadow: 0 1px 8px rgba(90, 70, 50, .08);
+    }
+    .lock-agenda[hidden] {
+      display: none !important;
+    }
     .swipe-hint {
       position: relative;
       z-index: 1;
@@ -477,6 +631,14 @@
       color: #8a7a6a;
       margin-top: 1px;
     }
+    .home-wid-cal .pin {
+      font-size: 9px;
+      font-weight: 600;
+      color: #5c4033;
+      margin-top: 2px;
+      letter-spacing: .02em;
+    }
+    .home-wid-cal .pin[hidden] { display: none !important; }
     .home-week {
       display: flex;
       margin-top: 6px;
@@ -650,6 +812,7 @@
       justify-self: center;
     }
     .home-app .ico-wrap {
+      position: relative;
       width: 54px;
       height: 54px;
       border-radius: 16px;
@@ -660,6 +823,20 @@
       align-items: center;
       justify-content: center;
     }
+    .home-app .ico-badge {
+      position: absolute;
+      top: -3px;
+      right: -3px;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--badge-dot);
+      border: 2px solid #fff9f3;
+      box-shadow: 0 1px 3px rgba(58, 46, 36, .28);
+      z-index: 2;
+      pointer-events: none;
+    }
+    .home-app .ico-badge[hidden] { display: none !important; }
     .home-app .ico-wrap img {
       width: 70%;
       height: 70%;
@@ -814,6 +991,11 @@
       width: 100%;
       height: 100%;
       object-fit: contain;
+    }
+    .profile-deco-bar span.on {
+      outline: 2px solid #6a9e8c;
+      outline-offset: 1px;
+      background: rgba(158, 201, 188, .28);
     }
 
     #view-cabin,
@@ -2569,9 +2751,10 @@
 
   </style>
   <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css" />
-  <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css" />
+  <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx28" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
+  <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
 </head>
 <body>
   <div id="gateOverlay" aria-hidden="true">
@@ -2592,6 +2775,21 @@
       <div class="gate-foot" aria-hidden="true"></div>
     </div>
   </div>
+  <header id="phoneStatus" class="is-off" aria-hidden="true">
+    <div class="phone-status-time" id="phoneStatusTime">--:--</div>
+    <div class="lock-status" id="phoneStatusLead">
+      <span class="lock-sig" id="phoneSignal">
+        <i></i><i></i><i></i><i></i>
+      </span>
+      <svg class="lock-ico wifi" id="phoneWifi" viewBox="0 0 16 12" aria-hidden="true">
+        <path fill="currentColor" d="M8 10.6a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Zm0-3.3c1.5 0 2.9.55 4 1.48l-1.15 1.2A4.1 4.1 0 0 0 8 9.1c-.95 0-1.82.32-2.53.88L4.32 8.78A5.55 5.55 0 0 1 8 7.3Zm0-3.25c2.4 0 4.58.9 6.28 2.38L13.1 7.65A7.35 7.35 0 0 0 8 5.55c-1.9 0-3.64.65-5.05 1.74L1.72 6.03A8.85 8.85 0 0 1 8 4.05Z"/>
+      </svg>
+      <span class="lock-batt" id="phoneBatt">
+        <span class="lock-batt-pct" id="phoneBattPct">—</span>
+        <span class="lock-batt-shell"><span class="lock-batt-fill" id="phoneBattFill"></span></span>
+      </span>
+    </div>
+  </header>
   <div class="view active" id="view-standby">
     <div class="lock-top" id="lockTop" aria-hidden="true">
       <div class="lock-status" id="lockStatusLead">
@@ -2611,6 +2809,7 @@
       <div class="lock-time" id="lockTime">--:--</div>
       <div class="lock-weekday" id="lockWeekday">—</div>
       <div class="lock-date" id="lockDate">—</div>
+      <div class="lock-agenda" id="lockAgenda" hidden></div>
     </div>
     <div class="swipe-hint" id="swipeHint">∧ 上滑解锁</div>
   </div>
@@ -2625,6 +2824,7 @@
           <div class="panel">
             <div class="title">薄荷巧克力</div>
             <div class="sub" id="homeMeetSub">今日便签</div>
+            <div class="pin" id="homePinDay" hidden></div>
             <div class="home-week" id="homeWeek"></div>
           </div>
         </button>
@@ -2664,6 +2864,8 @@
         <div class="home-page">
           <button type="button" class="home-app" data-go="todo"><span class="ico-wrap"><img src="/assets/cafe/deco-stamp.png" alt="" /></span><span class="lab">待办</span></button>
           <button type="button" class="home-app" data-go="shop"><span class="ico-wrap"><img src="/assets/cafe/cup.png" alt="" /></span><span class="lab">购物</span></button>
+          <button type="button" class="home-app" data-go="budget"><span class="ico-wrap"><img src="/assets/cafe/health.png" alt="" /></span><span class="lab">额度</span></button>
+          <button type="button" class="home-app" data-go="wallet"><span class="ico-wrap"><img src="/assets/cafe/treat.png" alt="" /></span><span class="lab">钱包</span></button>
           <button type="button" class="home-app" data-go="ledger"><span class="ico-wrap"><img src="/assets/cafe/deco-cookies.png" alt="" /></span><span class="lab">记账</span></button>
           <button type="button" class="home-app" data-go="album"><span class="ico-wrap"><img src="/assets/cafe/deco-paw.png" alt="" /></span><span class="lab">相册</span></button>
           <button type="button" class="home-app" data-go="eat"><span class="ico-wrap"><img src="/assets/cafe/decor-croissant.png" alt="" /></span><span class="lab">吃啥</span></button>
@@ -2694,12 +2896,13 @@
         <div class="big"><img src="/assets/cafe/avatar-bot.png" alt="" /></div>
       </div>
       <p class="hint">正在做什么：<span class="chip" id="profileDoingChip">暂无</span></p>
-      <p class="hint">装饰槽 · 占位（未接库存）</p>
-      <div class="profile-deco-bar" aria-hidden="true">
-        <span><img src="/assets/cafe/deco-shake.png" alt="" /></span>
-        <span><img src="/assets/cafe/deco-donut.png" alt="" /></span>
-        <span><img src="/assets/cafe/treat.png" alt="" /></span>
-        <span><img src="/assets/cafe/deco-cupcake-mint.png" alt="" /></span>
+      <p class="hint">装饰槽 · 占位（未接库存；共听中高亮耳机）</p>
+      <div class="profile-deco-bar" id="profileDecoBar" aria-hidden="true">
+        <span data-deco="shake"><img src="/assets/cafe/deco-shake.png" alt="" /></span>
+        <span data-deco="donut"><img src="/assets/cafe/deco-donut.png" alt="" /></span>
+        <span data-deco="treat"><img src="/assets/cafe/treat.png" alt="" /></span>
+        <span data-deco="cupcake"><img src="/assets/cafe/deco-cupcake-mint.png" alt="" /></span>
+        <span data-deco="headphones"><img src="/assets/colisten/deco-headphones.svg" alt="" /></span>
       </div>
       <p class="hint" style="margin-top:14px">桌面 <strong>长按</strong>头像 → 小屋</p>
     </div>
@@ -2722,6 +2925,7 @@
   <!--APP_VIEW:聊天app:view.html-->
   <!--APP_VIEW:共看app:view.html-->
   <!--APP_VIEW:共看app:view-play.html-->
+  <!--APP_VIEW:额度app:view.html-->
 
 
 
@@ -2747,18 +2951,66 @@
     <div class="cabin-top">
       <span class="down" id="btnPhoneSettingsBack" role="button" tabindex="0" title="回桌面">←</span>
       <div class="spacer"></div>
-      <div>设置</div>
+      <div id="phoneSettingsTitle">设置</div>
     </div>
     <div class="cabin-frame">
       <div class="frame-washi" aria-hidden="true"></div>
       <img class="frame-corner tl" src="/assets/cafe/bow-corner-tl.png?v=4" alt="" />
       <img class="frame-corner br" src="/assets/cafe/deco-cupcake-mint.png" alt="" />
       <div class="cabin-body">
-        <div class="r-card settings">
+        <div class="r-card settings" id="phoneSettingsList">
           <div class="row tap" id="rowConn" role="button" tabindex="0">
             <div>连接与健康<small id="healthStatus">检查中…</small></div>
             <span class="chev">›</span>
           </div>
+          <div class="row tap" id="rowMcpTools" role="button" tabindex="0">
+            <div>家机工具 · MCP<small>聊天调工具 / 外接协议</small></div>
+            <span class="val" id="mcpToolsVal">开</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row tap" id="rowAppleMusic" role="button" tabindex="0">
+            <div>Apple Music<small>共听连接</small></div>
+            <span class="val" id="appleMusicVal">搁置</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row tap" id="rowPersona" role="button" tabindex="0">
+            <div>人设<small>跟批短设 · 完整卡</small></div>
+            <span class="val" id="personaVal">未设置</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row tap" id="rowAppRegistry" role="button" tabindex="0">
+            <div>App 显隐<small>藏起不删数据</small></div>
+            <span class="val" id="appRegistryVal">全部显示</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row tap" id="rowAccessGate" role="button" tabindex="0">
+            <div>访问密码<small>进站门禁 · 部署用</small></div>
+            <span class="val" id="accessGateVal">未设</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row">
+            <div>外观 · 主题<small>echoes│薄巧系 by淅沥沥</small></div>
+            <span class="val">薄巧皮</span>
+          </div>
+          <div class="row tap" id="rowPhoneLore" role="button" tabindex="0">
+            <div>剧情摘要<small>手贴短卡 · 可读</small></div>
+            <span class="val" id="phoneLoreVal">空</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row tap" id="rowBackup" role="button" tabindex="0">
+            <div>备份<small>统一导出 · 不含密钥</small></div>
+            <span class="val" id="backupVal">导出</span>
+            <span class="chev">›</span>
+          </div>
+          <div class="row" style="align-items:center">
+            <div>顶栏时钟<small>共读中显示当前时间</small></div>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin:0">
+              <input id="inShowClock" type="checkbox" style="width:auto;margin:0" checked />
+              开
+            </label>
+          </div>
+        </div>
+        <div class="r-card settings" id="phoneSettingsSub" aria-live="polite">
           <div class="conn-panel" id="connPanel">
             <div class="hint">编辑密钥与模型</div>
             <div class="field">
@@ -2779,26 +3031,44 @@
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveSettings">保存</button>
-              <button type="button" class="ghost" id="btnCloseConn">关闭</button>
+              <button type="button" class="ghost" id="btnCloseConn">返回</button>
               <span class="save-msg" id="saveMsg"></span>
             </div>
           </div>
-          <div class="row tap" id="rowAppleMusic" role="button" tabindex="0">
-            <div>Apple Music<small>共听连接</small></div>
-            <span class="val" id="appleMusicVal">搁置</span>
-            <span class="chev">›</span>
+          <div class="conn-panel" id="mcpToolsPanel">
+            <div class="hint">开着时，日常聊天可调下列工具。显示名可改；模型仍用英文 name。勾选外接 MCP 并填 URL 后会并入远端工具（Streamable HTTP，可带 Bearer）。</div>
+            <div class="field">
+              <label>当前工具<small>内置 + MCP · 显示名可改</small></label>
+              <div class="mcp-tool-list" id="mcpToolList">加载中…</div>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inChatTools" type="checkbox" style="width:auto" checked />
+              <label for="inChatTools" style="font-weight:500;margin:0">聊天时可调用工具<small>日历查/改等</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inMcpEnabled" type="checkbox" style="width:auto" />
+              <label for="inMcpEnabled" style="font-weight:500;margin:0">启用外接 MCP<small>协议客户端，后续接线</small></label>
+            </div>
+            <div class="field">
+              <label for="inMcpUrl">MCP Base URL<small>如 http://127.0.0.1:8788/mcp</small></label>
+              <input id="inMcpUrl" type="url" autocomplete="off" placeholder="https://…" />
+            </div>
+            <div class="field">
+              <label for="inMcpToken">MCP Token<small>可选 Bearer</small></label>
+              <input id="inMcpToken" type="password" autocomplete="off" placeholder="可选" />
+            </div>
+            <div class="save-row">
+              <button type="button" class="primary" id="btnSaveMcpTools">保存</button>
+              <button type="button" class="ghost" id="btnCloseMcpTools">返回</button>
+              <span class="save-msg" id="mcpToolsMsg"></span>
+            </div>
           </div>
           <div class="conn-panel" id="appleMusicPanel">
             <div class="hint">连接配置搁置：不强制开发者账号 / JWT。共听 App 已用 mock 播控 + 本场吐槽骨架；真 MusicKit 以后再接。</div>
             <div class="save-row">
-              <button type="button" class="ghost" id="btnCloseAppleMusic">关闭</button>
+              <button type="button" class="ghost" id="btnCloseAppleMusic">返回</button>
               <span class="save-msg" id="appleMusicMsg"></span>
             </div>
-          </div>
-          <div class="row tap" id="rowPersona" role="button" tabindex="0">
-            <div>人设<small>跟批短设 · 完整卡</small></div>
-            <span class="val" id="personaVal">未设置</span>
-            <span class="chev">›</span>
           </div>
           <div class="conn-panel" id="personaPanel">
             <div class="hint">小屋默认：短人设进跟批；本场可在「对话」里临时改称呼与头像</div>
@@ -2832,46 +3102,18 @@
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSavePersona">保存</button>
-              <button type="button" class="ghost" id="btnClosePersona">关闭</button>
+              <button type="button" class="ghost" id="btnClosePersona">返回</button>
               <span class="save-msg" id="personaMsg"></span>
             </div>
-          </div>
-          <div class="row tap" id="rowMeetDate" role="button" tabindex="0">
-            <div>相识日<small>桌面相遇天数</small></div>
-            <span class="val" id="meetDateVal">未设</span>
-            <span class="chev">›</span>
-          </div>
-          <div class="conn-panel" id="meetDatePanel">
-            <div class="hint">设了之后桌面相遇卡显示「相遇第 n 天」。清空并保存=不显示天数。</div>
-            <div class="field">
-              <label for="inMeetDate">相识日</label>
-              <input id="inMeetDate" type="date" />
-            </div>
-            <div class="save-row">
-              <button type="button" class="primary" id="btnSaveMeetDate">保存</button>
-              <button type="button" class="ghost" id="btnClearMeetDate">清空</button>
-              <button type="button" class="ghost" id="btnCloseMeetDate">关闭</button>
-              <span class="save-msg" id="meetDateMsg"></span>
-            </div>
-          </div>
-          <div class="row tap" id="rowAppRegistry" role="button" tabindex="0">
-            <div>App 显隐<small>藏起不删数据</small></div>
-            <span class="val" id="appRegistryVal">全部显示</span>
-            <span class="chev">›</span>
           </div>
           <div class="conn-panel" id="appRegistryPanel">
             <div class="hint">关掉的图标从桌面/Dock 消失；业务数据仍保留。「设置」不可藏。</div>
             <div class="app-reg-list" id="appRegList"></div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveAppRegistry">保存</button>
-              <button type="button" class="ghost" id="btnCloseAppRegistry">关闭</button>
+              <button type="button" class="ghost" id="btnCloseAppRegistry">返回</button>
               <span class="save-msg" id="appRegistryMsg"></span>
             </div>
-          </div>
-          <div class="row tap" id="rowAccessGate" role="button" tabindex="0">
-            <div>访问密码<small>进站门禁 · 部署用</small></div>
-            <span class="val" id="accessGateVal">未设</span>
-            <span class="chev">›</span>
           </div>
           <div class="conn-panel" id="accessGatePanel">
             <div class="hint" id="accessGateHint">设了之后，打开小屋要先输密码。备份不含密码哈希。</div>
@@ -2881,18 +3123,9 @@
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveAccessGate">保存</button>
-              <button type="button" class="ghost" id="btnCloseAccessGate">关闭</button>
+              <button type="button" class="ghost" id="btnCloseAccessGate">返回</button>
               <span class="save-msg" id="accessGateMsg"></span>
             </div>
-          </div>
-          <div class="row">
-            <div>外观 · 主题<small>echoes│薄巧系 by淅沥沥</small></div>
-            <span class="val">薄巧皮</span>
-          </div>
-          <div class="row tap" id="rowPhoneLore" role="button" tabindex="0">
-            <div>剧情摘要<small>手贴短卡 · 可读</small></div>
-            <span class="val" id="phoneLoreVal">空</span>
-            <span class="chev">›</span>
           </div>
           <div class="conn-panel" id="phoneLorePanel">
             <div class="hint">正剧在 Chatbox；这里只存可读短卡（手贴）。不注入共读跟批。MCP 写卡后开。</div>
@@ -2903,14 +3136,9 @@
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSavePhoneLore">保存</button>
-              <button type="button" class="ghost" id="btnClosePhoneLore">关闭</button>
+              <button type="button" class="ghost" id="btnClosePhoneLore">返回</button>
               <span class="save-msg" id="phoneLoreMsg"></span>
             </div>
-          </div>
-          <div class="row tap" id="rowBackup" role="button" tabindex="0">
-            <div>备份<small>统一导出 · 不含密钥</small></div>
-            <span class="val" id="backupVal">导出</span>
-            <span class="chev">›</span>
           </div>
           <div class="conn-panel" id="backupPanel">
             <div class="hint">Ariadne 统一备份：含设定、共读、日历、日常聊天、剧情摘要卡（有数据才进 modules）。片库日后只备元数据、不含原片。恢复前会在 data/backups/ 留快照；密钥不从备份覆盖。</div>
@@ -2925,15 +3153,8 @@
             <div class="save-msg" id="backupMsg" style="display:block;margin:6px 0 8px;min-height:1.2em"></div>
             <div class="save-row">
               <button type="button" class="primary" id="btnBackupRestore" disabled>确认恢复</button>
-              <button type="button" class="ghost" id="btnCloseBackup">关闭</button>
+              <button type="button" class="ghost" id="btnCloseBackup">返回</button>
             </div>
-          </div>
-          <div class="row" style="align-items:center">
-            <div>顶栏时钟<small>共读中显示当前时间</small></div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin:0">
-              <input id="inShowClock" type="checkbox" style="width:auto;margin:0" checked />
-              开
-            </label>
           </div>
         </div>
       </div>
@@ -3423,9 +3644,10 @@
   </div>
 
   <script src="/assets-colisten/colisten.js"></script>
-  <script src="/app-ui/日历app/pwa/cal.js"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js"></script>
+  <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx28"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
+  <script src="/app-ui/额度app/pwa/budget.js"></script>
   <script>
     const TITLES = { shelf: "书架", notes: "笔记", records: "记录", settings: "设定" };
 
@@ -3820,15 +4042,195 @@
         showClock = s.show_clock !== false;
         const clockCb = document.getElementById("inShowClock");
         if (clockCb) clockCb.checked = showClock;
-        applyMeetDate(s.meet_date || "");
+        applyAnnivs(s.annivs || [], s.pin_anniv_id || "");
+        updateHomeMeetSub();
         applyAppRegistry(s.app_hidden || []);
         updateCoreadClock();
         updateFollowUi();
         defaultModel = (s.llm_model || "").trim();
         updateModelPill();
+        const chatToolsEl = document.getElementById("inChatTools");
+        if (chatToolsEl) chatToolsEl.checked = s.chat_tools_enabled !== false;
+        const mcpEn = document.getElementById("inMcpEnabled");
+        if (mcpEn) mcpEn.checked = !!s.mcp_enabled;
+        const mcpUrl = document.getElementById("inMcpUrl");
+        if (mcpUrl) mcpUrl.value = s.mcp_url || "";
+        const mcpTok = document.getElementById("inMcpToken");
+        if (mcpTok) mcpTok.value = s.mcp_token || "";
+        updateMcpToolsVal(s.chat_tools_enabled !== false, !!s.mcp_enabled);
       } catch (_) {
         const msg = document.getElementById("saveMsg");
         msg.textContent = "读取设定失败";
+        msg.className = "save-msg bad";
+      }
+    }
+
+    function updateMcpToolsVal(chatOn, mcpOn) {
+      const el = document.getElementById("mcpToolsVal");
+      if (!el) return;
+      if (chatOn && mcpOn) el.textContent = "工具·MCP";
+      else if (chatOn) el.textContent = "工具开";
+      else if (mcpOn) el.textContent = "仅MCP";
+      else el.textContent = "关";
+    }
+
+    let phoneSettingsSubKey = null;
+
+    function openSettingsSub(key, title, panelId, onOpen) {
+      phoneSettingsSubKey = key;
+      const list = document.getElementById("phoneSettingsList");
+      const sub = document.getElementById("phoneSettingsSub");
+      const titleEl = document.getElementById("phoneSettingsTitle");
+      if (list) list.classList.add("is-hidden");
+      if (sub) sub.classList.add("is-open");
+      if (titleEl) titleEl.textContent = title || "设置";
+      document.querySelectorAll("#phoneSettingsSub .conn-panel").forEach((p) => {
+        p.classList.toggle("open", p.id === panelId);
+      });
+      document.querySelectorAll("#phoneSettingsList .row.tap").forEach((r) => {
+        r.classList.remove("open");
+      });
+      const back = document.getElementById("btnPhoneSettingsBack");
+      if (back) back.title = "返回设置";
+      if (typeof onOpen === "function") onOpen();
+    }
+
+    function closeSettingsSub() {
+      const leaving = phoneSettingsSubKey;
+      phoneSettingsSubKey = null;
+      const list = document.getElementById("phoneSettingsList");
+      const sub = document.getElementById("phoneSettingsSub");
+      const titleEl = document.getElementById("phoneSettingsTitle");
+      if (list) list.classList.remove("is-hidden");
+      if (sub) sub.classList.remove("is-open");
+      if (titleEl) titleEl.textContent = "设置";
+      document.querySelectorAll("#phoneSettingsSub .conn-panel").forEach((p) => {
+        p.classList.remove("open");
+      });
+      const back = document.getElementById("btnPhoneSettingsBack");
+      if (back) back.title = "回桌面";
+      if (leaving === "backup" && typeof clearPendingBackup === "function") {
+        clearPendingBackup();
+        setBackupMsg("");
+      }
+    }
+
+    function collapseMcpTools() {
+      if (phoneSettingsSubKey === "mcp") closeSettingsSub();
+    }
+
+    async function paintChatToolsList() {
+      const box = document.getElementById("mcpToolList");
+      if (!box) return;
+      box.textContent = "加载中…";
+      try {
+        const res = await fetch("/api/v1/chat/tools", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "http " + res.status);
+        const tools = Array.isArray(data.tools) ? data.tools : [];
+        box.replaceChildren();
+        if (data.mcp_error) {
+          const err = document.createElement("div");
+          err.className = "mcp-err";
+          err.textContent = "MCP：" + data.mcp_error;
+          box.append(err);
+        }
+        if (!tools.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "暂无工具";
+          box.append(empty);
+          return;
+        }
+        for (const t of tools) {
+          const row = document.createElement("div");
+          row.className = "mcp-tool-item";
+          const lab = document.createElement("div");
+          lab.className = "label-row";
+          const input = document.createElement("input");
+          input.type = "text";
+          input.maxLength = 32;
+          input.dataset.toolName = t.name || "";
+          input.value = t.label || t.name || "";
+          input.placeholder = "显示名";
+          input.setAttribute("aria-label", (t.name || "工具") + " 显示名");
+          lab.append(input);
+          row.append(lab);
+          const name = document.createElement("code");
+          name.textContent = t.name || "";
+          row.append(name);
+          const src = document.createElement("div");
+          src.className = "src";
+          src.textContent =
+            t.source === "mcp"
+              ? "MCP" + (t.remote && t.remote !== t.name ? " · " + t.remote : "")
+              : "内置";
+          row.append(src);
+          if (t.description) {
+            const d = document.createElement("div");
+            d.className = "desc";
+            d.textContent = t.description;
+            row.append(d);
+          }
+          box.append(row);
+        }
+      } catch (_) {
+        box.textContent = "读取失败（需重启网关）";
+      }
+    }
+
+    function collectChatToolLabels() {
+      const out = {};
+      document.querySelectorAll("#mcpToolList input[data-tool-name]").forEach((el) => {
+        const name = String(el.dataset.toolName || "").trim();
+        const label = String(el.value || "").trim();
+        if (name && label) out[name] = label;
+      });
+      return out;
+    }
+
+    function expandMcpTools() {
+      document.getElementById("mcpToolsMsg").textContent = "";
+      document.getElementById("mcpToolsMsg").className = "save-msg";
+      openSettingsSub("mcp", "家机工具 · MCP", "mcpToolsPanel", async () => {
+        await loadSettings();
+        await paintChatToolsList();
+      });
+    }
+
+    function toggleMcpTools() {
+      const p = document.getElementById("mcpToolsPanel");
+      if (p && p.classList.contains("open")) collapseMcpTools();
+      else expandMcpTools();
+    }
+
+    async function saveMcpTools() {
+      const msg = document.getElementById("mcpToolsMsg");
+      msg.textContent = "保存中…";
+      msg.className = "save-msg";
+      const chatOn = !!document.getElementById("inChatTools").checked;
+      const mcpOn = !!document.getElementById("inMcpEnabled").checked;
+      const patch = {
+        chat_tools_enabled: chatOn,
+        chat_tool_labels: collectChatToolLabels(),
+        mcp_enabled: mcpOn,
+        mcp_url: document.getElementById("inMcpUrl").value,
+        mcp_token: document.getElementById("inMcpToken").value,
+      };
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok) throw new Error("http " + res.status);
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+        updateMcpToolsVal(chatOn, mcpOn);
+        await paintChatToolsList();
+        collapseMcpTools();
+      } catch (_) {
+        msg.textContent = "保存失败";
         msg.className = "save-msg bad";
       }
     }
@@ -3845,41 +4247,72 @@
       else el.textContent = "未设";
     }
 
-    let meetDateCached = "";
+    let annivsCached = [];
+    let pinAnnivIdCached = "";
 
-    function meetDayCount(iso) {
+    /** 钉日相对今天：已过=正数，未来=负数，当日=0 */
+    function pinDayDelta(iso) {
       const s = String(iso || "").trim();
       if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
       const [y, m, d] = s.split("-").map(Number);
       const start = new Date(y, m - 1, d);
-      if (start.getFullYear() !== y || start.getMonth() !== m - 1 || start.getDate() !== d) return null;
+      if (start.getFullYear() !== y || start.getMonth() !== m - 1 || start.getDate() !== d) {
+        return null;
+      }
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const diff = Math.floor((today - start) / 86400000);
-      if (diff < 0) return null;
-      return diff + 1;
+      return Math.round((today - start) / 86400000);
     }
 
-    function updateHomeMeetSub(iso) {
+    function updateHomeMeetSub() {
       const el = document.getElementById("homeMeetSub");
       if (!el) return;
-      const n = meetDayCount(iso);
-      el.textContent = n != null ? "相遇第 " + n + " 天 · 今日便签" : "今日便签";
+      el.textContent = "今日便签";
     }
 
-    function updateMeetDateVal(iso) {
-      const el = document.getElementById("meetDateVal");
+    function updateHomePinDay(pin) {
+      const el = document.getElementById("homePinDay");
       if (!el) return;
-      const s = String(iso || "").trim();
-      el.textContent = s || "未设";
+      const title = String((pin && pin.title) || "").trim();
+      const date = String((pin && pin.date) || "").trim();
+      if (!title || !date) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      const delta = pinDayDelta(date);
+      if (delta == null) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      if (delta > 0) el.textContent = title + " · 已经 " + delta + " 天";
+      else if (delta < 0) el.textContent = title + " · 还有 " + -delta + " 天";
+      else el.textContent = title + " · 就是今天";
+      el.hidden = false;
     }
 
-    function applyMeetDate(iso) {
-      meetDateCached = String(iso || "").trim();
-      const input = document.getElementById("inMeetDate");
-      if (input) input.value = meetDateCached;
-      updateMeetDateVal(meetDateCached);
-      updateHomeMeetSub(meetDateCached);
+    function pinnedAnnivFromCache() {
+      const id = String(pinAnnivIdCached || "");
+      if (!id) return null;
+      return (annivsCached || []).find((a) => a && a.id === id) || null;
+    }
+
+    function applyAnnivs(annivs, pinId) {
+      annivsCached = Array.isArray(annivs)
+        ? annivs
+            .filter((a) => a && a.id && a.title && a.date)
+            .map((a) => ({
+              id: String(a.id),
+              title: String(a.title).trim(),
+              date: String(a.date).trim(),
+            }))
+        : [];
+      pinAnnivIdCached = String(pinId || "").trim();
+      if (pinAnnivIdCached && !annivsCached.some((a) => a.id === pinAnnivIdCached)) {
+        pinAnnivIdCached = "";
+      }
+      updateHomePinDay(pinnedAnnivFromCache());
     }
 
     const APP_REG_CATALOG = [
@@ -3893,6 +4326,8 @@
       { id: "pet", lab: "花宠" },
       { id: "todo", lab: "待办" },
       { id: "shop", lab: "购物" },
+      { id: "budget", lab: "额度" },
+      { id: "wallet", lab: "钱包" },
       { id: "ledger", lab: "记账" },
       { id: "album", lab: "相册" },
       { id: "eat", lab: "吃啥" },
@@ -3945,10 +4380,7 @@
     }
 
     function collapseAppRegistry() {
-      const panel = document.getElementById("appRegistryPanel");
-      const row = document.getElementById("rowAppRegistry");
-      if (panel) panel.classList.remove("open");
-      if (row) row.classList.remove("open");
+      if (phoneSettingsSubKey === "apps") closeSettingsSub();
     }
 
     function expandAppRegistry() {
@@ -3957,16 +4389,10 @@
         msg.textContent = "";
         msg.className = "save-msg";
       }
-      loadSettings();
-      collapseConn();
-      collapsePersona();
-      collapseMeetDate();
-      collapseAccessGate();
-      collapseBackup();
-      collapsePhoneLore();
-      paintAppRegList();
-      document.getElementById("appRegistryPanel").classList.add("open");
-      document.getElementById("rowAppRegistry").classList.add("open");
+      openSettingsSub("apps", "App 显隐", "appRegistryPanel", () => {
+        loadSettings();
+        paintAppRegList();
+      });
     }
 
     function toggleAppRegistry() {
@@ -4003,81 +4429,18 @@
     }
 
 
-    function collapseMeetDate() {
-      const panel = document.getElementById("meetDatePanel");
-      const row = document.getElementById("rowMeetDate");
-      if (panel) panel.classList.remove("open");
-      if (row) row.classList.remove("open");
-    }
-
-    function expandMeetDate() {
-      const msg = document.getElementById("meetDateMsg");
-      if (msg) {
-        msg.textContent = "";
-        msg.className = "save-msg";
-      }
-      loadSettings();
-      collapseConn();
-      collapsePersona();
-      (window.ColistenApp && ColistenApp.collapse());
-      collapseAccessGate();
-      collapseAppRegistry();
-      collapseBackup();
-      collapsePhoneLore();
-      document.getElementById("meetDatePanel").classList.add("open");
-      document.getElementById("rowMeetDate").classList.add("open");
-    }
-
-    function toggleMeetDate() {
-      if (document.getElementById("meetDatePanel").classList.contains("open")) {
-        collapseMeetDate();
-      } else expandMeetDate();
-    }
-
-    async function saveMeetDate(clear) {
-      const msg = document.getElementById("meetDateMsg");
-      msg.textContent = "保存中…";
-      msg.className = "save-msg";
-      const meet_date = clear ? "" : document.getElementById("inMeetDate").value || "";
-      try {
-        const res = await fetch("/api/v1/settings", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ meet_date }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.message || data.error || "http");
-        applyMeetDate(data.meet_date || "");
-        msg.textContent = meet_date ? "已保存" : "已清空";
-        msg.className = "save-msg ok";
-        collapseMeetDate();
-      } catch (e) {
-        msg.textContent = (e && e.message) || "保存失败";
-        msg.className = "save-msg bad";
-      }
-    }
+    /** 相识日已迁日历·纪念日；保留空函数供其它面板 collapse 链调用 */
+    function collapseMeetDate() {}
 
     function collapseAccessGate() {
-      document.getElementById("accessGatePanel").classList.remove("open");
-      document.getElementById("rowAccessGate").classList.remove("open");
+      if (phoneSettingsSubKey === "gate") closeSettingsSub();
     }
 
     function expandAccessGate() {
       document.getElementById("accessGateMsg").textContent = "";
       document.getElementById("accessGateMsg").className = "save-msg";
       document.getElementById("inGatePassword").value = "";
-      loadSettings();
-      collapseConn();
-      collapsePersona();
-      collapseLore();
-      collapseWorld();
-      collapseFollowDefaults();
-      collapseMeetDate();
-      collapseAppRegistry();
-      collapseBackup();
-      collapsePhoneLore();
-      document.getElementById("accessGatePanel").classList.add("open");
-      document.getElementById("rowAccessGate").classList.add("open");
+      openSettingsSub("gate", "访问密码", "accessGatePanel", () => loadSettings());
     }
 
     function toggleAccessGate() {
@@ -4134,6 +4497,7 @@
           return false;
         }
         hideGateOverlay();
+        refreshLockAgenda();
         return true;
       } catch (_) {
         return true;
@@ -4159,6 +4523,7 @@
         checkHealth();
         loadSettings();
         loadBooks();
+        refreshLockAgenda();
       } catch (_) {
         err.textContent = "解锁失败";
       }
@@ -4258,29 +4623,15 @@
     function expandConn() {
       document.getElementById("saveMsg").textContent = "";
       document.getElementById("saveMsg").className = "save-msg";
-      loadSettings();
-      collapsePersona();
-      collapseFollowDefaults();
-      collapseWorld();
-      collapseLore();
-      collapseAccessGate();
-      collapseMeetDate();
-      (window.ColistenApp && ColistenApp.collapse());
-      collapseAppRegistry();
-      collapseBackup();
-      collapsePhoneLore();
-      document.getElementById("connPanel").classList.add("open");
-      document.getElementById("rowConn").classList.add("open");
+      openSettingsSub("conn", "连接与健康", "connPanel", () => loadSettings());
     }
 
     function collapseConn() {
-      document.getElementById("connPanel").classList.remove("open");
-      document.getElementById("rowConn").classList.remove("open");
+      if (phoneSettingsSubKey === "conn") closeSettingsSub();
     }
 
     function collapsePersona() {
-      document.getElementById("personaPanel").classList.remove("open");
-      document.getElementById("rowPersona").classList.remove("open");
+      if (phoneSettingsSubKey === "persona") closeSettingsSub();
     }
 
     function collapseWorld() {
@@ -4307,18 +4658,7 @@
     function expandPersona() {
       document.getElementById("personaMsg").textContent = "";
       document.getElementById("personaMsg").className = "save-msg";
-      loadSettings();
-      collapseConn();
-      collapseFollowDefaults();
-      collapseWorld();
-      collapseLore();
-      collapseAccessGate();
-      collapseMeetDate();
-      collapseAppRegistry();
-      collapseBackup();
-      collapsePhoneLore();
-      document.getElementById("personaPanel").classList.add("open");
-      document.getElementById("rowPersona").classList.add("open");
+      openSettingsSub("persona", "人设", "personaPanel", () => loadSettings());
     }
 
     function expandLore() {
@@ -5188,11 +5528,13 @@
       const timeEl = document.getElementById("lockTime");
       const weekEl = document.getElementById("lockWeekday");
       const dateEl = document.getElementById("lockDate");
-      if (!timeEl && !weekEl && !dateEl) return;
+      const statusTime = document.getElementById("phoneStatusTime");
       const d = new Date();
       const pad = (n) => (n < 10 ? "0" + n : "" + n);
+      const hm = pad(d.getHours()) + ":" + pad(d.getMinutes());
       const weeks = ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"];
-      if (timeEl) timeEl.textContent = pad(d.getHours()) + ":" + pad(d.getMinutes());
+      if (timeEl) timeEl.textContent = hm;
+      if (statusTime) statusTime.textContent = hm;
       if (weekEl) weekEl.textContent = weeks[d.getDay()];
       if (dateEl) {
         dateEl.textContent =
@@ -5200,24 +5542,83 @@
       }
     }
 
-    function updateLockNetStatus() {
-      const lead = document.getElementById("lockStatusLead");
-      const sig = document.getElementById("lockSignal");
+    /** 锁屏下一档日程：日历仅有日无钟点，文案用「今日/明天/M月D日 · 标题」 */
+    function formatLockAgendaDay(iso, todayIso) {
+      if (!iso) return "";
+      if (iso === todayIso) return "今日";
+      const tmr = new Date();
+      tmr.setDate(tmr.getDate() + 1);
+      if (window.CalApp && iso === CalApp.localDateISO(tmr)) return "明天";
+      const parts = String(iso).split("-");
+      const m = Number(parts[1]);
+      const d = Number(parts[2]);
+      if (!m || !d) return iso;
+      return m + "月" + d + "日";
+    }
+
+    async function refreshLockAgenda() {
+      const el = document.getElementById("lockAgenda");
+      if (!el) return;
+      if (!window.CalApp) {
+        el.hidden = true;
+        el.textContent = "";
+        return;
+      }
+      try {
+        const today = CalApp.localDateISO(new Date());
+        const end = new Date();
+        end.setDate(end.getDate() + 14);
+        const events = await CalApp.fetchEvents({
+          from: today,
+          to: CalApp.localDateISO(end),
+        });
+        /* 取窗口内最近一日的第一条（全日无钟点） */
+        const next = (events || [])
+          .filter((e) => e && e.title && e.date)
+          .sort((a, b) =>
+            a.date < b.date
+              ? -1
+              : a.date > b.date
+                ? 1
+                : (a.created_at || 0) - (b.created_at || 0)
+          )[0];
+        if (!next) {
+          el.hidden = true;
+          el.textContent = "";
+          return;
+        }
+        el.textContent =
+          formatLockAgendaDay(next.date, today) + " · " + String(next.title).trim();
+        el.hidden = false;
+      } catch (_) {
+        el.hidden = true;
+        el.textContent = "";
+      }
+    }
+
+    function paintStatusLead(leadId, sigId, wifiId, online) {
+      const lead = document.getElementById(leadId);
+      const sig = document.getElementById(sigId);
       if (!lead) return;
-      const online = !(typeof navigator !== "undefined" && navigator.onLine === false);
       lead.classList.toggle("off", !online);
       if (sig) {
         sig.classList.toggle("weak", !online);
         sig.title = online ? "蜂窝信号" : "无网络";
       }
-      const wifi = document.getElementById("lockWifi");
+      const wifi = document.getElementById(wifiId);
       if (wifi) wifi.setAttribute("title", online ? "Wi‑Fi" : "离线");
     }
 
-    function paintLockBattery(level, charging) {
-      const wrap = document.getElementById("lockBatt");
-      const pctEl = document.getElementById("lockBattPct");
-      const fill = document.getElementById("lockBattFill");
+    function updateLockNetStatus() {
+      const online = !(typeof navigator !== "undefined" && navigator.onLine === false);
+      paintStatusLead("lockStatusLead", "lockSignal", "lockWifi", online);
+      paintStatusLead("phoneStatusLead", "phoneSignal", "phoneWifi", online);
+    }
+
+    function paintBattEls(wrapId, pctId, fillId, level, charging) {
+      const wrap = document.getElementById(wrapId);
+      const pctEl = document.getElementById(pctId);
+      const fill = document.getElementById(fillId);
       if (!wrap || !pctEl || !fill) return;
       const pct = Math.max(0, Math.min(100, Math.round(Number(level) * 100)));
       pctEl.textContent = pct + "%";
@@ -5225,6 +5626,11 @@
       wrap.classList.toggle("low", pct <= 20 && !charging);
       wrap.classList.toggle("charge", !!charging);
       wrap.title = charging ? "充电中 · " + pct + "%" : "电池 · " + pct + "%";
+    }
+
+    function paintLockBattery(level, charging) {
+      paintBattEls("lockBatt", "lockBattPct", "lockBattFill", level, charging);
+      paintBattEls("phoneBatt", "phoneBattPct", "phoneBattFill", level, charging);
     }
 
     let lockBattBound = false;
@@ -5654,11 +6060,28 @@
       updateCoreadTitle();
     }
 
+    let shellViewName = "standby";
     function showView(name) {
+      const from = shellViewName;
+      shellViewName = name;
       document.querySelectorAll(".view").forEach((el) => {
         el.classList.toggle("active", el.id === "view-" + name);
         el.style.removeProperty("display");
       });
+      const phoneStatus = document.getElementById("phoneStatus");
+      const body = document.body;
+      body.classList.remove("phone-status-home", "phone-status-app");
+      if (phoneStatus) {
+        const off = name === "standby";
+        phoneStatus.classList.toggle("is-off", off);
+        phoneStatus.setAttribute("aria-hidden", off ? "true" : "false");
+        if (!off) {
+          body.classList.add(name === "home" ? "phone-status-home" : "phone-status-app");
+        }
+      }
+      if (name === "home" && from === "standby") {
+        pokeChatOnUnlock();
+      }
       if (name !== "coread") {
         stopHighlightPoll();
         setPresence(null);
@@ -5683,13 +6106,23 @@
         checkHealth();
         updateLockClock();
         updateLockNetStatus();
+        refreshLockAgenda();
       }
       if (name === "cabin") loadBooks();
       if (name === "phone-settings") {
         checkHealth();
         refreshPhoneLoreVal();
       }
-      if (name === "cal" && window.CalApp) CalApp.refreshView();
+      if (
+        window.CalApp &&
+        (name === "cal" ||
+          name === "cal-agenda" ||
+          name === "cal-anniv" ||
+          name === "cal-propose")
+      ) {
+        CalApp.onShow(name);
+      }
+      if (name === "budget" && window.BudgetApp) BudgetApp.onShow();
       if (name === "chat" && window.ChatApp) ChatApp.refreshThread();
       if (name === "cowatch" && window.CowatchApp) CowatchApp.refreshList();
       if (name === "colisten" && window.ColistenApp) ColistenApp.enterPlayer();
@@ -5697,8 +6130,7 @@
       if (name === "home") refreshHomeToday();
       if (name === "profile") refreshListenPresence();
       closeSheet();
-      collapseConn();
-      collapsePersona();
+      if (name !== "phone-settings") closeSettingsSub();
       collapseFollowDefaults();
     }
 
@@ -5720,7 +6152,7 @@
 
     function enterHome() {
       showView("home");
-      updateHomeMeetSub(meetDateCached);
+      updateHomeMeetSub();
       applyAppRegistry(appHiddenCached);
       refreshHomeToday();
     }
@@ -5730,11 +6162,14 @@
       showView("cabin");
     }
 
-    function openAppStub(title) {
+    function openAppStub(title, hint) {
       const t = document.getElementById("appStubTitle");
       const h = document.getElementById("appStubHint");
       if (t) t.textContent = title || "App";
-      if (h) h.textContent = "「" + (title || "App") + "」占位入口，业务未开工";
+      if (h) {
+        h.textContent =
+          hint || "「" + (title || "App") + "」占位入口，业务未开工";
+      }
       showView("app-stub");
     }
 
@@ -5745,7 +6180,31 @@
       else if (go === "chat") showView("chat");
       else if (go === "cowatch") showView("cowatch");
       else if (go === "colisten") showView("colisten");
-      else openAppStub(lab || go || "App");
+      else if (go === "budget") showView("budget");
+      else if (go === "wallet") {
+        openAppStub(
+          "钱包",
+          "模拟余额（聊天红包/转账）。≠ LLM「额度」。业务页未开工。"
+        );
+      } else openAppStub(lab || go || "App");
+    }
+
+    const HOME_DECO_DEFAULT = "/assets/cafe/deco-shake.png";
+    const HOME_DECO_LISTEN = "/assets/colisten/deco-headphones.svg";
+
+    function setHomeListenDeco(active) {
+      const src = active ? HOME_DECO_LISTEN : HOME_DECO_DEFAULT;
+      for (const id of ["avYou", "avBot"]) {
+        const face = document.getElementById(id);
+        const deco = face && face.querySelector("img.deco");
+        if (deco && deco.getAttribute("src") !== src) deco.src = src;
+      }
+      const bar = document.getElementById("profileDecoBar");
+      if (bar) {
+        for (const span of bar.querySelectorAll("[data-deco]")) {
+          span.classList.toggle("on", !!active && span.dataset.deco === "headphones");
+        }
+      }
     }
 
     async function refreshListenPresence() {
@@ -5769,6 +6228,7 @@
           }
         }
         if (chip) chip.textContent = active ? label : "暂无";
+        setHomeListenDeco(active);
       } catch (_) {
         if (cap) {
           cap.hidden = true;
@@ -5776,19 +6236,79 @@
           delete cap.dataset.go;
         }
         if (chip) chip.textContent = "暂无";
+        setHomeListenDeco(false);
+      }
+    }
+
+    function paintChatUnread(count) {
+      const n = Math.max(0, Math.floor(Number(count) || 0));
+      document.querySelectorAll('.home-app[data-go="chat"] .ico-wrap').forEach((wrap) => {
+        let dot = wrap.querySelector(".ico-badge");
+        if (!dot) {
+          dot = document.createElement("i");
+          dot.className = "ico-badge";
+          dot.setAttribute("aria-hidden", "true");
+          wrap.appendChild(dot);
+        }
+        dot.hidden = n <= 0;
+      });
+    }
+
+    async function refreshChatUnread() {
+      try {
+        const res = await fetch("/api/v1/chat/unread", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error("unread");
+        paintChatUnread(data.count);
+      } catch (_) {
+        /* 接口未就绪时不贴角标 */
+      }
+    }
+
+    async function pokeChatOnUnlock() {
+      try {
+        const res = await fetch("/api/v1/chat/poke", {
+          method: "POST",
+          credentials: "same-origin",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (data.poked) paintChatUnread(data.count);
+        else refreshChatUnread();
+      } catch (_) {
+        /* 无主动短讯时忽略 */
       }
     }
 
     async function refreshHomeToday() {
       const ul = document.getElementById("homeTodayList");
       refreshListenPresence();
+      refreshChatUnread();
       if (!ul || !window.CalApp) return;
       ul.replaceChildren();
       try {
-        const events = await CalApp.fetchEvents({
-          date: CalApp.localDateISO(new Date()),
-        });
-        if (!events.length) {
+        const today = CalApp.localDateISO(new Date());
+        const [events, notes] = await Promise.all([
+          CalApp.fetchEvents({ date: today }),
+          CalApp.fetchNotes ? CalApp.fetchNotes({ date: today }) : Promise.resolve([]),
+        ]);
+        const lines = [];
+        for (const ev of events || []) {
+          const t = String(ev && ev.title || "").trim();
+          if (t) lines.push(t);
+        }
+        for (const n of notes || []) {
+          const t = String(n && n.body || "")
+            .trim()
+            .split(/\r?\n/)[0]
+            .trim()
+            .slice(0, 28);
+          if (t) lines.push(t);
+        }
+        if (!lines.length) {
           const empty = document.createElement("li");
           empty.className = "empty";
           empty.style.listStyle = "none";
@@ -5802,12 +6322,12 @@
           "/assets/cafe/fresh-cat.png?v=fresh1",
           "/assets/cafe/fresh-cake-slice.png?v=fresh1",
         ];
-        for (const [i, ev] of events.slice(0, 4).entries()) {
+        for (const [i, text] of lines.slice(0, 4).entries()) {
           const li = document.createElement("li");
           const img = document.createElement("img");
           img.src = todayIcos[i % todayIcos.length];
           img.alt = "";
-          li.append(img, document.createTextNode(ev.title || "日程"));
+          li.append(img, document.createTextNode(text));
           ul.append(li);
         }
       } catch (_) {
@@ -5932,7 +6452,7 @@
 
     function bindHomeWidgets() {
       fillHomeWeek();
-      updateHomeMeetSub(meetDateCached);
+      updateHomeMeetSub();
       refreshHomeToday();
       const cal = document.getElementById("homeWidCal");
       if (cal) {
@@ -8005,7 +8525,10 @@
     }
     document.getElementById("btnAppStubBack").addEventListener("click", () => showView("home"));
     document.getElementById("btnProfileBack").addEventListener("click", () => showView("home"));
-    document.getElementById("btnPhoneSettingsBack").addEventListener("click", () => showView("home"));
+    document.getElementById("btnPhoneSettingsBack").addEventListener("click", () => {
+      if (phoneSettingsSubKey) closeSettingsSub();
+      else showView("home");
+    });
     bindHomePager();
     bindHomeAvatars();
     bindHomeWidgets();
@@ -8015,8 +8538,17 @@
     if (window.CalApp) {
       CalApp.mount({
         showView,
-        onCalendarChanged: refreshHomeToday,
+        onCalendarChanged: () => {
+          refreshHomeToday();
+          refreshLockAgenda();
+        },
+        getAnnivs: () => annivsCached,
+        getPinAnnivId: () => pinAnnivIdCached,
+        applyAnnivs,
       });
+    }
+    if (window.BudgetApp) {
+      BudgetApp.mount({ showView });
     }
     if (window.ChatApp) {
       ChatApp.mount({
@@ -8024,6 +8556,7 @@
         getPeerName: () => (hutDialogue && hutDialogue.name_bot) || "家机",
         getAvatarYou: () => hutAvatarUser || "/assets/cafe/avatar-you.png",
         getAvatarBot: () => hutAvatarBot || "/assets/cafe/avatar-bot.png",
+        onUnreadChange: () => refreshChatUnread(),
       });
     }
     if (window.ColistenApp) {
@@ -8031,6 +8564,8 @@
         showView,
         checkHealth,
         loadSettings,
+        openSettingsSub,
+        closeSettingsSub,
         collapseConn,
         collapsePersona,
         collapseMeetDate,
@@ -8204,14 +8739,13 @@
     document.getElementById("btnSaveSettings").addEventListener("click", saveSettings);
     document.getElementById("btnCloseConn").addEventListener("click", collapseConn);
     document.getElementById("rowConn").addEventListener("click", toggleConn);
+    document.getElementById("rowMcpTools").addEventListener("click", toggleMcpTools);
+    document.getElementById("btnSaveMcpTools").addEventListener("click", saveMcpTools);
+    document.getElementById("btnCloseMcpTools").addEventListener("click", collapseMcpTools);
     document.getElementById("btnSavePersona").addEventListener("click", savePersona);
     document.getElementById("btnClosePersona").addEventListener("click", collapsePersona);
     document.getElementById("rowPersona").addEventListener("click", togglePersona);
     document.getElementById("personaPanel").addEventListener("click", (e) => e.stopPropagation());
-    document.getElementById("btnSaveMeetDate").addEventListener("click", () => saveMeetDate(false));
-    document.getElementById("btnClearMeetDate").addEventListener("click", () => saveMeetDate(true));
-    document.getElementById("btnCloseMeetDate").addEventListener("click", collapseMeetDate);
-    document.getElementById("rowMeetDate").addEventListener("click", toggleMeetDate);
     document.getElementById("rowPhoneLore").addEventListener("click", togglePhoneLore);
     document.getElementById("rowPhoneLore").addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -8221,7 +8755,6 @@
     });
     document.getElementById("btnSavePhoneLore").addEventListener("click", savePhoneLore);
     document.getElementById("btnClosePhoneLore").addEventListener("click", collapsePhoneLore);
-    document.getElementById("meetDatePanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("btnSaveAppRegistry").addEventListener("click", saveAppRegistry);
     document.getElementById("btnCloseAppRegistry").addEventListener("click", collapseAppRegistry);
     document.getElementById("rowAppRegistry").addEventListener("click", toggleAppRegistry);
@@ -8426,10 +8959,7 @@
     }
 
     function collapsePhoneLore() {
-      const panel = document.getElementById("phoneLorePanel");
-      const row = document.getElementById("rowPhoneLore");
-      if (panel) panel.classList.remove("open");
-      if (row) row.classList.remove("open");
+      if (phoneSettingsSubKey === "phoneLore") closeSettingsSub();
     }
 
     function expandPhoneLore() {
@@ -8440,15 +8970,7 @@
       }
       const input = document.getElementById("inPhoneLore");
       if (input) input.value = "";
-      collapseConn();
-      collapsePersona();
-      collapseMeetDate();
-      collapseAppRegistry();
-      collapseAccessGate();
-      collapseBackup();
-      document.getElementById("phoneLorePanel").classList.add("open");
-      document.getElementById("rowPhoneLore").classList.add("open");
-      paintPhoneLoreList();
+      openSettingsSub("phoneLore", "剧情摘要", "phoneLorePanel", () => paintPhoneLoreList());
     }
 
     function togglePhoneLore() {
@@ -8499,24 +9021,16 @@
     }
 
     function collapseBackup() {
-      const panel = document.getElementById("backupPanel");
-      const row = document.getElementById("rowBackup");
-      if (panel) panel.classList.remove("open");
-      if (row) row.classList.remove("open");
-      clearPendingBackup();
-      setBackupMsg("");
+      if (phoneSettingsSubKey === "backup") closeSettingsSub();
+      else {
+        clearPendingBackup();
+        setBackupMsg("");
+      }
     }
     function expandBackup() {
-      collapseConn();
-      collapsePersona();
-      collapseMeetDate();
-      collapseAppRegistry();
-      collapseAccessGate();
-      collapsePhoneLore();
       clearPendingBackup();
       setBackupMsg("");
-      document.getElementById("backupPanel").classList.add("open");
-      document.getElementById("rowBackup").classList.add("open");
+      openSettingsSub("backup", "备份", "backupPanel");
     }
     function toggleBackup() {
       if (document.getElementById("backupPanel").classList.contains("open")) collapseBackup();
@@ -10471,6 +10985,7 @@
     });
     updateLockClock();
     updateLockNetStatus();
+    refreshLockAgenda();
     bindLockBattery();
     window.addEventListener("online", updateLockNetStatus);
     window.addEventListener("offline", updateLockNetStatus);

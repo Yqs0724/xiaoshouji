@@ -31,10 +31,32 @@ function resolveLlmCreds(modelOverride) {
   return { url: chatCompletionsUrl(base), key, model };
 }
 
+function mergeToolCallDelta(bucket, pieces) {
+  if (!Array.isArray(pieces)) return;
+  for (const p of pieces) {
+    if (!p || typeof p !== "object") continue;
+    const idx = Number.isFinite(Number(p.index)) ? Number(p.index) : bucket.length;
+    if (!bucket[idx]) {
+      bucket[idx] = {
+        id: "",
+        type: "function",
+        function: { name: "", arguments: "" },
+      };
+    }
+    const cur = bucket[idx];
+    if (p.id) cur.id = String(p.id);
+    if (p.type) cur.type = String(p.type);
+    const fn = p.function || {};
+    if (fn.name) cur.function.name += String(fn.name);
+    if (fn.arguments != null) cur.function.arguments += String(fn.arguments);
+  }
+}
+
 /**
  * OpenAI 兼容流式 chat.completions。
  * onDelta(textChunk) 每有正文增量调用一次。
- * @returns {{ content: string, reasoning: string, tokens_in: number, tokens_out: number }}
+ * tools 有值时附带 tool_calls（供网关工具循环）。
+ * @returns {{ content, reasoning, tool_calls, tokens_in, tokens_out }}
  */
 async function chatCompletionStream({
   system,
@@ -43,10 +65,38 @@ async function chatCompletionStream({
   think,
   model: modelOverride,
   replyKind = "follow",
+  tools,
+  tool_choice,
   onDelta,
 }) {
   const { url, key, model } = resolveLlmCreds(modelOverride);
-  const msgList = buildChatMessages({ system, user, messages, think, replyKind });
+  const isDeepseek = /deepseek/i.test(url) || /deepseek/i.test(model);
+  /* DS 用原生 reasoning_content；带 tools 时也不要【思考】伪标签 */
+  const useThink =
+    !!(think && !(Array.isArray(tools) && tools.length) && !isDeepseek);
+  const msgList = buildChatMessages({
+    system,
+    user,
+    messages,
+    think: useThink,
+    replyKind,
+  });
+
+  const body = {
+    model,
+    stream: true,
+    messages: msgList,
+  };
+  if (isDeepseek) {
+    /* DS 默认开思考；带 tools 时也要开，且后续轮次回传 reasoning_content */
+    body.thinking = { type: think === false ? "disabled" : "enabled" };
+  } else {
+    body.temperature = 0.7;
+  }
+  if (Array.isArray(tools) && tools.length) {
+    body.tools = tools;
+    if (tool_choice != null) body.tool_choice = tool_choice;
+  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -55,12 +105,7 @@ async function chatCompletionStream({
       "Content-Type": "application/json",
       Accept: "text/event-stream",
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.7,
-      stream: true,
-      messages: msgList,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -95,6 +140,7 @@ async function chatCompletionStream({
   let reasoning = "";
   let tokens_in = 0;
   let tokens_out = 0;
+  const toolBucket = [];
 
   const handleData = (payload) => {
     const s = String(payload || "").trim();
@@ -118,6 +164,19 @@ async function chatCompletionStream({
     }
     const r = String(delta.reasoning_content || delta.reasoning || "");
     if (r) reasoning += r;
+    if (delta.tool_calls) mergeToolCallDelta(toolBucket, delta.tool_calls);
+    /* 少数兼容接口把完整字段放在 message 上 */
+    if (choice.message) {
+      if (choice.message.tool_calls) {
+        mergeToolCallDelta(toolBucket, choice.message.tool_calls);
+      }
+      const mr = String(
+        choice.message.reasoning_content || choice.message.reasoning || ""
+      );
+      if (mr) reasoning = mr;
+      const mc = String(choice.message.content || "");
+      if (mc && !content) content = mc;
+    }
   };
 
   while (true) {
@@ -137,9 +196,21 @@ async function chatCompletionStream({
     if (t.startsWith("data:")) handleData(t.slice(5).trim());
   }
 
+  const tool_calls = toolBucket
+    .filter((t) => t && t.function && t.function.name)
+    .map((t, i) => ({
+      id: t.id || "call_" + i,
+      type: t.type || "function",
+      function: {
+        name: String(t.function.name || "").trim(),
+        arguments: String(t.function.arguments || ""),
+      },
+    }));
+
   return {
     content: String(content || "").trim(),
     reasoning: String(reasoning || "").trim(),
+    tool_calls,
     tokens_in,
     tokens_out,
   };

@@ -2,7 +2,8 @@
 
 > 2026-10-01 · 阶段 E。怎么实现。对齐 [`PRD.md`](./PRD.md)。  
 > API / 工具名为**建议名**，可改；**不可**偷加 PRD 没有的产品能力。  
-> 共读网关现状以 `apps/共读app/Tech-Design.md` + 现行代码为准；本文描述**扩展**，不另起第二网关。
+> 共读网关现状以 `apps/共读app/Tech-Design.md` + 现行代码为准；本文描述**扩展**，不另起第二网关。  
+> **2026-10-11 补丁**：日常聊天工具循环与外接 MCP **客户端**已落地（见下 §3.3 / §5 注）；字段以实现与 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md) 为准。
 
 ---
 
@@ -66,9 +67,17 @@ CycleLog { …经期相关字段 }  // 完整可读，仅本机库
 ### 3.3 聊天（日常）
 
 ```
-ChatThread { id, peer }           // 与共看场会话分离
-ChatMessage { id, threadId, from, body, ts, read }
+ChatThread { id, peer }           // 现行单线程 daily；与共看场会话分离
+ChatMessage {
+  id, threadId, from, kind, body, ts, read,
+  think?, think_sec?,             // 深思
+  payload?,                       // 红包/转账/位置等
+  tools?: [{ name, label, summary, ok }]  // 本轮工具摘要（挂家机 text）
+}
 ```
+
+模块：`apps/聊天app/gateway/daily-chat.js` + `chat-tools.js`；外接 MCP 客户端 `apps/共读app/gateway/mcp-remote.js`。  
+设定：`chat_tools_enabled` / `chat_tool_labels` / `mcp_enabled|url|token`（`settings.json`）。
 
 ### 3.4 共看
 
@@ -127,17 +136,27 @@ BackupManifest { modules[], media: metadata-only }
 
 ---
 
-## 5. MCP 工具（建议名 · Chatbox 桌面）
+## 5. MCP / 工具两路（勿混）
+
+### 5.1 Chatbox 桌面 · 网关作 MCP **Server**（建议名 · 对齐 PRD C5 等）
 
 | 工具 | 对齐 PRD |
 |------|----------|
-| `cal_list` / `cal_create` / `cal_update` / `cal_delete` / `cal_comment` | C5 |
-| `cal_see`（可选） | C5 可选 |
-| `lore_write` / `lore_list` | X1 |
+| `cal_list` / `cal_create` / …（共读 `mcp-server` 现名可能不同） | C5 |
+| `lore_*` / 共读既有 | X1 / 共读 |
 | 共看/共听只读或提议类 | 实现期按需；**播控真源在 PWA 你侧** |
-| 共读既有工具 | 保持 |
 
-移动 Chatbox 无 MCP → 不把「手机侧扫消息入历」当主路径。
+移动 Chatbox 无工作模式 MCP → 不把「手机侧扫消息入历」当主路径。
+
+### 5.2 小手机日常聊天 · 网关内工具循环（已实现主干）
+
+| 来源 | 说明 |
+|------|------|
+| 内置 | `calendar_list/create/update/delete_events` → 调 `日历app/gateway/calendar.js` |
+| 外接 | 设定开 MCP 时，Streamable HTTP **客户端**拉远端 `tools/list` 并 `tools/call` |
+| 暴露给模型 | OpenAI 风格 `tools`；SSE `bot_tool` / `bot_tool_done` |
+
+**不是**「日历 App 自己当 MCP server」；也**不是**替代 Chatbox 桌面挂共读 MCP。
 
 ---
 
@@ -146,7 +165,7 @@ BackupManifest { modules[], media: metadata-only }
 | 通道 | 谁调模型 | 约束 |
 |------|----------|------|
 | 共读跟批 | 网关（既有） | 预算/锁 |
-| 日常聊天家机回复 | 网关 | 短讯风；非正剧 |
+| 日常聊天家机回复 | 网关 | 短讯风；非正剧；可带 tools + 深思 |
 | 共看/共听本场吐槽 | 网关 | 共看有额度闸门（可关）；**共听现行无额度闸**（见共听落地进度） |
 | `[NOW]` `[TODAY]` `[NEW]` | system 旁路拼进相关生成 | 日历写后短暂 NEW |
 

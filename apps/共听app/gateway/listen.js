@@ -123,9 +123,44 @@ function normalizePass(raw) {
     engaged: !!raw.engaged,
     track_title: String(raw.track_title || "").trim(),
     spit_count: Math.max(0, Math.floor(Number(raw.spit_count) || 0)),
+    budget_tokens: Math.max(0, Math.floor(Number(raw.budget_tokens) || 0)),
+    tokens_used: Math.max(0, Math.floor(Number(raw.tokens_used) || 0)),
     created_at: Number(raw.created_at) || Date.now(),
     updated_at: Number(raw.updated_at) || Date.now(),
   };
+}
+
+function passBudgetExhausted(pass) {
+  if (!pass) return false;
+  const cap = Number(pass.budget_tokens) || 0;
+  if (cap <= 0) return false;
+  return (Number(pass.tokens_used) || 0) >= cap;
+}
+
+function passBudgetInfo(pass) {
+  const budget_tokens = Number(pass && pass.budget_tokens) || 0;
+  const tokens_used = Number(pass && pass.tokens_used) || 0;
+  return {
+    budget_tokens,
+    tokens_used,
+    budget_exhausted: passBudgetExhausted({ budget_tokens, tokens_used }),
+  };
+}
+
+function addPassTokensUsed(passId, n) {
+  const pid = String(passId || "").trim();
+  const add = Math.max(0, Number(n) || 0);
+  if (!pid || !add) return null;
+  const all = readAll();
+  const pi = all.passes.findIndex((p) => p.id === pid);
+  if (pi < 0) return null;
+  all.passes[pi] = {
+    ...all.passes[pi],
+    tokens_used: (Number(all.passes[pi].tokens_used) || 0) + add,
+    updated_at: Date.now(),
+  };
+  writeAll(all);
+  return all.passes[pi];
 }
 
 function normalizeFavorite(raw) {
@@ -246,18 +281,26 @@ function appendBotSpit(all, passId, body) {
   return msg;
 }
 
+/**
+ * 新场额度取共读设定 default_budget_rmb（0=不限）。
+ * 与共看同款：分场记账，共用换算与设定项，不扣共读进行中场次的 tokens。
+ */
 function ensureActivePass() {
   const all = readAll();
   let pass = all.passes.find((p) => p.status === "active");
   if (!pass) {
+    const { readSettings, tokensFromBudgetRmb } = require("../../共读app/gateway/settings");
     const now = Date.now();
-    pass = {
+    const rmb = Number(readSettings().default_budget_rmb) || 0;
+    pass = normalizePass({
       id: randomUUID(),
       status: "active",
       engaged: false,
+      budget_tokens: tokensFromBudgetRmb(rmb),
+      tokens_used: 0,
       created_at: now,
       updated_at: now,
-    };
+    });
     all.passes.push(pass);
     appendBotSpit(all, pass.id, pickLine(BOT_OPEN));
     writeAll(all);
@@ -538,6 +581,7 @@ async function streamTextAsDeltas(write, text) {
 
 /**
  * 你侧落库后家机流式接一句。LLM 失败则 mock 按字流式，不回滚你侧。
+ * 额度用尽时你侧仍落盘、家机跳过（不调 LLM、不走 mock）。
  */
 async function createSpitWithReplyStream(patch, emit) {
   const write = async (obj) => {
@@ -545,15 +589,51 @@ async function createSpitWithReplyStream(patch, emit) {
     await Promise.resolve(emit(obj));
   };
   const you = createSpit(patch);
+  const live0 = ensureActivePass().pass;
   await write({
     type: "you",
     ok: true,
     pass: you.pass,
     message: you.message,
+    ...passBudgetInfo(live0),
   });
+
+  if (passBudgetExhausted(live0)) {
+    const bot_error = {
+      code: "budget_exhausted",
+      message: "本场额度已用尽 · 你侧已留下",
+    };
+    await write({ type: "bot_error", ...bot_error });
+    const session = getSession();
+    await write({
+      type: "done",
+      ok: true,
+      pass: session.pass,
+      message: you.message,
+      bot_message: null,
+      bot_error,
+      messages: session.messages,
+      track: session.track,
+      playing: session.playing,
+      proposal: session.proposal,
+      liked: session.liked,
+      connection: "shelved",
+      ...passBudgetInfo(session.pass),
+    });
+    return {
+      ok: true,
+      pass: session.pass,
+      message: you.message,
+      bot_message: null,
+      bot_error,
+      messages: session.messages,
+      ...passBudgetInfo(session.pass),
+    };
+  }
 
   let bot_message = null;
   let bot_error = null;
+  let passAfter = live0;
   const track = currentTrack();
   const trackHint =
     (track && track.title ? track.title : "这轨") +
@@ -601,9 +681,17 @@ async function createSpitWithReplyStream(patch, emit) {
       throw err;
     }
     bot_message = persistBotSpit(you.pass.id, text);
-    await write({ type: "bot_done", message: bot_message });
+    // ponytail: 流式偶发无 usage；粗估一条吐槽 ≈500 token，升级=强制 stream_options
+    let used = (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0);
+    if (used <= 0) used = 500;
+    passAfter = addPassTokensUsed(you.pass.id, used) || passAfter;
+    await write({
+      type: "bot_done",
+      message: bot_message,
+      ...passBudgetInfo(passAfter),
+    });
   } catch (e) {
-    // ponytail: 无 Key / LLM 挂了时 mock 按字流，升级=真流式恢复即可
+    // ponytail: 无 Key / LLM 挂了时 mock 按字流，升级=真流式恢复即可（mock 不计入额度）
     bot_error = {
       code: e.code || "llm_failed",
       message: e.message || "家机暂时接不上",
@@ -617,6 +705,7 @@ async function createSpitWithReplyStream(patch, emit) {
   }
 
   const session = getSession();
+  passAfter = session.pass;
   await write({
     type: "done",
     ok: true,
@@ -630,6 +719,7 @@ async function createSpitWithReplyStream(patch, emit) {
     proposal: session.proposal,
     liked: session.liked,
     connection: "shelved",
+    ...passBudgetInfo(passAfter),
   });
   return {
     ok: true,
@@ -638,6 +728,7 @@ async function createSpitWithReplyStream(patch, emit) {
     bot_message,
     bot_error,
     messages: session.messages,
+    ...passBudgetInfo(passAfter),
   };
 }
 
@@ -724,12 +815,33 @@ if (require.main === module) {
       "结束本场应进 history"
     );
     console.assert(hist.favorites.some((f) => f.id === tid), "收藏列表保留");
+    endActivePass();
+    const budPass = ensureActivePass().pass;
+    const allBud = readAll();
+    const bpi = allBud.passes.findIndex((p) => p.id === budPass.id);
+    allBud.passes[bpi] = {
+      ...allBud.passes[bpi],
+      budget_tokens: 100,
+      tokens_used: 0,
+    };
+    writeAll(allBud);
+    addPassTokensUsed(budPass.id, 100);
+    console.assert(passBudgetExhausted(ensureActivePass().pass), "额度应耗尽");
+    const gated = await createSpitWithReplyStream({ body: "额度闸自检" }, () => {});
+    console.assert(gated.message && gated.message.from === "you");
+    console.assert(!gated.bot_message);
+    console.assert(gated.bot_error && gated.bot_error.code === "budget_exhausted");
+    console.assert(
+      getSession().messages.some((m) => m.id === gated.message.id),
+      "额度耗尽你侧仍落盘"
+    );
     console.log("listen ok", {
       track: fresh.track.title,
       presence: getListenPresence().label,
       health: appleMusicHealth(),
       history: hist.history.length,
       favorites: hist.favorites.length,
+      budget_gate: true,
     });
   })().catch((e) => {
     console.error(e);
@@ -756,6 +868,9 @@ module.exports = {
   engageListen,
   toggleFavorite,
   getHistory,
+  passBudgetExhausted,
+  passBudgetInfo,
+  addPassTokensUsed,
   MOCK_TRACKS,
   LISTEN_PATH,
   DATA_DIR,

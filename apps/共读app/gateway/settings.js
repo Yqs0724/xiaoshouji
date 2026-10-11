@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { randomUUID } = require("node:crypto");
 const { loadEnv } = require("./load-env");
 
 loadEnv();
@@ -30,11 +31,35 @@ const DEFAULTS = {
   avatar_bot: "/assets/cafe/avatar-bot.png",
   /** 共读顶栏是否显示时钟 */
   show_clock: true,
-  /** 相识日 YYYY-MM-DD；空=未设（桌面不显示相遇天数） */
+  /** @deprecated 已并入 annivs；读盘时迁入后清空 */
   meet_date: "",
+  /** 纪念日列表（含原相识日）；桌面钉 pin_anniv_id 从中选一条 */
+  annivs: [],
+  pin_anniv_id: "",
   /** 桌面隐藏的 App id 列表；显隐不删业务数据 */
   app_hidden: [],
+  /** 日常聊天是否允许调用工具（日历等；网关内执行） */
+  chat_tools_enabled: true,
+  /** 工具显示名：{ function.name: "中文名" }；空则用内置默认 */
+  chat_tool_labels: {},
+  /** 外接 MCP（客户端）：开且填了 URL 后，以后可并入工具表 */
+  mcp_enabled: false,
+  mcp_url: "",
+  mcp_token: "",
 };
+
+/** 工具显示名 map；只留合法 name → 短文案 */
+function normalizeChatToolLabels(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const name = String(k || "").trim();
+    if (!/^[a-z][a-z0-9_]{0,63}$/i.test(name)) continue;
+    const label = String(v == null ? "" : v).trim().slice(0, 32);
+    if (label) out[name] = label;
+  }
+  return out;
+}
 
 /** DEMO 咖啡屋头像预设（仅允许这些路径） */
 const AVATAR_PRESETS = [
@@ -68,6 +93,70 @@ function normalizeMeetDate(v) {
   return s;
 }
 
+const ANNIV_MAX = 30; /* ponytail: 单页列表够用；升级=分页/独立库 */
+
+function normalizeAnniv(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const title = String(raw.title || "").trim().slice(0, 20);
+  let date = "";
+  try {
+    date = normalizeMeetDate(raw.date || "");
+  } catch {
+    return null;
+  }
+  if (!title || !date) return null;
+  const id = String(raw.id || "").trim() || randomUUID();
+  return { id, title, date };
+}
+
+function normalizeAnnivs(v) {
+  const arr = Array.isArray(v) ? v : [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const a = normalizeAnniv(raw);
+    if (!a || seen.has(a.id)) continue;
+    seen.add(a.id);
+    out.push(a);
+    if (out.length >= ANNIV_MAX) break;
+  }
+  return out;
+}
+
+/** 读盘时整理纪念日；兼容旧 pin_day / meet_date */
+function resolveAnnivState(file) {
+  let annivs = normalizeAnnivs(file && file.annivs);
+  let pin_anniv_id = String((file && file.pin_anniv_id) || "").trim();
+  const legacy = file && file.pin_day;
+  if (!annivs.length && legacy && typeof legacy === "object" && !Array.isArray(legacy)) {
+    const title = String(legacy.title || "").trim().slice(0, 20);
+    let date = "";
+    try {
+      date = normalizeMeetDate(legacy.date || "");
+    } catch {
+      date = "";
+    }
+    if (title && date) {
+      const id = randomUUID();
+      annivs = [{ id, title, date }];
+      pin_anniv_id = id;
+    }
+  }
+  let meet = "";
+  try {
+    meet = normalizeMeetDate((file && file.meet_date) || "");
+  } catch {
+    meet = "";
+  }
+  if (meet && !annivs.some((a) => a.date === meet)) {
+    annivs = [{ id: randomUUID(), title: "相识日", date: meet }, ...annivs];
+  }
+  if (pin_anniv_id && !annivs.some((a) => a.id === pin_anniv_id)) {
+    pin_anniv_id = "";
+  }
+  return { annivs, pin_anniv_id, clear_meet_date: !!meet };
+}
+
 /** 可注册的桌面 App；settings 不可藏（否则改不回注册表） */
 const APP_IDS = [
   "coread",
@@ -80,6 +169,8 @@ const APP_IDS = [
   "pet",
   "todo",
   "shop",
+  "budget",
+  "wallet",
   "ledger",
   "album",
   "eat",
@@ -180,14 +271,20 @@ function readSettings() {
     avatar_user: normalizeAvatar(file.avatar_user, DEFAULTS.avatar_user),
     avatar_bot: normalizeAvatar(file.avatar_bot, DEFAULTS.avatar_bot),
     show_clock: file.show_clock !== false,
-    meet_date: (() => {
-      try {
-        return normalizeMeetDate(file.meet_date || "");
-      } catch {
-        return "";
-      }
+    ...(() => {
+      const a = resolveAnnivState(file);
+      return {
+        annivs: a.annivs,
+        pin_anniv_id: a.pin_anniv_id,
+        meet_date: "", /* 已并入 annivs */
+      };
     })(),
     app_hidden: normalizeAppHidden(file.app_hidden),
+    chat_tools_enabled: file.chat_tools_enabled !== false,
+    chat_tool_labels: normalizeChatToolLabels(file.chat_tool_labels),
+    mcp_enabled: !!file.mcp_enabled,
+    mcp_url: String(file.mcp_url || "").trim(),
+    mcp_token: String(file.mcp_token || "").trim(),
   };
 }
 
@@ -218,11 +315,33 @@ function patchSettings(patch) {
     "gate_salt",
     "name_user",
     "name_bot",
+    "mcp_url",
+    "mcp_token",
   ];
+  let mcpTouched = false;
   for (const key of stringKeys) {
     if (Object.prototype.hasOwnProperty.call(patch, key) && typeof patch[key] === "string") {
+      if (key === "mcp_url" || key === "mcp_token") mcpTouched = true;
       file[key] = patch[key];
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "chat_tools_enabled")) {
+    const v = patch.chat_tools_enabled;
+    if (typeof v === "boolean") file.chat_tools_enabled = v;
+    else if (typeof v === "string") {
+      file.chat_tools_enabled = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else file.chat_tools_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "chat_tool_labels")) {
+    file.chat_tool_labels = normalizeChatToolLabels(patch.chat_tool_labels);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "mcp_enabled")) {
+    mcpTouched = true;
+    const v = patch.mcp_enabled;
+    if (typeof v === "boolean") file.mcp_enabled = v;
+    else if (typeof v === "string") {
+      file.mcp_enabled = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else file.mcp_enabled = !!v;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "avatar_user")) {
     file.avatar_user = normalizeAvatar(patch.avatar_user, file.avatar_user || DEFAULTS.avatar_user);
@@ -246,8 +365,56 @@ function patchSettings(patch) {
       file.show_clock = !!v;
     }
   }
+  /* 旧 PATCH meet_date → 并入纪念日「相识日」 */
   if (Object.prototype.hasOwnProperty.call(patch, "meet_date")) {
-    file.meet_date = normalizeMeetDate(patch.meet_date);
+    const meet = normalizeMeetDate(patch.meet_date);
+    file.meet_date = meet;
+    if (meet) {
+      const cur = normalizeAnnivs(file.annivs);
+      if (!cur.some((a) => a.date === meet)) {
+        file.annivs = [{ id: randomUUID(), title: "相识日", date: meet }, ...cur];
+      }
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "annivs")) {
+    file.annivs = normalizeAnnivs(patch.annivs);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "pin_anniv_id")) {
+    file.pin_anniv_id = String(patch.pin_anniv_id || "").trim();
+  }
+  /* 旧客户端若仍 PATCH pin_day：收成列表一条并钉上 */
+  if (Object.prototype.hasOwnProperty.call(patch, "pin_day")) {
+    const legacy = patch.pin_day;
+    const title =
+      legacy && typeof legacy === "object" ? String(legacy.title || "").trim().slice(0, 20) : "";
+    let date = "";
+    try {
+      date =
+        legacy && typeof legacy === "object" ? normalizeMeetDate(legacy.date || "") : "";
+    } catch {
+      const err = new Error("纪念日日期须为 YYYY-MM-DD");
+      err.code = "bad_anniv";
+      throw err;
+    }
+    if (!title && !date) {
+      file.annivs = [];
+      file.pin_anniv_id = "";
+    } else if (!title || !date) {
+      const err = new Error("纪念日须同时填标题和日期，或都清空");
+      err.code = "bad_anniv";
+      throw err;
+    } else {
+      const id = randomUUID();
+      file.annivs = [{ id, title, date }];
+      file.pin_anniv_id = id;
+    }
+  }
+  {
+    const a = resolveAnnivState(file);
+    file.annivs = a.annivs;
+    file.pin_anniv_id = a.pin_anniv_id;
+    file.meet_date = "";
+    delete file.pin_day;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "app_hidden")) {
     file.app_hidden = normalizeAppHidden(patch.app_hidden);
@@ -277,6 +444,13 @@ function patchSettings(patch) {
     }
   }
   writeSettings(file);
+  if (mcpTouched) {
+    try {
+      require("./mcp-remote").clearMcpToolsCache();
+    } catch {
+      /* mcp-remote 可选 */
+    }
+  }
   return readSettings();
 }
 
@@ -419,6 +593,7 @@ function publicSettings(s = readSettings()) {
     gate_salt: _salt,
     weread_key,
     llm_key,
+    mcp_token,
     apple_music_dev_token: _amd,
     apple_music_user_token: _amu,
     ...rest
@@ -427,6 +602,8 @@ function publicSettings(s = readSettings()) {
     ...rest,
     weread_key: weread_key || "",
     llm_key: llm_key || "",
+    /* token 回填给设定页编辑；与 llm_key 同级本机可信 */
+    mcp_token: mcp_token || "",
     gate_enabled: !!(s.gate_hash && s.gate_salt) || !!String(process.env.CABIN_GATE || "").trim(),
     gate_has_password: !!(s.gate_hash && s.gate_salt),
   };
@@ -492,16 +669,31 @@ if (require.main === module) {
   console.assert(readSettings().show_clock === false);
   patchSettings({ show_clock: true });
   console.assert(readSettings().show_clock === true);
+  patchSettings({ annivs: [], pin_anniv_id: "" });
   patchSettings({ meet_date: "2024-01-15" });
-  console.assert(readSettings().meet_date === "2024-01-15");
-  patchSettings({ meet_date: "" });
   console.assert(readSettings().meet_date === "");
+  console.assert(
+    readSettings().annivs.some((a) => a.title === "相识日" && a.date === "2024-01-15")
+  );
+  patchSettings({ annivs: [], pin_anniv_id: "" });
   try {
     patchSettings({ meet_date: "2024-13-01" });
     throw new Error("expected bad_meet_date");
   } catch (e) {
     if (e.code !== "bad_meet_date") throw e;
   }
+  patchSettings({
+    annivs: [
+      { id: "a1", title: "生日", date: "2020-06-01" },
+      { id: "a2", title: "周年", date: "2024-05-21" },
+    ],
+    pin_anniv_id: "a2",
+  });
+  console.assert(readSettings().annivs.length === 2 && readSettings().pin_anniv_id === "a2");
+  patchSettings({ pin_anniv_id: "" });
+  console.assert(readSettings().pin_anniv_id === "");
+  patchSettings({ annivs: [], pin_anniv_id: "" });
+  console.assert(readSettings().annivs.length === 0);
   patchSettings({ app_hidden: ["chat", "settings", "nope", "chat"] });
   console.assert(
     JSON.stringify(readSettings().app_hidden) === JSON.stringify(["chat"]),
@@ -509,6 +701,12 @@ if (require.main === module) {
   );
   patchSettings({ app_hidden: [] });
   console.assert(readSettings().app_hidden.length === 0);
+  patchSettings({ chat_tool_labels: { calendar_list_events: "日历", "坏 key": "x", x: "" } });
+  console.assert(readSettings().chat_tool_labels.calendar_list_events === "日历");
+  console.assert(!Object.prototype.hasOwnProperty.call(readSettings().chat_tool_labels, "坏 key"));
+  console.assert(!Object.prototype.hasOwnProperty.call(readSettings().chat_tool_labels, "x"));
+  patchSettings({ chat_tool_labels: {} });
+  console.assert(Object.keys(readSettings().chat_tool_labels).length === 0);
   patchSettings({ default_follow_tone: "short" });
   console.assert(readSettings().default_follow_tone === "short");
   patchSettings({ default_follow_tone: "" });
@@ -538,6 +736,7 @@ module.exports = {
   normalizeAvatar,
   normalizeMeetDate,
   normalizeAppHidden,
+  normalizeChatToolLabels,
   APP_IDS,
   APP_ALWAYS_VISIBLE,
   AVATAR_PRESETS,
