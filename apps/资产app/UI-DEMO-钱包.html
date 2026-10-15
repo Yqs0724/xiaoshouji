@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>钱包 · 薄巧复刻 DEMO（功能=原指令 · 皮=薄荷巧克力）</title>
+  <style>
+    :root {
+      /* 薄巧：巧克力底 + 薄荷强调（替黑金） */
+      --gold: #6fa896;
+      --gold2: #9ec9bc;
+      --safe: #4a8f6f;
+      --danger: #b06a5a;
+      --text: #f7f1e8;
+      --muted: #a89888;
+      --bg: #2a2420;
+      --glass: rgba(61, 52, 44, 0.72);
+      --line: rgba(158, 201, 188, 0.45);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { scrollbar-width: none; }
+    *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+    html, body { height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: "SF Mono", "Cascadia Mono", "Consolas", "PingFang SC", "Microsoft YaHei", monospace;
+      font-variant-numeric: tabular-nums;
+      overflow: hidden;
+    }
+    #bgCanvas {
+      position: fixed; inset: 0; z-index: 0;
+      pointer-events: none; opacity: 0.10;
+    }
+    #app {
+      position: relative; z-index: 1;
+      height: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(180deg, rgba(61,52,44,.92), rgba(42,36,32,.96));
+      border-left: 1px solid rgba(158,201,188,.12);
+      border-right: 1px solid rgba(158,201,188,.12);
+    }
+    .glass {
+      background: var(--glass);
+      border: 1px solid var(--line);
+      box-shadow: 0 0 24px rgba(158,201,188,.08), inset 0 1px 0 rgba(255,255,255,.04);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+    button {
+      font: inherit; color: inherit; cursor: pointer;
+      border: 1px solid var(--line);
+      background: rgba(158,201,188,.08);
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+    }
+    button:active {
+      transform: scale(0.98);
+      border-color: var(--gold);
+      box-shadow: 0 0 12px rgba(158,201,188,.25);
+    }
+
+    /* —— Gate layers —— */
+    .layer {
+      display: none;
+      position: absolute; inset: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 22px;
+      text-align: center;
+      background: rgba(42,36,32,.94);
+      z-index: 50;
+    }
+    .layer.on { display: flex; }
+    .layer h1 {
+      font-size: 13px;
+      letter-spacing: .18em;
+      color: var(--gold2);
+      font-weight: 500;
+      margin-bottom: 18px;
+    }
+    .layer .sub { font-size: 11px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    #gateKey input {
+      width: min(280px, 86vw);
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--gold);
+      color: var(--text);
+      font: inherit;
+      font-size: 16px;
+      text-align: center;
+      padding: 10px 8px;
+      outline: none;
+      letter-spacing: .12em;
+    }
+    #gateKey .msg { min-height: 20px; margin-top: 14px; font-size: 12px; color: var(--gold); }
+    #gateKey .msg.bad { color: var(--danger); }
+    #gateKey.redflash {
+      animation: redflash .45s ease 2;
+    }
+    @keyframes redflash {
+      0%,100% { background: rgba(42,36,32,.94); }
+      50% { background: rgba(120,20,20,.85); }
+    }
+
+    .scan-ring {
+      width: 160px; height: 160px;
+      border-radius: 50%;
+      border: 1px solid var(--gold);
+      position: relative;
+      margin: 8px auto 16px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .scan-ring::before {
+      content: "";
+      position: absolute; inset: 10px;
+      border-radius: 50%;
+      border: 1px dashed rgba(158,201,188,.45);
+    }
+    .scan-ring .fog {
+      width: 54px; height: 54px; border-radius: 50%;
+      background: radial-gradient(circle, rgba(158,201,188,.55), transparent 70%);
+      animation: pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%,100% { transform: scale(.92); opacity: .55; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
+    .scan-line {
+      position: absolute; left: 8%; right: 8%; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold2), transparent);
+      animation: scanY 3s linear infinite;
+    }
+    @keyframes scanY {
+      0% { top: 18%; opacity: .3; }
+      50% { opacity: 1; }
+      100% { top: 78%; opacity: .3; }
+    }
+    .fp {
+      width: 72px; height: 96px;
+      border: 1px solid rgba(158,201,188,.35);
+      border-radius: 36px;
+      position: relative;
+      overflow: hidden;
+    }
+    .fp .fill {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(180deg, transparent, rgba(158,201,188,.55));
+      height: 0%;
+      transition: height .2s linear;
+    }
+    .progress {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--gold2);
+      letter-spacing: .08em;
+    }
+    .verified { color: #7eb8a8; font-size: 13px; letter-spacing: .14em; margin-top: 8px; }
+
+    /* —— Main wealth UI (hidden until iris) —— */
+    #main {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      flex-direction: column;
+      position: relative;
+    }
+    #main.on { display: flex; }
+    #main header {
+      padding: 14px 16px 0;
+      flex-shrink: 0;
+    }
+    #main .brand {
+      font-size: 10px;
+      letter-spacing: .2em;
+      color: var(--muted);
+    }
+    #main .brand b { color: var(--safe); font-weight: 500; }
+    #tabs {
+      display: flex;
+      gap: 0;
+      margin-top: 12px;
+      border-bottom: 1px solid rgba(158,201,188,.2);
+    }
+    #tabs button {
+      flex: 1;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      padding: 10px 0;
+      font-size: 12px;
+      letter-spacing: .14em;
+      color: var(--muted);
+    }
+    #tabs button.on {
+      color: var(--gold2);
+      border-bottom-color: var(--gold);
+      box-shadow: none;
+    }
+    .view {
+      display: none;
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 14px 14px 110px;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .view.on { display: flex; }
+
+    .networth {
+      text-align: center;
+      padding: 18px 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .networth .lab {
+      font-size: 11px;
+      letter-spacing: .16em;
+      color: var(--muted);
+    }
+    .networth .lab em {
+      display: block;
+      font-style: normal;
+      font-size: 10px;
+      margin-top: 4px;
+      color: #5c6166;
+    }
+    .networth .val {
+      margin-top: 10px;
+      font-size: 28px;
+      color: var(--gold);
+      letter-spacing: .02em;
+      transition: filter .5s ease;
+      filter: blur(8px);
+    }
+    .networth .val.clear { filter: blur(0); }
+    .networth .chg {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--safe);
+    }
+
+    .alloc {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 12px;
+      align-items: center;
+      padding: 14px;
+    }
+    .donut-wrap { position: relative; width: 112px; height: 112px; margin: 0 auto; }
+    .donut-wrap canvas { width: 112px; height: 112px; }
+    .donut-center {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .donut-center b { font-size: 12px; color: var(--gold2); }
+    .donut-center span { font-size: 9px; color: var(--muted); }
+    .alloc-list { list-style: none; font-size: 11px; }
+    .alloc-list li {
+      display: flex; justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,.04);
+      color: var(--text);
+    }
+    .alloc-list li span:last-child { color: var(--gold2); }
+    .alloc-list .cn { color: var(--muted); margin-left: 4px; font-size: 10px; }
+
+    .feed {
+      height: 260px;
+      overflow: hidden;
+      position: relative;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .feed::before {
+      content: "";
+      position: absolute; left: 0; right: 0; top: 0; height: 46px;
+      background: linear-gradient(180deg, rgba(42,36,32,.95), transparent);
+      pointer-events: none; z-index: 1;
+    }
+    .feed-inner { display: flex; flex-direction: column; gap: 6px; }
+    .feed-row { color: var(--muted); }
+    .feed-row b { color: var(--gold2); font-weight: 500; }
+    .feed-row .n { color: var(--safe); }
+
+    .cats { display: flex; flex-direction: column; gap: 8px; }
+    .cat-btn {
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: 10px;
+      width: 100%;
+    }
+    .cat-btn .en { color: var(--gold2); font-size: 12px; letter-spacing: .08em; }
+    .cat-btn .cn { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+    .holds { display: flex; flex-direction: column; gap: 8px; }
+    .hold-card {
+      width: 100%;
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: 10px;
+    }
+    .hold-card:hover {
+      border-color: var(--gold);
+      box-shadow: 0 0 16px rgba(158,201,188,.18);
+      transform: translateY(-1px);
+    }
+    .hold-card .en { color: var(--text); font-size: 13px; }
+    .hold-card .cn { color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .hold-card .meta {
+      margin-top: 8px;
+      display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--gold2);
+    }
+
+    /* drill pages */
+    #drill {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 30;
+      flex-direction: column;
+      background: rgba(42,36,32,.98);
+    }
+    #drill.on { display: flex; }
+    #drill .bar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px;
+      border-bottom: 1px solid rgba(158,201,188,.2);
+      flex-shrink: 0;
+    }
+    #drill .bar button {
+      border: 0; background: transparent; color: var(--gold2);
+      font-size: 13px; padding: 4px 6px;
+    }
+    #drill .bar h2 { font-size: 12px; letter-spacing: .1em; font-weight: 500; color: var(--text); }
+    #drill .body { flex: 1; overflow: auto; padding: 12px 14px 24px; }
+    .sub-btn, .asset-btn {
+      width: 100%; text-align: left;
+      padding: 12px 14px; margin-bottom: 8px; border-radius: 10px;
+    }
+    .sub-btn .en, .asset-btn .en { color: var(--gold2); font-size: 12px; }
+    .sub-btn .cn, .asset-btn .cn { color: var(--muted); font-size: 10px; margin-top: 2px; }
+    .asset-btn .row {
+      margin-top: 6px; display: flex; justify-content: space-between;
+      font-size: 11px; color: var(--text);
+    }
+
+    /* modal detail */
+    #modal {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 40;
+      background: rgba(0,0,0,.62);
+      align-items: flex-end;
+      justify-content: center;
+    }
+    #modal.on { display: flex; }
+    #modal .panel {
+      width: 100%;
+      max-height: 78%;
+      overflow: auto;
+      border-radius: 16px 16px 0 0;
+      padding: 16px 16px 28px;
+    }
+    #modal h3 { font-size: 14px; color: var(--gold2); letter-spacing: .08em; margin-bottom: 4px; }
+    #modal .cn { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+    #modal dl {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      gap: 8px 10px;
+      font-size: 12px;
+    }
+    #modal dt { color: var(--muted); }
+    #modal dd { color: var(--text); text-align: right; }
+    #modal .close {
+      margin-top: 14px; width: 100%; padding: 10px;
+      border-radius: 10px; color: var(--gold2);
+    }
+
+    /* cash flow */
+    .cf-head { padding: 14px; text-align: center; }
+    .cf-head .secure { font-size: 10px; letter-spacing: .16em; color: var(--safe); }
+    .cf-head .office { font-size: 10px; color: var(--muted); margin-top: 4px; letter-spacing: .12em; }
+    .cf-head .welcome { font-size: 12px; margin-top: 10px; color: var(--text); }
+    .cf-sum {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+      margin-top: 10px;
+    }
+    .cf-sum div {
+      padding: 8px 6px; border-radius: 8px;
+      background: rgba(158,201,188,.06);
+      border: 1px solid rgba(158,201,188,.15);
+    }
+    .cf-sum .k { font-size: 9px; color: var(--muted); letter-spacing: .08em; }
+    .cf-sum .v { margin-top: 4px; font-size: 12px; color: var(--gold2); }
+    .ledger { list-style: none; }
+    .ledger li {
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+      font-size: 12px;
+    }
+    .ledger .amt { color: var(--gold); font-size: 13px; }
+    .ledger .amt.out { color: var(--danger); }
+    .ledger .amt.in { color: var(--safe); }
+    .ledger .title { margin-top: 4px; color: var(--text); }
+    .ledger .desc { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .ledger .note { color: var(--gold2); font-size: 11px; margin-top: 4px; }
+
+    /* AI bar */
+    #aiBar {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      padding: 10px 12px 16px;
+      background: linear-gradient(180deg, transparent, rgba(42,36,32,.96) 30%);
+      z-index: 25;
+    }
+    #aiBar .cap {
+      font-size: 10px; letter-spacing: .14em; color: var(--muted); margin-bottom: 8px;
+    }
+    #aiBar .row { display: flex; gap: 6px; }
+    #aiBar button {
+      flex: 1;
+      padding: 10px 6px;
+      border-radius: 10px;
+      font-size: 10px;
+      line-height: 1.35;
+      color: var(--gold2);
+      background: rgba(158,201,188,.07);
+      box-shadow: 0 0 10px rgba(158,201,188,.08);
+    }
+    #aiFab {
+      position: absolute;
+      right: 14px; bottom: 92px;
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      border: 1px solid var(--gold);
+      background: radial-gradient(circle at 30% 30%, #b8ddd2, #6fa896);
+      box-shadow: 0 0 18px rgba(158,201,188,.35);
+      z-index: 26;
+      color: #2a2420;
+      font-size: 18px;
+    }
+    #aiDialog {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 35;
+      background: rgba(0,0,0,.55);
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #aiDialog.on { display: flex; }
+    #aiDialog .box {
+      width: 100%; max-width: 340px;
+      padding: 18px 16px;
+      border-radius: 14px;
+      text-align: left;
+    }
+    #aiDialog h3 { color: var(--gold2); font-size: 13px; letter-spacing: .08em; }
+    #aiDialog p { margin-top: 10px; font-size: 12px; color: var(--text); line-height: 1.55; }
+    #aiDialog .ans {
+      margin-top: 12px; padding: 10px;
+      border-left: 2px solid var(--gold);
+      font-size: 12px; color: var(--gold2); line-height: 1.5;
+      min-height: 40px;
+    }
+    #aiDialog .acts { display: flex; gap: 8px; margin-top: 14px; }
+    #aiDialog .acts button { flex: 1; padding: 8px; border-radius: 8px; font-size: 11px; color: var(--gold2); }
+
+    .hint-fixed {
+      position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 80;
+      max-width: 480px; margin: 0 auto;
+      font-size: 10px; color: #8a8070; text-align: center;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="bgCanvas"></canvas>
+  <div class="hint-fixed">薄巧复刻 · 功能同网友原指令 · 密钥 <b style="color:#6fa896">ARIA</b> · 仅改黑金→薄荷巧克力</div>
+
+  <div id="app">
+    <!-- Gate: identifier -->
+    <section class="layer on" id="gateKey">
+      <h1>ENTER ARIA IDENTIFIER</h1>
+      <input id="keyInput" type="text" autocomplete="off" spellcheck="false" placeholder="__________________" />
+      <div class="msg" id="keyMsg">输入资产所属人身份密钥</div>
+      <div class="sub">ACCESS GRANTED → 三层生物识别 · 连续错误两次触发 SECURITY PROTOCOL</div>
+    </section>
+
+    <section class="layer" id="gateFace">
+      <h1>FACIAL RECOGNITION</h1>
+      <div class="scan-ring">
+        <div class="scan-line"></div>
+        <div class="fog" style="width:70px;height:86px;border-radius:40px 40px 36px 36px;border:1px solid rgba(158,201,188,.5);background:transparent"></div>
+      </div>
+      <div class="progress" id="facePct">SCANNING 0%</div>
+      <div class="verified" id="faceOk" hidden>IDENTITY VERIFIED</div>
+    </section>
+
+    <section class="layer" id="gateFp">
+      <h1>FINGERPRINT AUTHENTICATION</h1>
+      <div class="fp"><div class="fill" id="fpFill"></div></div>
+      <div class="progress" id="fpPct">0%</div>
+      <div class="sub">SEC · ENTROPY 0xA7 · CHALLENGE OK</div>
+      <div class="verified" id="fpOk" hidden>FINGERPRINT VERIFIED</div>
+    </section>
+
+    <section class="layer" id="gateIris">
+      <h1>IRIS AUTHENTICATION</h1>
+      <div class="scan-ring">
+        <div class="scan-line" style="animation-duration:4s"></div>
+        <div class="fog"></div>
+      </div>
+      <div class="progress">IRIS LOCK ACQUIRING…</div>
+      <div class="verified" id="irisOk" hidden>IRIS VERIFIED</div>
+    </section>
+
+    <!-- Main -->
+    <div id="main">
+      <header>
+        <div class="brand"><b>● SECURE</b> · PRIVATE FAMILY OFFICE</div>
+        <nav id="tabs">
+          <button type="button" class="on" data-tab="overview">OVERVIEW</button>
+          <button type="button" data-tab="cash">CASH FLOW</button>
+        </nav>
+      </header>
+
+      <section class="view on" id="view-overview">
+        <div class="glass networth" id="networthBox">
+          <div class="lab">TOTAL NET WORTH<em>总资产估值</em></div>
+          <div class="val" id="netVal">$0.00</div>
+          <div class="chg" id="netChg">▲ +0.00% 24H</div>
+        </div>
+
+        <div class="glass alloc">
+          <div class="donut-wrap">
+            <canvas id="donut" width="224" height="224"></canvas>
+            <div class="donut-center">
+              <b id="donutCenter">$0T</b>
+              <span>NAV</span>
+            </div>
+          </div>
+          <ul class="alloc-list" id="allocList"></ul>
+        </div>
+
+        <div class="glass feed">
+          <div class="feed-inner" id="feedInner"></div>
+        </div>
+
+        <div>
+          <div class="lab" style="font-size:10px;letter-spacing:.14em;color:var(--muted);margin-bottom:8px">CORE HOLDINGS · 核心持仓</div>
+          <div class="holds" id="holds"></div>
+        </div>
+
+        <div>
+          <div class="lab" style="font-size:10px;letter-spacing:.14em;color:var(--muted);margin-bottom:8px">ASSET MATRIX · 资产矩阵</div>
+          <div class="cats" id="cats"></div>
+        </div>
+      </section>
+
+      <section class="view" id="view-cash">
+        <div class="glass cf-head">
+          <div class="secure">● SECURE</div>
+          <div class="office">PRIVATE FAMILY OFFICE</div>
+          <div class="welcome">WELCOME BACK, <span id="playerName">ARIA</span></div>
+          <div class="lab" style="margin-top:14px;font-size:10px;letter-spacing:.16em;color:var(--muted)">TOTAL FAMILY WEALTH</div>
+          <div class="val" id="cfWealth" style="margin-top:8px;font-size:26px;color:var(--gold);filter:blur(8px);transition:filter .5s;cursor:pointer">$0.00</div>
+          <div class="cf-sum">
+            <div><div class="k">TOTAL INFLOW</div><div class="v" id="inflow">$0</div></div>
+            <div><div class="k">TOTAL OUTFLOW</div><div class="v" id="outflow">$0</div></div>
+            <div><div class="k">NET CASH FLOW</div><div class="v" id="netflow">$0</div></div>
+          </div>
+        </div>
+
+        <div class="glass" style="padding:12px 14px">
+          <div style="font-size:10px;letter-spacing:.14em;color:var(--muted)">THE RECENT MACRO LEDGER · 近30日宏观流水</div>
+          <ul class="ledger" id="macroLedger"></ul>
+        </div>
+
+        <div class="glass" style="padding:12px 14px">
+          <div style="font-size:10px;letter-spacing:.14em;color:var(--muted)">TODAY'S MICRO LEDGER · 今日流水</div>
+          <div style="margin-top:6px;font-size:11px;color:var(--muted)">TODAY'S EXPENDITURE · TOTAL OUTFLOW <span id="todayOut" style="color:var(--danger)">$0</span></div>
+          <ul class="ledger" id="microLedger"></ul>
+        </div>
+      </section>
+
+      <button type="button" id="aiFab" title="AI Concierge">✦</button>
+      <div id="aiBar">
+        <div class="cap">PRIVATE OFFICE AI · AWAITING YOUR INSTRUCTION</div>
+        <div class="row" id="aiActions"></div>
+      </div>
+
+      <div id="aiDialog">
+        <div class="box glass">
+          <h3 id="aiTitle">AI CONCIERGE</h3>
+          <p id="aiHello"></p>
+          <div class="ans" id="aiAns">…</div>
+          <div class="acts">
+            <button type="button" data-q="tax">税务优化摘要</button>
+            <button type="button" data-q="move">大额调拨建议</button>
+            <button type="button" id="aiClose">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="drill">
+        <div class="bar">
+          <button type="button" id="drillBack">← BACK</button>
+          <h2 id="drillTitle">—</h2>
+        </div>
+        <div class="body" id="drillBody"></div>
+      </div>
+
+      <div id="modal">
+        <div class="panel glass">
+          <h3 id="mEn">—</h3>
+          <div class="cn" id="mCn">—</div>
+          <dl id="mDl"></dl>
+          <button type="button" class="close" id="mClose">CLOSE</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const OWNER_KEY = "ARIA";
+      const PLAYER = "ARIA";
+      let fails = 0;
+      let wealthRevealed = false;
+      let wealthTimer = null;
+      let feedTimer = null;
+      let netPulse = null;
+
+      /** 三、动态资产生成逻辑 wealthData */
+      const wealthData = {
+        owner: PLAYER,
+        currency: "USD",
+        totalNetWorth: 12450890000.0,
+        change24h: 0.024,
+        allocation: [
+          { en: "Global Equities", cn: "全球股市", pct: 35, color: "#6fa896" },
+          { en: "Private Equity", cn: "私人股权", pct: 25, color: "#9ec9bc" },
+          { en: "Global Real Estate", cn: "全球不动产", pct: 20, color: "#8a9e7b" },
+          { en: "Crypto", cn: "加密货币", pct: 10, color: "#7eb8a8" },
+          { en: "Art & Collectibles", cn: "艺术品与收藏", pct: 10, color: "#B85C5C" },
+        ],
+        categories: {
+          traditional: {
+            en: "01 TRADITIONAL ASSETS",
+            cn: "传统资产",
+            subs: {
+              equities: {
+                en: "Equities", cn: "股票",
+                items: [
+                  { en: "SpaceX Pre-IPO Block", cn: "SpaceX 原始股", code: "SPACEX-P", cost: 42.5, qty: 1800000, pnl: 312.4, custodian: "JP Morgan Private", pledged: "No", lastTrade: "2026-09-12", risk: "High Illiquidity" },
+                  { en: "Berkshire Class A", cn: "伯克希尔 A", code: "BRK.A", cost: 520000, qty: 12, pnl: 18.2, custodian: "Goldman Sachs", pledged: "No", lastTrade: "2026-08-01", risk: "Low" },
+                  { en: "Nestlé Bearer", cn: "雀巢不记名", code: "NESN", cost: 98.2, qty: 450000, pnl: 6.1, custodian: "UBS", pledged: "Partial", lastTrade: "2026-09-20", risk: "FX" },
+                  { en: "TSMC ADR", cn: "台积电 ADR", code: "TSM", cost: 112, qty: 220000, pnl: 41.0, custodian: "Morgan Stanley", pledged: "No", lastTrade: "2026-10-02", risk: "Geopolitical" },
+                  { en: "L'Oréal", cn: "欧莱雅", code: "OR.PA", cost: 380, qty: 40000, pnl: 9.4, custodian: "BNP Paribas", pledged: "No", lastTrade: "2026-07-18", risk: "Low" },
+                  { en: "Saudi Aramco", cn: "沙特阿美", code: "2222.SR", cost: 28.4, qty: 5000000, pnl: 3.2, custodian: "SNB Capital", pledged: "No", lastTrade: "2026-06-30", risk: "Energy Cycle" },
+                  { en: "ASML Holding", cn: "阿斯麦", code: "ASML", cost: 720, qty: 18000, pnl: 22.7, custodian: "ING Private", pledged: "No", lastTrade: "2026-09-28", risk: "Tech Cycle" },
+                ],
+              },
+              bonds: {
+                en: "Bonds", cn: "债券",
+                items: [
+                  { en: "US 10Y Treasury Strip", cn: "美债十年剥离", code: "T-10Y", cost: 98.1, qty: 120000000, pnl: 1.2, custodian: "Fedwire / Citi", pledged: "Yes", lastTrade: "2026-09-01", risk: "Rate" },
+                  { en: "Swiss Confederation 2034", cn: "瑞士联邦债", code: "CH-34", cost: 101.2, qty: 40000000, pnl: 0.4, custodian: "Credit Suisse Legacy", pledged: "No", lastTrade: "2026-05-12", risk: "Low" },
+                  { en: "Singapore SGS Green", cn: "新加坡绿色国债", code: "SGS-G", cost: 99.5, qty: 25000000, pnl: 0.8, custodian: "DBS", pledged: "No", lastTrade: "2026-08-22", risk: "Low" },
+                  { en: "Corporate HY Basket", cn: "高收益债篮", code: "HY-BX", cost: 94.0, qty: 30000000, pnl: -2.1, custodian: "Barclays", pledged: "No", lastTrade: "2026-09-15", risk: "Credit" },
+                  { en: "Japan JGBi Linkers", cn: "日本通胀挂钩债", code: "JGBI", cost: 102.3, qty: 18000000, pnl: 0.3, custodian: "MUFG", pledged: "No", lastTrade: "2026-04-09", risk: "FX" },
+                  { en: "Municipals Tax-Exempt", cn: "免税市政债", code: "MUNI", cost: 100.1, qty: 15000000, pnl: 0.5, custodian: "BofA", pledged: "No", lastTrade: "2026-03-01", risk: "Low" },
+                ],
+              },
+              cash: {
+                en: "Cash", cn: "现金",
+                items: [
+                  { en: "USD Operating", cn: "美元运营户", code: "USD-OP", cost: 1, qty: 420000000, pnl: 0, custodian: "JPM Private Bank", pledged: "No", lastTrade: "2026-10-10", risk: "Counterparty" },
+                  { en: "CHF Reserve", cn: "瑞郎储备", code: "CHF-RS", cost: 1, qty: 180000000, pnl: 0, custodian: "UBS", pledged: "No", lastTrade: "2026-10-08", risk: "FX" },
+                  { en: "SGD Liquidity", cn: "新元流动性", code: "SGD-LQ", cost: 1, qty: 90000000, pnl: 0, custodian: "DBS", pledged: "No", lastTrade: "2026-10-05", risk: "Low" },
+                  { en: "EUR Sweep", cn: "欧元归集", code: "EUR-SW", cost: 1, qty: 150000000, pnl: 0, custodian: "BNP", pledged: "No", lastTrade: "2026-10-09", risk: "FX" },
+                  { en: "Money Market Portal", cn: "货币市场门户", code: "MMF", cost: 1, qty: 260000000, pnl: 0.2, custodian: "BlackRock", pledged: "No", lastTrade: "2026-10-11", risk: "Low" },
+                  { en: "Vault Notes", cn: "金库本票", code: "VN", cost: 1, qty: 50000000, pnl: 0, custodian: "Family Vault", pledged: "No", lastTrade: "2026-01-01", risk: "Ops" },
+                ],
+              },
+            },
+          },
+          alternative: {
+            en: "02 ALTERNATIVE ASSETS",
+            cn: "另类资产",
+            subs: {
+              pe: {
+                en: "Private Equity", cn: "私募股权",
+                items: Array.from({ length: 10 }, (_, i) => ({
+                  en: "PE Fund " + String.fromCharCode(65 + i) + " Growth",
+                  cn: "私募成长基金 " + String.fromCharCode(65 + i),
+                  code: "PE-" + (i + 1),
+                  cost: 25 + i * 3.2,
+                  qty: 1000000 + i * 120000,
+                  pnl: 12 + i * 2.1,
+                  custodian: "Partners Group",
+                  pledged: i % 3 === 0 ? "Yes" : "No",
+                  lastTrade: "2026-0" + ((i % 8) + 1) + "-15",
+                  risk: "Illiquid",
+                })),
+              },
+              vc: {
+                en: "Venture Capital", cn: "风险投资",
+                items: Array.from({ length: 10 }, (_, i) => ({
+                  en: "Series " + ["A", "B", "C"][i % 3] + " · Nova" + (i + 1),
+                  cn: "风投轮次 · 新星" + (i + 1),
+                  code: "VC-" + (i + 1),
+                  cost: 8 + i,
+                  qty: 500000 + i * 40000,
+                  pnl: -5 + i * 3,
+                  custodian: "Sequoia SPV",
+                  pledged: "No",
+                  lastTrade: "2026-07-" + String(i + 1).padStart(2, "0"),
+                  risk: "Binary",
+                })),
+              },
+              hf: {
+                en: "Hedge Funds", cn: "对冲基金",
+                items: Array.from({ length: 10 }, (_, i) => ({
+                  en: "HF Macro " + (i + 1),
+                  cn: "宏观对冲 " + (i + 1),
+                  code: "HF-" + (i + 1),
+                  cost: 100,
+                  qty: 800000 + i * 50000,
+                  pnl: (i % 2 ? 4.2 : -1.3) + i * 0.2,
+                  custodian: "Prime Broker MS",
+                  pledged: "Margin",
+                  lastTrade: "2026-10-01",
+                  risk: "Leverage",
+                })),
+              },
+            },
+          },
+          real: {
+            en: "03 REAL & COLLECTIBLE",
+            cn: "实物及收藏",
+            subs: {
+              re: {
+                en: "Real Estate", cn: "房地产",
+                items: [
+                  { en: "Thames Riverside Tower", cn: "泰晤士河畔塔楼", code: "LDN-TR", cost: 180000000, qty: 1, pnl: 2.4, custodian: "Knight Frank", pledged: "No", lastTrade: "2026-09-01", risk: "Local Market" },
+                  { en: "Manhattan Commercial", cn: "曼哈顿商业地产", code: "NYC-MC", cost: 420000000, qty: 1, pnl: 5.1, custodian: "CBRE", pledged: "Mortgage 12%", lastTrade: "2025-11-20", risk: "Rate" },
+                  { en: "Tokyo Minato Residence", cn: "东京港区宅邸", code: "TYO-MN", cost: 65000000, qty: 1, pnl: 1.1, custodian: "Mitsui Fudosan", pledged: "No", lastTrade: "2024-08-08", risk: "FX" },
+                  { en: "Singapore Marina Office", cn: "新加坡滨海湾办公", code: "SG-MO", cost: 210000000, qty: 1, pnl: 3.3, custodian: "CapitaLand", pledged: "No", lastTrade: "2026-02-14", risk: "Low" },
+                  { en: "Paris Triangle d'Or", cn: "巴黎金三角公寓", code: "PAR-TO", cost: 28000000, qty: 1, pnl: 0.9, custodian: "Barnes", pledged: "No", lastTrade: "2023-05-01", risk: "Low" },
+                  { en: "Dubai Palm Villa", cn: "迪拜棕榈岛别墅", code: "DXB-PV", cost: 45000000, qty: 1, pnl: -0.4, custodian: "Emaar", pledged: "No", lastTrade: "2026-01-19", risk: "Liquidity" },
+                ],
+              },
+              hotels: {
+                en: "Hotels", cn: "酒店",
+                items: [
+                  { en: "Lake Como Boutique", cn: "科莫湖精品酒店", code: "HT-CO", cost: 90000000, qty: 1, pnl: 4.0, custodian: "Accor Partner", pledged: "No", lastTrade: "2025-06-01", risk: "Seasonal" },
+                  { en: "Kyoto Ryokan Holding", cn: "京都旅馆控股", code: "HT-KY", cost: 32000000, qty: 1, pnl: 2.2, custodian: "Local Trust", pledged: "No", lastTrade: "2024-12-12", risk: "Ops" },
+                  { en: "Maldives Overwater", cn: "马尔代夫水屋", code: "HT-MV", cost: 70000000, qty: 1, pnl: 1.5, custodian: "Four Seasons JV", pledged: "No", lastTrade: "2026-03-03", risk: "Climate" },
+                  { en: "Swiss Alpine Lodge", cn: "瑞士高山 Lodge", code: "HT-CH", cost: 48000000, qty: 1, pnl: 0.7, custodian: "Family OpCo", pledged: "No", lastTrade: "2022-09-09", risk: "Low" },
+                  { en: "NYC Midtown Keys", cn: "纽约中城钥匙", code: "HT-NY", cost: 160000000, qty: 1, pnl: -1.2, custodian: "Hilton Flag", pledged: "Debt", lastTrade: "2026-07-07", risk: "Cycle" },
+                  { en: "Lisbon Heritage Inn", cn: "里斯本遗产旅店", code: "HT-LS", cost: 18000000, qty: 1, pnl: 3.8, custodian: "Local SPV", pledged: "No", lastTrade: "2025-10-10", risk: "Tourism" },
+                ],
+              },
+              art: {
+                en: "Art", cn: "艺术品",
+                items: [
+                  { en: "Blue Period Study", cn: "蓝色时期习作", code: "ART-01", cost: 12000000, qty: 1, pnl: 8.0, custodian: "Freeport Geneva", pledged: "No", lastTrade: "2021-04-04", risk: "Appraisal" },
+                  { en: "Ink Landscape Scroll", cn: "水墨山水长卷", code: "ART-02", cost: 4500000, qty: 1, pnl: 15.2, custodian: "HK Vault", pledged: "No", lastTrade: "2020-01-01", risk: "Authenticity" },
+                  { en: "Contemporary Neon #7", cn: "当代霓虹 #7", code: "ART-03", cost: 2100000, qty: 1, pnl: -3.0, custodian: "White Cube Storage", pledged: "No", lastTrade: "2024-06-06", risk: "Taste" },
+                  { en: "Impressionist Garden", cn: "印象派花园", code: "ART-04", cost: 28000000, qty: 1, pnl: 5.5, custodian: "Sotheby's Fine Art", pledged: "No", lastTrade: "2019-11-11", risk: "Low" },
+                  { en: "Kinetic Sculpture", cn: "动态雕塑", code: "ART-05", cost: 900000, qty: 1, pnl: 22.0, custodian: "Basel Freeport", pledged: "No", lastTrade: "2023-08-08", risk: "Niche" },
+                  { en: "Photography Edition", cn: "摄影限量版", code: "ART-06", cost: 320000, qty: 12, pnl: 4.1, custodian: "Home Archive", pledged: "No", lastTrade: "2026-02-02", risk: "Low" },
+                ],
+              },
+              luxury: {
+                en: "Luxury", cn: "奢华资产",
+                items: [
+                  { en: "Gulfstream G700 Slot", cn: "湾流 G700 机位", code: "LX-JET", cost: 78000000, qty: 1, pnl: -2.0, custodian: "NetJets Mgmt", pledged: "No", lastTrade: "2025-09-09", risk: "Depreciation" },
+                  { en: "Feadship Yacht 55m", cn: "斐帝星 55 米游艇", code: "LX-YCH", cost: 95000000, qty: 1, pnl: -4.5, custodian: "Monaco Registry", pledged: "No", lastTrade: "2024-07-07", risk: "Ops Cost" },
+                  { en: "Patek Grand Complication", cn: "百达翡丽大复杂", code: "LX-WT", cost: 2100000, qty: 1, pnl: 11.0, custodian: "Home Safe", pledged: "No", lastTrade: "2022-02-02", risk: "Theft" },
+                  { en: "Classic Ferrari Set", cn: "经典法拉利组合", code: "LX-CAR", cost: 18000000, qty: 3, pnl: 6.3, custodian: "Swiss Garage", pledged: "No", lastTrade: "2023-03-03", risk: "Storage" },
+                  { en: "Wine Cellar Bordeaux", cn: "波尔多酒窖", code: "LX-WN", cost: 4800000, qty: 1, pnl: 2.0, custodian: "Bordeaux Bonded", pledged: "No", lastTrade: "2026-01-01", risk: "Climate" },
+                  { en: "Private Island Lease", cn: "私人岛屿长租", code: "LX-ISL", cost: 35000000, qty: 1, pnl: 0.5, custodian: "Trust SPV", pledged: "No", lastTrade: "2018-12-12", risk: "Legal" },
+                ],
+              },
+            },
+          },
+          family: {
+            en: "04 FAMILY HOLDINGS",
+            cn: "家族控股",
+            subs: {
+              control: {
+                en: "Control Structure", cn: "控制权结构",
+                items: [
+                  { en: "Family Holding Co. 62%", cn: "家族控股公司 62%", code: "FH-62", cost: 1, qty: 6200000000, pnl: 0, custodian: "Cayman Trust", pledged: "No", lastTrade: "—", risk: "Governance" },
+                  { en: "Voting Trust Class B", cn: "表决权信托 B", code: "VT-B", cost: 1, qty: 1, pnl: 0, custodian: "Delaware Trustee", pledged: "No", lastTrade: "—", risk: "Legal" },
+                  { en: "OpCo Board Seats ×3", cn: "运营公司董事席 ×3", code: "BD-3", cost: 0, qty: 3, pnl: 0, custodian: "Corporate Sec", pledged: "No", lastTrade: "—", risk: "Influence" },
+                  { en: "Philanthropy Foundation", cn: "慈善基金会", code: "PHIL", cost: 400000000, qty: 1, pnl: 0, custodian: "Foundation Board", pledged: "No", lastTrade: "2026-01-01", risk: "Reputation" },
+                  { en: "Next-Gen Education Trust", cn: "下一代教育信托", code: "EDU", cost: 120000000, qty: 1, pnl: 1.1, custodian: "Swiss Trust", pledged: "No", lastTrade: "2025-05-05", risk: "Low" },
+                  { en: "Key-Man Insurance Pool", cn: "关键人寿险池", code: "KMI", cost: 80000000, qty: 1, pnl: 0, custodian: "Lloyd's Cover", pledged: "No", lastTrade: "2026-06-06", risk: "Actuarial" },
+                ],
+              },
+            },
+          },
+        },
+        coreHoldings: [
+          { en: "SpaceX Pre-IPO Block", cn: "SpaceX 原始股", code: "SPACEX-P", cost: 42.5, qty: 1800000, pnl: 312.4, custodian: "JP Morgan Private", pledged: "No", lastTrade: "2026-09-12", risk: "High Illiquidity" },
+          { en: "Manhattan Commercial", cn: "曼哈顿商业地产", code: "NYC-MC", cost: 420000000, qty: 1, pnl: 5.1, custodian: "CBRE", pledged: "Mortgage 12%", lastTrade: "2025-11-20", risk: "Rate" },
+          { en: "Bitcoin Cold Wallet", cn: "冷钱包比特币", code: "BTC-CW", cost: 41200, qty: 1850, pnl: 88.5, custodian: "Multisig 3/5", pledged: "No", lastTrade: "2026-10-01", risk: "Custody" },
+          { en: "Thames Riverside Tower", cn: "泰晤士河畔塔楼", code: "LDN-TR", cost: 180000000, qty: 1, pnl: 2.4, custodian: "Knight Frank", pledged: "No", lastTrade: "2026-09-01", risk: "Local Market" },
+        ],
+      };
+
+      const macroLedger = [
+        { amt: -450000000, title: "战略收购：完成北欧航运控股", desc: "股权交割完成，并表进入家族长期组合", note: "相关资产已纳入家族长期战略投资组合。", dir: "out" },
+        { amt: 180000000, title: "私募基金退出：Horizon VI", desc: "第二期分配到账", note: "现金流将优先填补收购过桥。", dir: "in" },
+        { amt: -22000000, title: "艺术品购藏：Impressionist Garden 保险增额", desc: "日内瓦自由港入库", note: "已完成鉴定复核。", dir: "out" },
+        { amt: 5600000, title: "酒店及房地产收益：科莫湖 Q3", desc: "税后分配", note: "季节性高峰已过。", dir: "in" },
+        { amt: -8500000, title: "私人飞机相关：引擎大修 + 停场", desc: "NetJets 账单", note: "建议下季度评估分时份额。", dir: "out" },
+        { amt: 12000000, title: "家族企业分红", desc: "OpCo 特别股息", note: "已进入 USD Operating。", dir: "in" },
+        { amt: -3000000, title: "慈善捐赠：教育信托追加", desc: "不可撤销捐赠", note: "声誉账户记入。", dir: "out" },
+      ];
+
+      const microLedger = [
+        { t: "09:12", amt: -1280, title: "私人办公室餐饮", desc: "顾问午餐" },
+        { t: "11:40", amt: -42000, title: "信托律师小时费", desc: "并购文件修订" },
+        { t: "14:05", amt: -890, title: "加密冷钱包审计短信费", desc: "托管方通知" },
+        { t: "16:33", amt: -250000, title: "艺术运输保险当日批单", desc: "日内瓦→苏黎世" },
+        { t: "18:20", amt: -5600, title: "游艇码头过夜", desc: "摩纳哥" },
+      ];
+
+      const feedPool = [
+        ["瑞士信贷", "收到股息", "$5,000,000"],
+        ["伦敦", "泰晤士河畔房产估值上调", "2.4%"],
+        ["安全警告", "尝试从开曼群岛信托提取资金，需生物识别确认", ""],
+        ["纽约", "曼哈顿商业地产 NOI 修订", "+1.1%"],
+        ["新加坡", "货币基金门户日息入账", "$210,400"],
+        ["日内瓦", "自由港仓储巡检完成", "OK"],
+        ["东京", "港区宅邸物业税预提", "¥18,200,000"],
+        ["链上", "冷钱包多签轮换提案", "PENDING"],
+      ];
+
+      const drillStack = [];
+
+      function pad(n) { return String(n).padStart(2, "0"); }
+      function money(n) {
+        return "$" + Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      function moneyShort(n) {
+        const a = Math.abs(n);
+        if (a >= 1e12) return "$" + (n / 1e12).toFixed(2) + "T";
+        if (a >= 1e9) return "$" + (n / 1e9).toFixed(2) + "B";
+        if (a >= 1e6) return "$" + (n / 1e6).toFixed(2) + "M";
+        return money(n);
+      }
+      function $(id) { return document.getElementById(id); }
+
+      /* Canvas rain — PC 指令残影逻辑 */
+      (function canvasRain() {
+        const c = $("bgCanvas");
+        const ctx = c.getContext("2d");
+        let w, h, cols, dropsDown, dropsUp;
+        const glyphs = "0123456789USD€▲▼+%.$¥".split("");
+        function resize() {
+          const dpr = window.devicePixelRatio || 1;
+          w = window.innerWidth;
+          h = window.innerHeight;
+          c.width = w * dpr;
+          c.height = h * dpr;
+          c.style.width = w + "px";
+          c.style.height = h + "px";
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const COL_W = 22;
+          cols = Math.ceil(w / COL_W);
+          dropsDown = [];
+          dropsUp = [];
+          for (let i = 0; i < cols; i++) {
+            for (let k = 0; k < 6; k++) {
+              dropsDown.push({
+                x: i * COL_W,
+                y: Math.random() * h,
+                speed: 0.38 + Math.random() * 0.12,
+                ch: glyphs[(Math.random() * glyphs.length) | 0],
+                timer: (Math.random() * 40) | 0,
+              });
+            }
+            for (let k = 0; k < 4; k++) {
+              dropsUp.push({
+                x: i * COL_W,
+                y: Math.random() * h,
+                speed: 0.38 + Math.random() * 0.12,
+                ch: glyphs[(Math.random() * glyphs.length) | 0],
+                timer: (Math.random() * 40) | 0,
+                color: Math.random() > 0.5 ? "#6fa896" : "#9ec9bc",
+              });
+            }
+          }
+        }
+        function frame() {
+          ctx.fillStyle = "rgba(42, 36, 32, 0.045)";
+          ctx.fillRect(0, 0, w, h);
+          ctx.font = "14px SF Mono, Consolas, monospace";
+          dropsDown.forEach((d) => {
+            ctx.fillStyle = "rgba(158,201,188,0.55)";
+            ctx.fillText(d.ch, d.x, d.y);
+            d.y += d.speed;
+            if (d.y > h) d.y = -20;
+            if (--d.timer <= 0) {
+              d.ch = glyphs[(Math.random() * glyphs.length) | 0];
+              d.timer = 20 + ((Math.random() * 40) | 0);
+            }
+          });
+          dropsUp.forEach((d) => {
+            ctx.fillStyle = d.color;
+            ctx.fillText(d.ch, d.x, d.y);
+            d.y -= d.speed;
+            if (d.y < -20) d.y = h + 20;
+            if (--d.timer <= 0) {
+              d.ch = glyphs[(Math.random() * glyphs.length) | 0];
+              d.timer = 20 + ((Math.random() * 40) | 0);
+            }
+          });
+          requestAnimationFrame(frame);
+        }
+        resize();
+        window.addEventListener("resize", resize);
+        ctx.fillStyle = "rgba(42,36,32,1)";
+        ctx.fillRect(0, 0, w, h);
+        requestAnimationFrame(frame);
+      })();
+
+      function showLayer(id) {
+        ["gateKey", "gateFace", "gateFp", "gateIris"].forEach((x) => {
+          $(x).classList.toggle("on", x === id);
+        });
+      }
+
+      $("keyInput").addEventListener("keydown", (e) => {
+        if (e.key !== "Enter") return;
+        const v = $("keyInput").value.trim();
+        if (v.toUpperCase() === OWNER_KEY) {
+          $("keyMsg").className = "msg";
+          $("keyMsg").textContent = "ACCESS GRANTED";
+          setTimeout(() => runFace(), 500);
+        } else {
+          fails += 1;
+          $("keyMsg").className = "msg bad";
+          $("keyMsg").textContent = "ACCESS DENIED";
+          if (fails >= 2) {
+            $("keyMsg").textContent = "SECURITY PROTOCOL ACTIVE";
+            $("gateKey").classList.add("redflash");
+            setTimeout(() => $("gateKey").classList.remove("redflash"), 1000);
+          }
+        }
+      });
+
+      function runFace() {
+        showLayer("gateFace");
+        let p = 0;
+        $("faceOk").hidden = true;
+        const t = setInterval(() => {
+          p += 2;
+          $("facePct").textContent = "SCANNING " + Math.min(p, 100) + "%";
+          const fog = $("gateFace").querySelector(".fog");
+          fog.style.opacity = String(0.2 + (Math.min(p, 100) / 100) * 0.8);
+          fog.style.borderColor = "rgba(158,201,188," + (0.3 + p / 100 * 0.7) + ")";
+          if (p >= 100) {
+            clearInterval(t);
+            $("faceOk").hidden = false;
+            setTimeout(runFp, 600);
+          }
+        }, 40);
+      }
+
+      function runFp() {
+        showLayer("gateFp");
+        let p = 0;
+        $("fpOk").hidden = true;
+        $("fpFill").style.height = "0%";
+        const t = setInterval(() => {
+          p += 1;
+          $("fpPct").textContent = p + "%";
+          $("fpFill").style.height = p + "%";
+          if (p >= 100) {
+            clearInterval(t);
+            $("fpOk").hidden = false;
+            setTimeout(runIris, 500);
+          }
+        }, 30);
+      }
+
+      function runIris() {
+        showLayer("gateIris");
+        $("irisOk").hidden = true;
+        setTimeout(() => {
+          $("irisOk").hidden = false;
+          setTimeout(enterMain, 700);
+        }, 4000);
+      }
+
+      function enterMain() {
+        ["gateKey", "gateFace", "gateFp", "gateIris"].forEach((x) => $(x).classList.remove("on"));
+        $("main").classList.add("on");
+        $("playerName").textContent = PLAYER;
+        renderAll();
+        startFeed();
+        startNetPulse();
+      }
+
+      function abbrevNAV(n) {
+        if (n >= 1e12) return "$" + (n / 1e12).toFixed(2) + "T";
+        if (n >= 1e9) return "$" + (n / 1e9).toFixed(1) + "B";
+        return moneyShort(n);
+      }
+
+      function renderAll() {
+        $("netVal").textContent = money(wealthData.totalNetWorth);
+        $("cfWealth").textContent = money(wealthData.totalNetWorth);
+        $("netChg").textContent = "▲ +" + (wealthData.change24h * 100).toFixed(2) + "% 24H";
+        $("donutCenter").textContent = abbrevNAV(wealthData.totalNetWorth);
+        drawDonut();
+        $("allocList").innerHTML = wealthData.allocation
+          .map((a) => "<li><span>" + a.en + "<span class=\"cn\">" + a.cn + "</span></span><span>" + a.pct + "%</span></li>")
+          .join("");
+
+        $("holds").innerHTML = "";
+        wealthData.coreHoldings.forEach((h) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "hold-card glass";
+          btn.innerHTML =
+            "<div class=\"en\">" + h.en + "</div><div class=\"cn\">" + h.cn + "</div>" +
+            "<div class=\"meta\"><span>" + h.code + "</span><span style=\"color:" + (h.pnl >= 0 ? "var(--safe)" : "var(--danger)") + "\">" +
+            (h.pnl >= 0 ? "+" : "") + h.pnl.toFixed(1) + "%</span></div>";
+          btn.addEventListener("click", () => openDetail(h));
+          $("holds").appendChild(btn);
+        });
+
+        $("cats").innerHTML = "";
+        Object.keys(wealthData.categories).forEach((key) => {
+          const c = wealthData.categories[key];
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "cat-btn glass";
+          btn.innerHTML = "<div class=\"en\">" + c.en + "</div><div class=\"cn\">" + c.cn + "</div>";
+          btn.addEventListener("click", () => openDrillCat(key));
+          $("cats").appendChild(btn);
+        });
+
+        $("aiActions").innerHTML = "";
+        [
+          ["liquidity", "流动性压力测试"],
+          ["rebalance", "再平衡执行草案"],
+          ["hedge", "下行对冲报价"],
+        ].forEach(([id, lab]) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.textContent = lab;
+          b.addEventListener("click", () => aiAnswer(id));
+          $("aiActions").appendChild(b);
+        });
+
+        let inflow = 0, outflow = 0;
+        macroLedger.forEach((x) => {
+          if (x.dir === "in") inflow += x.amt;
+          else outflow += Math.abs(x.amt);
+        });
+        $("inflow").textContent = moneyShort(inflow);
+        $("outflow").textContent = moneyShort(outflow);
+        $("netflow").textContent = moneyShort(inflow - outflow);
+
+        $("macroLedger").innerHTML = macroLedger
+          .map((x) => {
+            const cls = x.dir === "in" ? "in" : "out";
+            const sign = x.dir === "in" ? "+" : "";
+            return (
+              "<li><div class=\"amt " + cls + "\">" + sign + money(x.amt) + "</div>" +
+              "<div class=\"title\">" + x.title + "</div>" +
+              "<div class=\"desc\">" + x.desc + "</div>" +
+              "<div class=\"note\">" + PLAYER + " NOTE：" + x.note + "</div></li>"
+            );
+          })
+          .join("");
+
+        let todayOut = 0;
+        microLedger.forEach((x) => (todayOut += Math.abs(x.amt)));
+        $("todayOut").textContent = money(todayOut);
+        $("microLedger").innerHTML = microLedger
+          .map(
+            (x) =>
+              "<li><div style=\"color:var(--muted)\">" + x.t + "</div>" +
+              "<div class=\"amt out\">" + money(x.amt) + "</div>" +
+              "<div class=\"title\">" + x.title + "</div>" +
+              "<div class=\"desc\">" + x.desc + "</div></li>"
+          )
+          .join("");
+
+        $("aiHello").textContent =
+          "「" + PLAYER + "」，晚上好。您的私人 AI 财富顾问已上线，随时为您执行大额交易或税务优化分析。";
+      }
+
+      function drawDonut() {
+        const canvas = $("donut");
+        const ctx = canvas.getContext("2d");
+        const dpr = 2;
+        const S = 112 * dpr;
+        canvas.width = S;
+        canvas.height = S;
+        const cx = S / 2, cy = S / 2, r = S * 0.38, lw = S * 0.12;
+        ctx.clearRect(0, 0, S, S);
+        let start = -Math.PI / 2;
+        wealthData.allocation.forEach((a) => {
+          const ang = (a.pct / 100) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, start, start + ang);
+          ctx.strokeStyle = a.color;
+          ctx.lineWidth = lw;
+          ctx.lineCap = "butt";
+          ctx.stroke();
+          start += ang;
+        });
+      }
+
+      function setWealthBlur(on) {
+        wealthRevealed = !on;
+        $("netVal").classList.toggle("clear", !on);
+        $("cfWealth").style.filter = on ? "blur(8px)" : "blur(0)";
+      }
+
+      function toggleWealth() {
+        if (wealthRevealed) {
+          clearTimeout(wealthTimer);
+          setWealthBlur(true);
+          return;
+        }
+        setWealthBlur(false);
+        clearTimeout(wealthTimer);
+        wealthTimer = setTimeout(() => setWealthBlur(true), 5000);
+      }
+
+      $("networthBox").addEventListener("click", toggleWealth);
+      $("cfWealth").addEventListener("click", toggleWealth);
+
+      document.querySelectorAll("#tabs button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll("#tabs button").forEach((b) => b.classList.remove("on"));
+          btn.classList.add("on");
+          const tab = btn.getAttribute("data-tab");
+          $("view-overview").classList.toggle("on", tab === "overview");
+          $("view-cash").classList.toggle("on", tab === "cash");
+          });
+      });
+
+      function openDetail(item) {
+        $("mEn").textContent = item.en;
+        $("mCn").textContent = item.cn;
+        const rows = [
+          ["代码 CODE", item.code],
+          ["成本 COST", typeof item.cost === "number" && item.cost >= 1000 ? money(item.cost) : String(item.cost)],
+          ["持仓数量 QTY", Number(item.qty).toLocaleString("en-US")],
+          ["浮盈 PNL", (item.pnl >= 0 ? "+" : "") + item.pnl + "%"],
+          ["托管 CUSTODIAN", item.custodian],
+          ["质押 PLEDGED", item.pledged],
+          ["上次交易", item.lastTrade],
+          ["风险敞口", item.risk],
+        ];
+        $("mDl").innerHTML = rows.map(([k, v]) => "<dt>" + k + "</dt><dd>" + v + "</dd>").join("");
+        $("modal").classList.add("on");
+      }
+      $("mClose").addEventListener("click", () => $("modal").classList.remove("on"));
+      $("modal").addEventListener("click", (e) => {
+        if (e.target === $("modal")) $("modal").classList.remove("on");
+      });
+
+      function openDrillCat(key) {
+        drillStack.length = 0;
+        drillStack.push({ type: "cat", key });
+        renderDrill();
+        $("drill").classList.add("on");
+      }
+      function renderDrill() {
+        const top = drillStack[drillStack.length - 1];
+        const body = $("drillBody");
+        body.innerHTML = "";
+        if (top.type === "cat") {
+          const c = wealthData.categories[top.key];
+          $("drillTitle").textContent = c.en + " · " + c.cn;
+          Object.keys(c.subs).forEach((sk) => {
+            const s = c.subs[sk];
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "sub-btn glass";
+            btn.innerHTML = "<div class=\"en\">" + s.en + "</div><div class=\"cn\">" + s.cn + "</div>";
+            btn.addEventListener("click", () => {
+              drillStack.push({ type: "sub", key: top.key, sk });
+              renderDrill();
+            });
+            body.appendChild(btn);
+          });
+        } else if (top.type === "sub") {
+          const s = wealthData.categories[top.key].subs[top.sk];
+          $("drillTitle").textContent = s.en + " · " + s.cn;
+          s.items.forEach((item) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "asset-btn glass";
+            btn.innerHTML =
+              "<div class=\"en\">" + item.en + "</div><div class=\"cn\">" + item.cn + "</div>" +
+              "<div class=\"row\"><span>" + item.code + "</span><span style=\"color:" +
+              (item.pnl >= 0 ? "var(--safe)" : "var(--danger)") + "\">" +
+              (item.pnl >= 0 ? "+" : "") + item.pnl + "%</span></div>";
+            btn.addEventListener("click", () => openDetail(item));
+            body.appendChild(btn);
+          });
+        }
+      }
+      $("drillBack").addEventListener("click", () => {
+        if (drillStack.length > 1) {
+          drillStack.pop();
+          renderDrill();
+        } else {
+          $("drill").classList.remove("on");
+          drillStack.length = 0;
+        }
+      });
+
+      function startFeed() {
+        const box = $("feedInner");
+        box.innerHTML = "";
+        const buf = [];
+        function addOne() {
+          const [loc, ev, num] = feedPool[(Math.random() * feedPool.length) | 0];
+          const now = new Date();
+          const line =
+            "<div class=\"feed-row\">[" +
+            pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds()) +
+            "] <b>[" + loc + "]</b> " + ev +
+            (num ? " <span class=\"n\">" + num + "</span>" : "") +
+            "</div>";
+          buf.push({ html: line, born: Date.now() });
+          if (buf.length > 26) buf.shift();
+          box.innerHTML = buf.map((x) => x.html).join("");
+        }
+        for (let i = 0; i < 15; i++) addOne();
+        clearInterval(feedTimer);
+        feedTimer = setInterval(() => {
+          const now = Date.now();
+          for (let i = buf.length - 1; i >= 0; i--) {
+            if (now - buf[i].born > 47000) buf.splice(i, 1);
+          }
+          addOne();
+        }, 1800);
+      }
+
+      function startNetPulse() {
+        clearInterval(netPulse);
+        netPulse = setInterval(() => {
+          const jitter = (Math.random() - 0.5) * 0.00002 * wealthData.totalNetWorth;
+          wealthData.totalNetWorth = Math.max(0, wealthData.totalNetWorth + jitter);
+          if (wealthRevealed) {
+            $("netVal").textContent = money(wealthData.totalNetWorth);
+            $("cfWealth").textContent = money(wealthData.totalNetWorth);
+          }
+          $("donutCenter").textContent = abbrevNAV(wealthData.totalNetWorth);
+        }, 2200);
+      }
+
+      function aiAnswer(kind) {
+        $("aiDialog").classList.add("on");
+        const map = {
+          liquidity: "结论：30 日压力情景下可用流动性 $1.12B；建议保留 USD Operating ≥ $400M。",
+          rebalance: "结论：股票超配 2.1pct → 建议减持 TSM / 增配 US 10Y Strip，名义 $180M。",
+          hedge: "结论：下行对冲报价：3M put spread 成本约 $6.4M，覆盖组合 8% 尾部。",
+          tax: "结论：本季预计应税事件 $42M；可通过慈善信托抵消约 $11M。",
+          move: "结论：开曼→新加坡调拨 $75M 需二次生物识别；预计 T+1 清算。",
+        };
+        $("aiAns").textContent = map[kind] || map.liquidity;
+      }
+      $("aiFab").addEventListener("click", () => {
+        $("aiDialog").classList.add("on");
+        $("aiAns").textContent = "随时为您服务。请选择下方指令，或使用底栏三按钮。";
+      });
+      $("aiClose").addEventListener("click", () => $("aiDialog").classList.remove("on"));
+      document.querySelectorAll("#aiDialog [data-q]").forEach((b) => {
+        b.addEventListener("click", () => aiAnswer(b.getAttribute("data-q")));
+      });
+
+    })();
+  </script>
+</body>
+</html>

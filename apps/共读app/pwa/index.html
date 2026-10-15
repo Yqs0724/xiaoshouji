@@ -2755,6 +2755,7 @@
   <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx28" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
+  <link rel="stylesheet" href="/app-ui/资产app/pwa/wallet.css" />
 </head>
 <body>
   <div id="gateOverlay" aria-hidden="true">
@@ -2865,7 +2866,7 @@
           <button type="button" class="home-app" data-go="todo"><span class="ico-wrap"><img src="/assets/cafe/deco-stamp.png" alt="" /></span><span class="lab">待办</span></button>
           <button type="button" class="home-app" data-go="shop"><span class="ico-wrap"><img src="/assets/cafe/cup.png" alt="" /></span><span class="lab">购物</span></button>
           <button type="button" class="home-app" data-go="budget"><span class="ico-wrap"><img src="/assets/cafe/health.png" alt="" /></span><span class="lab">额度</span></button>
-          <button type="button" class="home-app" data-go="wallet"><span class="ico-wrap"><img src="/assets/cafe/treat.png" alt="" /></span><span class="lab">钱包</span></button>
+          <button type="button" class="home-app" data-go="wallet"><span class="ico-wrap"><img src="/assets/cafe/treat.png" alt="" /></span><span class="lab">资产</span></button>
           <button type="button" class="home-app" data-go="ledger"><span class="ico-wrap"><img src="/assets/cafe/deco-cookies.png" alt="" /></span><span class="lab">记账</span></button>
           <button type="button" class="home-app" data-go="album"><span class="ico-wrap"><img src="/assets/cafe/deco-paw.png" alt="" /></span><span class="lab">相册</span></button>
           <button type="button" class="home-app" data-go="eat"><span class="ico-wrap"><img src="/assets/cafe/decor-croissant.png" alt="" /></span><span class="lab">吃啥</span></button>
@@ -2926,6 +2927,7 @@
   <!--APP_VIEW:共看app:view.html-->
   <!--APP_VIEW:共看app:view-play.html-->
   <!--APP_VIEW:额度app:view.html-->
+  <!--APP_VIEW:资产app:view.html-->
 
 
 
@@ -3648,6 +3650,7 @@
   <script src="/app-ui/聊天app/pwa/chat.js?v=wx28"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js"></script>
+  <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
   <script>
     const TITLES = { shelf: "书架", notes: "笔记", records: "记录", settings: "设定" };
 
@@ -4327,7 +4330,7 @@
       { id: "todo", lab: "待办" },
       { id: "shop", lab: "购物" },
       { id: "budget", lab: "额度" },
-      { id: "wallet", lab: "钱包" },
+      { id: "wallet", lab: "资产" },
       { id: "ledger", lab: "记账" },
       { id: "album", lab: "相册" },
       { id: "eat", lab: "吃啥" },
@@ -6123,6 +6126,7 @@
         CalApp.onShow(name);
       }
       if (name === "budget" && window.BudgetApp) BudgetApp.onShow();
+      if (name === "wallet" && window.WalletApp) WalletApp.onShow();
       if (name === "chat" && window.ChatApp) ChatApp.refreshThread();
       if (name === "cowatch" && window.CowatchApp) CowatchApp.refreshList();
       if (name === "colisten" && window.ColistenApp) ColistenApp.enterPlayer();
@@ -6181,12 +6185,8 @@
       else if (go === "cowatch") showView("cowatch");
       else if (go === "colisten") showView("colisten");
       else if (go === "budget") showView("budget");
-      else if (go === "wallet") {
-        openAppStub(
-          "钱包",
-          "模拟余额（聊天红包/转账）。≠ LLM「额度」。业务页未开工。"
-        );
-      } else openAppStub(lab || go || "App");
+      else if (go === "wallet") showView("wallet");
+      else openAppStub(lab || go || "App");
     }
 
     const HOME_DECO_DEFAULT = "/assets/cafe/deco-shake.png";
@@ -8549,6 +8549,9 @@
     }
     if (window.BudgetApp) {
       BudgetApp.mount({ showView });
+    }
+    if (window.WalletApp) {
+      WalletApp.mount({ showView });
     }
     if (window.ChatApp) {
       ChatApp.mount({

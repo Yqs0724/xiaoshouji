@@ -22,6 +22,8 @@
 | 日常聊天 | `#view-chat` | `apps/聊天app` |
 | 共看 | `#view-cowatch` · `#view-cowatch-play` | `apps/共看app` |
 | 共听 | `#view-colisten` | `apps/共听app/pwa`（逻辑 `/assets-colisten/colisten.js`；皮 `/assets/colisten/`） |
+| 额度 | `#view-budget` | `apps/额度app` |
+| 资产 | `#view-wallet` | `apps/资产app`（iframe→`wealth.html`；W.1 DEMO，真账暂缓 D40） |
 | stub | `#view-app-stub` | 生活多图标 / 花宠 / 共漫 / 2.5D「小屋」等未开工入口 |
 
 ## 为何暂不把 HTML 拆进本目录

@@ -1,0 +1,27 @@
+/* 资产 App：iframe 铺满壳视图；顶让出手机状态带（方案 E 吞区） */
+#view-wallet {
+  padding: 0 !important;
+  background: #2a2420;
+  min-height: 0;
+}
+body.phone-status-app:has(#view-wallet.active) #view-wallet {
+  padding-top: var(--phone-status-pad) !important;
+}
+/* 资产页状态带贴深色皮，避免薄荷条硬切 */
+body.phone-status-app:has(#view-wallet.active) #phoneStatus {
+  background: rgba(42, 36, 32, 0.92);
+  border-bottom: 1px solid rgba(158, 201, 188, 0.22);
+  color: #f7f1e8;
+}
+body.phone-status-app:has(#view-wallet.active) #phoneStatus .phone-status-time {
+  color: #f7f1e8;
+}
+#view-wallet .wallet-frame {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  border: 0;
+  background: #2a2420;
+}
