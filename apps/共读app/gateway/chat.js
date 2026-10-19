@@ -100,9 +100,9 @@ function buildShortChatSystem(book, open) {
       if (card.length > PERSONA_CARD_FOLLOW_MAX) {
         card =
           card.slice(0, PERSONA_CARD_FOLLOW_MAX) +
-          "\n…（完整角色卡已截断，全文仅保存在设定里）";
+          "\n…（人设已截断，全文仅保存在设定里）";
       }
-      system += "\n完整角色卡（补充设定，勿整段复述）：\n" + card;
+      system += "\n人设（请遵守，勿整段复述）：\n" + card;
     }
   }
   if (sess && sess.lore_light) {

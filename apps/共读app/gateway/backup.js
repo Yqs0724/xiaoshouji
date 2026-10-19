@@ -15,6 +15,9 @@ const DATA_FILES = [
   { name: "lore.json" },
   { name: "calendar.json", dir: path.join(APPS_DIR, "日历app", "data") },
   { name: "chat.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "moments.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "favorites.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "mood.json", dir: path.join(APPS_DIR, "聊天app", "data") },
   { name: "watch.json", dir: path.join(APPS_DIR, "共看app", "data") },
   { name: "listen.json", dir: path.join(APPS_DIR, "共听app", "data") },
 ];

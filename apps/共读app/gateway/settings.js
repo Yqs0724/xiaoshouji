@@ -13,9 +13,27 @@ const DEFAULTS = {
   llm_base: "",
   llm_key: "",
   llm_model: "",
+  /**
+   * 小屋底稿人设 = persona_card（一份长文）。
+   * persona 仅兼容旧数据：卡空时回落；新写入请只写 persona_card。
+   */
   persona: "",
   persona_card: "",
+  /** 共读跟批是否注入人设卡（只影响共读，在共读「对话设置」里改） */
   persona_card_in_follow: false,
+  /** 各 App 是否沿用小屋人设；缺省 true */
+  persona_use_hut: { chat: true, coread: true },
+  /** App 自有人设（对应开关关掉时用；真源是 persona_card） */
+  persona_apps: {
+    chat: { persona: "", persona_card: "" },
+    coread: { persona: "", persona_card: "" },
+  },
+  /** 世界书总开关（默认关）；开后聊天按酒馆式扫描启用中的书 */
+  worldbook_enabled: false,
+  /** 扫描最近几条消息；0=只常驻 */
+  worldbook_scan_depth: 4,
+  /** 注入字预算；整条放不下则跳过，不截断条目 */
+  worldbook_budget_chars: 6000,
   /** 跟批用短剧情摘要（一层文本；分层编辑器另开） */
   lore_summary: "",
   default_follow_mode: "immersive",
@@ -46,6 +64,8 @@ const DEFAULTS = {
   mcp_enabled: false,
   mcp_url: "",
   mcp_token: "",
+  /** H1.24：关掉的 MCP 远端工具名（remote name），不进 LLM 工具表 */
+  mcp_tool_hidden: [],
 };
 
 /** 工具显示名 map；只留合法 name → 短文案 */
@@ -57,6 +77,73 @@ function normalizeChatToolLabels(raw) {
     if (!/^[a-z][a-z0-9_]{0,63}$/i.test(name)) continue;
     const label = String(v == null ? "" : v).trim().slice(0, 32);
     if (label) out[name] = label;
+  }
+  return out;
+}
+
+const PERSONA_APPS = ["chat", "coread"];
+
+function normalizePersonaUseHut(raw) {
+  const out = { chat: true, coread: true };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const app of PERSONA_APPS) {
+    if (Object.prototype.hasOwnProperty.call(raw, app)) out[app] = raw[app] !== false;
+  }
+  return out;
+}
+
+/** 卡优先；旧短人设仅在卡空时回落 */
+function coalescePersonaCard(persona, card) {
+  const c = String(card == null ? "" : card).trim();
+  if (c) return c;
+  return String(persona == null ? "" : persona).trim();
+}
+
+function normalizePersonaApps(raw) {
+  const empty = () => ({ persona: "", persona_card: "" });
+  const out = { chat: empty(), coread: empty() };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const app of PERSONA_APPS) {
+    const src = raw[app];
+    if (!src || typeof src !== "object" || Array.isArray(src)) continue;
+    const card = coalescePersonaCard(src.persona, src.persona_card);
+    out[app] = { persona: "", persona_card: card };
+  }
+  return out;
+}
+
+/** 解析某 App 当前该用的人设：沿用小屋 or App 自有（真源 persona_card） */
+function resolveAppPersona(app, s) {
+  const settings = s || readSettings();
+  const key = PERSONA_APPS.includes(app) ? app : "chat";
+  const use = normalizePersonaUseHut(settings.persona_use_hut);
+  if (use[key] !== false) {
+    const card = coalescePersonaCard(settings.persona, settings.persona_card);
+    return { app: key, inherit: true, persona: "", persona_card: card };
+  }
+  const local = normalizePersonaApps(settings.persona_apps)[key] || {
+    persona: "",
+    persona_card: "",
+  };
+  return {
+    app: key,
+    inherit: false,
+    persona: "",
+    persona_card: String(local.persona_card || "").trim(),
+  };
+}
+
+/** MCP 远端工具名列表；去重、截断 */
+function normalizeMcpToolHidden(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    const name = String(item == null ? "" : item).trim().slice(0, 128);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= 64) break;
   }
   return out;
 }
@@ -259,6 +346,17 @@ function readSettings() {
     persona: (env.persona || file.persona || "").trim(),
     persona_card: (env.persona_card || file.persona_card || "").trim(),
     persona_card_in_follow: !!file.persona_card_in_follow,
+    persona_use_hut: normalizePersonaUseHut(file.persona_use_hut),
+    persona_apps: normalizePersonaApps(file.persona_apps),
+    worldbook_enabled: !!file.worldbook_enabled,
+    worldbook_scan_depth: Math.max(
+      0,
+      Math.min(50, Number(file.worldbook_scan_depth) || 4)
+    ),
+    worldbook_budget_chars: Math.max(
+      200,
+      Math.min(50000, Number(file.worldbook_budget_chars) || 6000)
+    ),
     lore_summary: String(file.lore_summary || "").trim(),
     default_follow_mode: normalizeFollowMode(file.default_follow_mode),
     default_follow_tone: normalizeFollowTone(file.default_follow_tone),
@@ -285,6 +383,7 @@ function readSettings() {
     mcp_enabled: !!file.mcp_enabled,
     mcp_url: String(file.mcp_url || "").trim(),
     mcp_token: String(file.mcp_token || "").trim(),
+    mcp_tool_hidden: normalizeMcpToolHidden(file.mcp_tool_hidden),
   };
 }
 
@@ -335,6 +434,9 @@ function patchSettings(patch) {
   if (Object.prototype.hasOwnProperty.call(patch, "chat_tool_labels")) {
     file.chat_tool_labels = normalizeChatToolLabels(patch.chat_tool_labels);
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "mcp_tool_hidden")) {
+    file.mcp_tool_hidden = normalizeMcpToolHidden(patch.mcp_tool_hidden);
+  }
   if (Object.prototype.hasOwnProperty.call(patch, "mcp_enabled")) {
     mcpTouched = true;
     const v = patch.mcp_enabled;
@@ -355,6 +457,51 @@ function patchSettings(patch) {
     else if (typeof v === "string") {
       file.persona_card_in_follow = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "worldbook_enabled")) {
+    const v = patch.worldbook_enabled;
+    if (typeof v === "boolean") file.worldbook_enabled = v;
+    else if (typeof v === "string") {
+      file.worldbook_enabled = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else file.worldbook_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "worldbook_scan_depth")) {
+    const n = Number(patch.worldbook_scan_depth);
+    if (Number.isFinite(n)) {
+      file.worldbook_scan_depth = Math.max(0, Math.min(50, Math.floor(n)));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "worldbook_budget_chars")) {
+    const n = Number(patch.worldbook_budget_chars);
+    if (Number.isFinite(n)) {
+      file.worldbook_budget_chars = Math.max(200, Math.min(50000, Math.floor(n)));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "persona_use_hut")) {
+    const cur = normalizePersonaUseHut(file.persona_use_hut);
+    const next = patch.persona_use_hut;
+    if (next && typeof next === "object" && !Array.isArray(next)) {
+      for (const app of PERSONA_APPS) {
+        if (Object.prototype.hasOwnProperty.call(next, app)) cur[app] = next[app] !== false;
+      }
+    }
+    file.persona_use_hut = cur;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "persona_apps")) {
+    const cur = normalizePersonaApps(file.persona_apps);
+    const next = patch.persona_apps;
+    if (next && typeof next === "object" && !Array.isArray(next)) {
+      for (const app of PERSONA_APPS) {
+        if (!next[app] || typeof next[app] !== "object") continue;
+        if (Object.prototype.hasOwnProperty.call(next[app], "persona")) {
+          cur[app].persona = String(next[app].persona || "").trim();
+        }
+        if (Object.prototype.hasOwnProperty.call(next[app], "persona_card")) {
+          cur[app].persona_card = String(next[app].persona_card || "").trim();
+        }
+      }
+    }
+    file.persona_apps = cur;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "show_clock")) {
     const v = patch.show_clock;
@@ -468,11 +615,12 @@ function assertDoorOpen() {
 }
 
 /**
- * 合并小屋默认 + 本场 dialogue 覆盖。
- * 本场字段为空/未设 → 用小屋；长卡仍只来自小屋设定。
+ * 合并共读有效人设 + 本场 dialogue 覆盖。
+ * persona_card = App 有效人设；dialogue.persona = 本场补充（有则另注一句，不替代长卡）。
  */
 function effectiveDialogue(open) {
   const s = readSettings();
+  const resolved = resolveAppPersona("coread", s);
   const d = open && open.dialogue && typeof open.dialogue === "object" ? open.dialogue : {};
   const pick = (key, hut) => {
     if (!Object.prototype.hasOwnProperty.call(d, key)) return hut;
@@ -481,7 +629,11 @@ function effectiveDialogue(open) {
     const t = String(v).trim();
     return t === "" ? hut : t;
   };
-  const persona = pick("persona", s.persona || "");
+  /* 本场补充：有写才带；空=不另注（底稿只走 persona_card） */
+  let sessionHint = "";
+  if (Object.prototype.hasOwnProperty.call(d, "persona")) {
+    sessionHint = String(d.persona == null ? "" : d.persona).trim();
+  }
   const name_user = pick("name_user", s.name_user || DEFAULTS.name_user);
   const name_bot = pick("name_bot", s.name_bot || DEFAULTS.name_bot);
   const avatar_user = normalizeAvatar(
@@ -493,13 +645,14 @@ function effectiveDialogue(open) {
     s.avatar_bot || DEFAULTS.avatar_bot
   );
   return {
-    persona,
+    persona: sessionHint,
     name_user,
     name_bot,
     avatar_user,
     avatar_bot,
-    persona_card: s.persona_card || "",
+    persona_card: resolved.persona_card || "",
     persona_card_in_follow: !!s.persona_card_in_follow,
+    persona_inherit: resolved.inherit,
   };
 }
 
@@ -511,8 +664,9 @@ function appendDialogueHints(system, dlg) {
     "」，你叫「" +
     (dlg.name_bot || "熊") +
     "」。对用户用其称呼，自称用你的称呼；不要改成别的名字。";
+  /* 仅本场补充；底稿人设由跟批/短聊的长卡开关注入 */
   const p = String(dlg.persona || "").trim();
-  if (p) out += "\n人设（请遵守语气与关系）：" + p;
+  if (p) out += "\n本场补充（请遵守）：" + p;
   return out;
 }
 
@@ -707,10 +861,38 @@ if (require.main === module) {
   console.assert(!Object.prototype.hasOwnProperty.call(readSettings().chat_tool_labels, "x"));
   patchSettings({ chat_tool_labels: {} });
   console.assert(Object.keys(readSettings().chat_tool_labels).length === 0);
+  patchSettings({ mcp_tool_hidden: ["a", "a", "", "b"] });
+  console.assert(
+    JSON.stringify(readSettings().mcp_tool_hidden) === JSON.stringify(["a", "b"])
+  );
+  patchSettings({ mcp_tool_hidden: [] });
+  console.assert(readSettings().mcp_tool_hidden.length === 0);
   patchSettings({ default_follow_tone: "short" });
   console.assert(readSettings().default_follow_tone === "short");
   patchSettings({ default_follow_tone: "" });
   console.assert(readSettings().default_follow_tone === "");
+  patchSettings({
+    persona: "旧短回落",
+    persona_card: "",
+    persona_use_hut: { chat: true, coread: false },
+    persona_apps: { coread: { persona: "", persona_card: "共读卡" } },
+  });
+  console.assert(resolveAppPersona("chat").persona_card === "旧短回落");
+  console.assert(resolveAppPersona("coread").persona_card === "共读卡");
+  console.assert(resolveAppPersona("coread").inherit === false);
+  patchSettings({
+    persona: "",
+    persona_card: "小屋卡",
+  });
+  console.assert(resolveAppPersona("chat").persona_card === "小屋卡");
+  patchSettings({
+    persona: "",
+    persona_card: "",
+    persona_use_hut: { chat: true, coread: true },
+    persona_apps: { chat: { persona: "", persona_card: "" }, coread: { persona: "", persona_card: "" } },
+  });
+  console.assert(coalescePersonaCard("短", "") === "短");
+  console.assert(coalescePersonaCard("短", "长") === "长");
   console.log("models ok", { default: d || "(empty)", n: models.length });
 }
 
@@ -719,6 +901,7 @@ module.exports = {
   patchSettings,
   healthFlags,
   publicSettings,
+  normalizeMcpToolHidden,
   listLlmModels,
   shortModelLabel,
   normalizeFollowMode,
@@ -727,6 +910,10 @@ module.exports = {
   isDoorLocked,
   assertDoorOpen,
   effectiveDialogue,
+  resolveAppPersona,
+  coalescePersonaCard,
+  normalizePersonaUseHut,
+  normalizePersonaApps,
   appendDialogueHints,
   appendLoreToSystem,
   formatSessionLoreBlock,

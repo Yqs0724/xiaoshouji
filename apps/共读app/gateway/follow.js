@@ -47,19 +47,16 @@ const PERSONA_CARD_FOLLOW_MAX = 4000;
 function buildFollowSystem(persona, personaCard, { includeCard = false } = {}) {
   let system =
     "你是共读小屋里的陪伴读者，语气自然、有温度，贴合原文，不要说教，不要复述整段划线。跟批控制在 2～5 句。";
-  const p = String(persona || "").trim();
-  if (p) {
-    system += "\n用户设定的跟批人设（请遵守称呼与语气）：" + p;
-  }
+  /* persona 参数保留兼容；底稿只走 personaCard + includeCard */
   if (includeCard) {
     let card = String(personaCard || "").trim();
     if (card) {
       if (card.length > PERSONA_CARD_FOLLOW_MAX) {
         card =
           card.slice(0, PERSONA_CARD_FOLLOW_MAX) +
-          "\n…（完整角色卡已截断，全文仅保存在设定里）";
+          "\n…（人设已截断，全文仅保存在设定里）";
       }
-      system += "\n完整角色卡（补充设定，勿整段复述）：\n" + card;
+      system += "\n人设（请遵守，勿整段复述）：\n" + card;
     }
   }
   return system;
@@ -137,7 +134,7 @@ function appendFollowTone(system, tone) {
   return String(system || "");
 }
 
-/** 本场跟批 system（与 followOne 同装配；世界书已下线） */
+/** 本场跟批 system（与 followOne 同装配；世界书随 settings.worldbook_enabled） */
 function buildOpenFollowSystem(book, open, highlight) {
   const sess = open || getOpenSession();
   const dlg = effectiveDialogue(sess);
@@ -153,6 +150,15 @@ function buildOpenFollowSystem(book, open, highlight) {
     book && book.id ? loreTextForInject(book.id, pass) : "";
   system = applySessionLore(system, highlight || { text: "", idea: "" }, sess, lore);
   system = appendFollowTone(system, sess && sess.follow_tone);
+  try {
+    const { readSettings } = require("./settings");
+    const { appendWorldToSystem } = require("./world");
+    if (readSettings().worldbook_enabled) {
+      system = appendWorldToSystem(system, highlight || {});
+    }
+  } catch (_) {
+    /* ignore */
+  }
   return system;
 }
 

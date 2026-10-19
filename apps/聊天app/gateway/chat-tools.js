@@ -225,6 +225,11 @@ function runBuiltinTool(name, argsRaw) {
  */
 async function getToolBundle(settings = {}) {
   const labels = settings.chat_tool_labels || {};
+  const hiddenRemote = new Set(
+    Array.isArray(settings.mcp_tool_hidden)
+      ? settings.mcp_tool_hidden.map((x) => String(x || "").trim()).filter(Boolean)
+      : []
+  );
   const defs = TOOL_DEFS.slice();
   const used = new Set(
     defs.map((t) => t.function && t.function.name).filter(Boolean)
@@ -238,6 +243,7 @@ async function getToolBundle(settings = {}) {
       label: resolveToolLabel(name, labels),
       description: String(t.function.description || "").trim(),
       source: "builtin",
+      enabled: true,
     };
   });
   let mcpError = null;
@@ -259,21 +265,26 @@ async function getToolBundle(settings = {}) {
           n += 1;
         }
         used.add(llmName);
-        mcpMap.set(llmName, rt.name);
-        defs.push({
-          type: "function",
-          function: {
-            name: llmName,
-            description: rt.description || rt.name,
-            parameters: rt.inputSchema || { type: "object", properties: {} },
-          },
-        });
+        const remoteName = String(rt.name || "").trim();
+        const enabled = !hiddenRemote.has(remoteName);
+        if (enabled) {
+          mcpMap.set(llmName, remoteName);
+          defs.push({
+            type: "function",
+            function: {
+              name: llmName,
+              description: rt.description || rt.name,
+              parameters: rt.inputSchema || { type: "object", properties: {} },
+            },
+          });
+        }
         catalog.push({
           name: llmName,
           label: resolveToolLabel(llmName, labels),
           description: rt.description || rt.name,
           source: "mcp",
-          remote: rt.name,
+          remote: remoteName,
+          enabled,
         });
       }
     } catch (e) {
@@ -282,6 +293,25 @@ async function getToolBundle(settings = {}) {
   }
 
   return { defs, mcpMap, catalog, mcpError };
+}
+
+/**
+ * H1.23：设定页测连通。用表单里的 url/token（可未保存），强制绕过缓存。
+ * @returns {Promise<{ ok: true, count: number, names: string[] }>}
+ */
+async function pingMcpConnection(opts = {}) {
+  const url = String(opts.url != null ? opts.url : "").trim();
+  const token = String(opts.token != null ? opts.token : "").trim();
+  if (!url) {
+    const err = new Error("请先填写 MCP Base URL");
+    err.code = "mcp_no_url";
+    throw err;
+  }
+  const tools = await fetchMcpTools({ url, token, force: true });
+  const names = (tools || [])
+    .map((t) => String((t && t.name) || "").trim())
+    .filter(Boolean);
+  return { ok: true, count: names.length, names: names.slice(0, 12) };
 }
 
 /** 设定页 / 自检：当前可调工具一览 */
@@ -293,7 +323,8 @@ async function listChatTools(settingsOrLabels) {
       Object.prototype.hasOwnProperty.call(settingsOrLabels, "chat_tools_enabled") ||
       Object.prototype.hasOwnProperty.call(settingsOrLabels, "mcp_enabled") ||
       Object.prototype.hasOwnProperty.call(settingsOrLabels, "mcp_url") ||
-      Object.prototype.hasOwnProperty.call(settingsOrLabels, "chat_tool_labels")
+      Object.prototype.hasOwnProperty.call(settingsOrLabels, "chat_tool_labels") ||
+      Object.prototype.hasOwnProperty.call(settingsOrLabels, "mcp_tool_hidden")
     ) {
       settings = settingsOrLabels;
     } else {
@@ -350,10 +381,14 @@ if (require.main === module) {
   (async () => {
     const catalog = await listChatTools();
     console.assert(catalog.ok && catalog.tools.length >= 4);
+    console.assert(catalog.tools.every((t) => t.enabled === true));
     console.assert(catalog.tools.some((t) => t.name === "calendar_list_events"));
     console.assert(
       catalog.tools.find((t) => t.name === "calendar_list_events").label === "查行程"
     );
+    const hiddenBundle = await getToolBundle({ mcp_tool_hidden: ["never_real_mcp_x"] });
+    console.assert(hiddenBundle.defs.length >= 4);
+    console.assert(hiddenBundle.catalog.every((t) => t.source !== "mcp" || t.enabled !== false));
     console.assert(
       (await listChatTools({ calendar_list_events: "日历列表" })).tools.find(
         (t) => t.name === "calendar_list_events"
@@ -400,6 +435,7 @@ module.exports = {
   runChatTool,
   parseArgs,
   listChatTools,
+  pingMcpConnection,
   resolveToolLabel,
   summarizeToolResult,
   getToolBundle,

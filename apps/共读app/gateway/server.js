@@ -15,7 +15,14 @@ const {
 } = require("./chat");
 const { listSessions, getSession, getOpenSession, startSession, patchOpenSession, buildSummary, endSession, sessionStats, openActiveDurationMs, exportSession, exportSessionsPeriod, idleReadAdvance, budgetExhausted } = require("./sessions");
 const { buildBackup, previewBackup, restoreFromBackup } = require("./backup");
-const { listWorld, replaceWorld } = require("./world");
+const {
+  listWorld,
+  listWorldPublic,
+  replaceWorld,
+  addBookFromText,
+  deleteBook,
+  setBookActive,
+} = require("./world");
 const {
   listEvents,
   createEvent,
@@ -34,23 +41,51 @@ const {
   listMessages,
   searchMessages,
   createMessageWithReplyStream,
+  recallMessageWithReplyStream,
+  regenerateMessageStream,
+  setMessageVariant,
+  deleteMessage,
+  recallMessage,
+  toggleMessageReaction,
+  toggleVoiceTranscript,
+  createPat,
+  assertRegenTarget,
   unreadCount,
   markAllRead,
   pokeDaily,
   getChatPrefs,
   setChatPrefs,
+  clearChatMessages,
   listAllStickers,
   saveChatMedia,
   resolveChatMediaPath,
   claimIncomingMoney,
+  translateChatText,
+  startChatCall,
+  setChatCallPhase,
+  finishChatCallStream,
   MEDIA_MAX_BYTES,
 } = require("../../聊天app/gateway/daily-chat");
+const { getMoodPublic } = require("../../聊天app/gateway/mood");
 const {
   addUserSticker,
   resolveUserStickerPath,
   STICKER_MAX_BYTES,
 } = require("../../聊天app/gateway/stickers");
-const { listChatTools } = require("../../聊天app/gateway/chat-tools");
+const { listChatTools, pingMcpConnection } = require("../../聊天app/gateway/chat-tools");
+const {
+  listMoments,
+  createPost: createMomentPost,
+  deletePost: deleteMomentPost,
+  updatePost: updateMomentPost,
+  toggleLike: toggleMomentLike,
+  addComment: addMomentComment,
+} = require("../../聊天app/gateway/moments");
+const {
+  listFavorites,
+  addFavorite,
+  removeFavorite,
+} = require("../../聊天app/gateway/favorites");
 const { getWallet } = require("../../资产app/gateway/wallet");
 const { listCards, createCard, deleteCard } = require("./lore");
 const {
@@ -123,6 +158,14 @@ const MIME = {
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
   ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".webm": "audio/webm",
+  ".ogg": "audio/ogg",
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".mp4": "audio/mp4",
+  ".aac": "audio/aac",
+  ".wav": "audio/wav",
 };
 
 function sendJson(res, status, obj) {
@@ -900,6 +943,171 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/moments") {
+    try {
+      sendJson(res, 200, listMoments());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        posts: [],
+        error: e.code || "moments_failed",
+        message: e.message || "读取朋友圈失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/moments") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, createMomentPost(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "empty_text" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "moments_create_failed",
+        message: e.message || "发动态失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const momIdMatch = urlPath.match(/^\/api\/v1\/moments\/([^/]+)$/);
+    if (momIdMatch && (req.method === "DELETE" || req.method === "PATCH")) {
+      const mid = decodeURIComponent(momIdMatch[1]);
+      try {
+        if (req.method === "DELETE") {
+          sendJson(res, 200, deleteMomentPost(mid));
+        } else {
+          const raw = await readBody(req);
+          const body = raw ? JSON.parse(raw) : {};
+          sendJson(res, 200, updateMomentPost(mid, body || {}));
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const status =
+          e.code === "not_found" ? 404 : e.code === "forbidden" ? 403 : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "moments_mutate_failed",
+          message: e.message || "操作失败",
+        });
+      }
+      return;
+    }
+  }
+
+  {
+    const likeMatch = urlPath.match(/^\/api\/v1\/moments\/([^/]+)\/like$/);
+    if (req.method === "POST" && likeMatch) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        sendJson(res, 200, toggleMomentLike(decodeURIComponent(likeMatch[1]), body.who));
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const status = e.code === "not_found" ? 404 : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "moments_like_failed",
+          message: e.message || "点赞失败",
+        });
+      }
+      return;
+    }
+  }
+
+  {
+    const cmtMatch = urlPath.match(/^\/api\/v1\/moments\/([^/]+)\/comments$/);
+    if (req.method === "POST" && cmtMatch) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        sendJson(
+          res,
+          200,
+          addMomentComment(decodeURIComponent(cmtMatch[1]), body || {})
+        );
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const status =
+          e.code === "not_found" ? 404 : e.code === "empty_text" ? 400 : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "moments_comment_failed",
+          message: e.message || "评论失败",
+        });
+      }
+      return;
+    }
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/favorites") {
+    try {
+      sendJson(res, 200, listFavorites());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        items: [],
+        error: e.code || "favorites_failed",
+        message: e.message || "读取收藏失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/favorites") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, addFavorite(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "empty_text" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "favorites_add_failed",
+        message: e.message || "收藏失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const favDel = urlPath.match(/^\/api\/v1\/chat\/favorites\/([^/]+)$/);
+    if (req.method === "DELETE" && favDel) {
+      try {
+        sendJson(res, 200, removeFavorite(decodeURIComponent(favDel[1])));
+      } catch (e) {
+        const status = e.code === "not_found" ? 404 : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "favorites_delete_failed",
+          message: e.message || "删除收藏失败",
+        });
+      }
+      return;
+    }
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/chat/messages") {
     sendJson(res, 200, listMessages());
     return;
@@ -907,6 +1115,56 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && urlPath === "/api/v1/chat/prefs") {
     sendJson(res, 200, getChatPrefs());
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath === "/api/v1/chat/messages") {
+    try {
+      sendJson(res, 200, clearChatMessages());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_clear_failed",
+        message: e.message || "清空失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/mood") {
+    try {
+      sendJson(res, 200, getMoodPublic());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "mood_failed",
+        message: e.message || "读取心情失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/translate") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = await translateChatText(body && body.text);
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "bad_translate" ||
+        e.code === "bad_translate_kind" ||
+        e.code === "llm_not_configured";
+      sendJson(res, bad ? 400 : 500, {
+        ok: false,
+        error: e.code || "translate_failed",
+        message: e.message || "翻译失败",
+      });
+    }
     return;
   }
 
@@ -920,6 +1178,40 @@ const server = http.createServer(async (req, res) => {
         tools: [],
         error: "tools_failed",
         message: (e && e.message) || "工具列表失败",
+      });
+    }
+    return;
+  }
+
+  /* H1.23：MCP 一键测连通（可用未保存的表单值） */
+  if (req.method === "POST" && urlPath === "/api/v1/chat/mcp/ping") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const settings = readSettings();
+      const url =
+        body && body.url != null
+          ? String(body.url)
+          : String(settings.mcp_url || "");
+      const token =
+        body && body.token != null
+          ? String(body.token)
+          : String(settings.mcp_token || "");
+      const out = await pingMcpConnection({ url, token });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const bad =
+        e.code === "mcp_no_url" ||
+        e.code === "mcp_bad_url" ||
+        e.code === "mcp_bad_name";
+      sendJson(res, bad ? 400 : 502, {
+        ok: false,
+        error: e.code || "mcp_ping_failed",
+        message: e.message || "MCP 连通失败",
       });
     }
     return;
@@ -1112,6 +1404,130 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && urlPath === "/api/v1/chat/call/start") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(
+        res,
+        200,
+        startChatCall(
+          body && body.media,
+          (body && (body.dir || body.direction)) || "out"
+        )
+      );
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_chat_call" ? 400 : 500, {
+        ok: false,
+        error: e.code || "chat_call_failed",
+        message: e.message || "发起通话失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const callPhase = urlPath.match(/^\/api\/v1\/chat\/call\/([^/]+)\/phase$/);
+    if (req.method === "POST" && callPhase) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const msg = setChatCallPhase(decodeURIComponent(callPhase[1]), body || {});
+        sendJson(res, 200, { ok: true, message: msg });
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const status =
+          e.code === "not_found"
+            ? 404
+            : e.code === "bad_chat_call" || e.code === "bad_chat_body"
+              ? 400
+              : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "chat_call_failed",
+          message: e.message || "更新通话失败",
+        });
+      }
+      return;
+    }
+  }
+
+  {
+    const callFin = urlPath.match(/^\/api\/v1\/chat\/call\/([^/]+)\/finish$/);
+    if (req.method === "POST" && callFin) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store, no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (res.socket && typeof res.socket.setNoDelay === "function") {
+          res.socket.setNoDelay(true);
+        }
+        res.write(":" + " ".repeat(2048) + "\n\n");
+        const emit = (obj) =>
+          new Promise((resolve, reject) => {
+            const line = "data: " + JSON.stringify(obj) + "\n\n";
+            const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
+            if (!ok) res.once("drain", resolve);
+          });
+        const emitFlush = async (obj) => {
+          await emit(obj);
+          await new Promise((resolve, reject) => {
+            const ok = res.write(":\n\n", (err) =>
+              err ? reject(err) : resolve()
+            );
+            if (!ok) res.once("drain", resolve);
+          });
+        };
+        await finishChatCallStream(
+          decodeURIComponent(callFin[1]),
+          body || {},
+          emitFlush
+        );
+        res.end();
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          if (!res.headersSent) {
+            sendJson(res, 400, { ok: false, error: "invalid_json" });
+          }
+          return;
+        }
+        if (!res.headersSent) {
+          sendJson(res, e.code === "not_found" ? 404 : 500, {
+            ok: false,
+            error: e.code || "chat_call_failed",
+            message: e.message || "结束通话失败",
+          });
+        } else {
+          try {
+            res.write(
+              "data: " +
+                JSON.stringify({
+                  type: "bot_error",
+                  code: e.code || "chat_call_failed",
+                  message: e.message || "结束通话失败",
+                }) +
+                "\n\n"
+            );
+            res.end();
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat/messages") {
     try {
       const raw = await readBody(req);
@@ -1120,9 +1536,12 @@ const server = http.createServer(async (req, res) => {
       const kind =
         kindRaw === "sticker" ||
         kindRaw === "image" ||
+        kindRaw === "voice" ||
         kindRaw === "redpacket" ||
         kindRaw === "transfer" ||
-        kindRaw === "location"
+        kindRaw === "location" ||
+        kindRaw === "file" ||
+        kindRaw === "music"
           ? kindRaw
           : "text";
       body.kind = kind;
@@ -1141,6 +1560,24 @@ const server = http.createServer(async (req, res) => {
             ok: false,
             error: "bad_chat_location",
             message: "请填写位置名称",
+          });
+          return;
+        }
+      } else if (kind === "file") {
+        if (!String(body.name || "").trim()) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "bad_chat_file",
+            message: "请选择文件",
+          });
+          return;
+        }
+      } else if (kind === "music") {
+        if (!String(body.name || "").trim()) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "bad_chat_music",
+            message: "请选择音乐",
           });
           return;
         }
@@ -1168,7 +1605,15 @@ const server = http.createServer(async (req, res) => {
           const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
           if (!ok) res.once("drain", resolve);
         });
-      await createMessageWithReplyStream(body, emit);
+      /* 关键事件后冲一发注释帧，避免 Node/代理把 you 和后续合并缓冲 */
+      const emitFlush = async (obj) => {
+        await emit(obj);
+        await new Promise((resolve, reject) => {
+          const ok = res.write(":\n\n", (err) => (err ? reject(err) : resolve()));
+          if (!ok) res.once("drain", resolve);
+        });
+      };
+      await createMessageWithReplyStream(body, emitFlush);
       res.end();
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -1220,6 +1665,266 @@ const server = http.createServer(async (req, res) => {
       }
     }
     return;
+  }
+
+  {
+    const regenMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)\/regenerate$/);
+    if (req.method === "POST" && regenMatch) {
+      try {
+        const id = decodeURIComponent(regenMatch[1]);
+        try {
+          assertRegenTarget(id);
+        } catch (e) {
+          const bad =
+            e.code === "not_found" ||
+            e.code === "not_regen_target" ||
+            e.code === "not_latest";
+          sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
+            ok: false,
+            error: e.code || "chat_regen_failed",
+            message: e.message || "重新生成失败",
+          });
+          return;
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store, no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (res.socket && typeof res.socket.setNoDelay === "function") {
+          res.socket.setNoDelay(true);
+        }
+        res.write(":" + " ".repeat(2048) + "\n\n");
+        const emit = (obj) =>
+          new Promise((resolve, reject) => {
+            const line = "data: " + JSON.stringify(obj) + "\n\n";
+            const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
+            if (!ok) res.once("drain", resolve);
+          });
+        await regenerateMessageStream(id, emit);
+        res.end();
+      } catch (e) {
+        if (!res.headersSent) {
+          sendJson(res, 500, {
+            ok: false,
+            error: e.code || "chat_regen_failed",
+            message: e.message || "重新生成失败",
+          });
+        } else {
+          try {
+            res.write(
+              "data: " +
+                JSON.stringify({
+                  type: "bot_error",
+                  code: e.code || "chat_regen_failed",
+                  message: e.message || "重新生成失败",
+                }) +
+                "\n\n"
+            );
+            res.end();
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+  }
+
+  {
+    const varMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)\/variant$/);
+    if (req.method === "POST" && varMatch) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const msg = setMessageVariant(
+          decodeURIComponent(varMatch[1]),
+          body && body.index
+        );
+        sendJson(res, 200, { ok: true, message: msg });
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const bad =
+          e.code === "not_found" ||
+          e.code === "not_regen_target" ||
+          e.code === "no_variants" ||
+          e.code === "bad_variant_index";
+        sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
+          ok: false,
+          error: e.code || "chat_variant_failed",
+          message: e.message || "切换版本失败",
+        });
+      }
+      return;
+    }
+  }
+
+  {
+    const recallMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)\/recall$/);
+    if (req.method === "POST" && recallMatch) {
+      try {
+        const raw = await readBody(req);
+        let recallOpts = {};
+        try {
+          const o = raw ? JSON.parse(raw) : {};
+          if (o && typeof o === "object") {
+            if (o.screenshot) recallOpts.screenshotUrl = String(o.screenshot);
+            if (o.force_sight) recallOpts.forceSight = String(o.force_sight);
+          }
+        } catch (_) {
+          recallOpts = {};
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store, no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (res.socket && typeof res.socket.setNoDelay === "function") {
+          res.socket.setNoDelay(true);
+        }
+        res.write(":" + " ".repeat(2048) + "\n\n");
+        const emit = (obj) =>
+          new Promise((resolve, reject) => {
+            const line = "data: " + JSON.stringify(obj) + "\n\n";
+            const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
+            if (!ok) res.once("drain", resolve);
+          });
+        await recallMessageWithReplyStream(
+          decodeURIComponent(recallMatch[1]),
+          emit,
+          recallOpts
+        );
+        res.end();
+      } catch (e) {
+        const bad = e.code === "not_found" || e.code === "not_yours";
+        if (!res.headersSent) {
+          sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
+            ok: false,
+            error: e.code || "chat_recall_failed",
+            message: e.message || "撤回失败",
+          });
+        } else {
+          try {
+            res.write(
+              "data: " +
+                JSON.stringify({
+                  type: "bot_error",
+                  code: e.code || "chat_recall_failed",
+                  message: e.message || "撤回失败",
+                }) +
+                "\n\n"
+            );
+            res.end();
+          } catch (_) {}
+        }
+      }
+      return;
+    }
+  }
+
+  {
+    const reactMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)\/react$/);
+    if (req.method === "POST" && reactMatch) {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const msg = toggleMessageReaction(
+          decodeURIComponent(reactMatch[1]),
+          body && body.emoji,
+          "you"
+        );
+        sendJson(res, 200, { ok: true, message: msg });
+      } catch (e) {
+        if (e instanceof SyntaxError) {
+          sendJson(res, 400, { ok: false, error: "invalid_json" });
+          return;
+        }
+        const status =
+          e.code === "not_found"
+            ? 404
+            : e.code === "bad_reaction"
+              ? 400
+              : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "chat_react_failed",
+          message: e.message || "表情回应失败",
+        });
+      }
+      return;
+    }
+  }
+
+  {
+    const asrMatch = urlPath.match(
+      /^\/api\/v1\/chat\/messages\/([^/]+)\/transcribe$/
+    );
+    if (req.method === "POST" && asrMatch) {
+      try {
+        const msg = toggleVoiceTranscript(decodeURIComponent(asrMatch[1]));
+        sendJson(res, 200, { ok: true, message: msg });
+      } catch (e) {
+        const status =
+          e.code === "not_found" ? 404 : e.code === "bad_voice" ? 400 : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "chat_transcribe_failed",
+          message: e.message || "转文字失败",
+        });
+      }
+      return;
+    }
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/pat") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = createPat({
+        target: body && body.target === "you" ? "you" : "bot",
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_pat_failed",
+        message: e.message || "拍一拍失败",
+      });
+    }
+    return;
+  }
+
+  {
+    const delMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)$/);
+    if (req.method === "DELETE" && delMatch) {
+      try {
+        const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+        const indexRaw = q.get("index");
+        const indexOpt =
+          indexRaw != null && indexRaw !== "" ? Number(indexRaw) : undefined;
+        sendJson(
+          res,
+          200,
+          deleteMessage(decodeURIComponent(delMatch[1]), indexOpt)
+        );
+      } catch (e) {
+        const bad =
+          e.code === "not_found" || e.code === "bad_variant_index";
+        sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
+          ok: false,
+          error: e.code || "chat_delete_failed",
+          message: e.message || "删除失败",
+        });
+      }
+      return;
+    }
   }
 
   if (req.method === "GET" && urlPath === "/api/v1/lore/cards") {
@@ -1490,7 +2195,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && urlPath === "/api/v1/world") {
-    sendJson(res, 200, { ok: true, ...listWorld() });
+    sendJson(res, 200, { ok: true, ...listWorldPublic() });
     return;
   }
 
@@ -1499,7 +2204,7 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
       const data = replaceWorld(body.entries);
-      sendJson(res, 200, { ok: true, ...data });
+      sendJson(res, 200, { ok: true, ...listWorldPublic(), ...data });
     } catch (e) {
       if (e instanceof SyntaxError) {
         sendJson(res, 400, { ok: false, error: "invalid_json" });
@@ -1509,6 +2214,94 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "world_save_failed",
         message: e.message || "保存世界书失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/world/books") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const text = String(body.text != null ? body.text : body.content || "");
+      const book = addBookFromText(text, {
+        name: body.name,
+        filename: body.filename,
+      });
+      sendJson(res, 200, {
+        ok: true,
+        book: {
+          id: book.id,
+          name: book.name,
+          filename: book.filename,
+          active: book.active,
+          entry_count: book.entries.length,
+        },
+        ...listWorldPublic(),
+      });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "world_empty" ? 400 : 500,
+        {
+          ok: false,
+          error: e.code || "world_import_failed",
+          message: e.message || "导入世界书失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath.startsWith("/api/v1/world/books/")) {
+    const id = decodeURIComponent(urlPath.slice("/api/v1/world/books/".length));
+    if (!id || id.includes("/")) {
+      sendJson(res, 404, { ok: false, error: "not_found" });
+      return;
+    }
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      if (!Object.prototype.hasOwnProperty.call(body, "active")) {
+        sendJson(res, 400, { ok: false, error: "need_active", message: "需要 active" });
+        return;
+      }
+      const data = setBookActive(id, body.active);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "world_not_found" ? 404 : e.code === "world_active_cap" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "world_patch_failed",
+        message: e.message || "更新失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/world/books/")) {
+    const id = decodeURIComponent(urlPath.slice("/api/v1/world/books/".length));
+    if (!id || id.includes("/")) {
+      sendJson(res, 404, { ok: false, error: "not_found" });
+      return;
+    }
+    try {
+      const data = deleteBook(id);
+      sendJson(res, 200, { ok: true, ...data });
+    } catch (e) {
+      sendJson(res, e.code === "world_not_found" ? 404 : 500, {
+        ok: false,
+        error: e.code || "world_delete_failed",
+        message: e.message || "删除失败",
       });
     }
     return;

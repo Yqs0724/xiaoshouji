@@ -1,0 +1,1285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>聊天 · 微信壳 DEMO（薄巧）</title>
+  <style>
+    /* 色板 = echoes│薄巧系 docx；本地皮 = ../../assets/chat/skin/ */
+    :root {
+      --mint-green: #E1F6F1;
+      --mint-glass: rgba(225, 246, 241, 0.88);
+      --mint-focus: #7eb8a8;
+      --choco-brown: #b5a198;
+      --choco-dark: #6e584f;
+      --text-on-choco: #ffffff;
+      --text-on-mint: #43544c;
+      --card-bg: #f8fcfb;
+      --paper-veil: rgba(255, 255, 255, 0.62);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { scrollbar-width: none; }
+    *::-webkit-scrollbar { width: 0; height: 0; display: none; }
+    body {
+      min-height: 100vh;
+      background: radial-gradient(ellipse at 50% 10%, #4a3f36 0%, #2a2420 70%);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--choco-dark);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 14px 10px 28px;
+      gap: 10px;
+    }
+    .banner {
+      max-width: 420px;
+      color: #d4c4b0;
+      font-size: 12px;
+      line-height: 1.55;
+      text-align: center;
+    }
+    .banner strong { color: #f0e6d8; }
+    .banner code {
+      font-size: 11px;
+      background: rgba(255,255,255,.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .banner .muted { color: #9a8b7a; font-size: 11px; }
+    .phone {
+      width: min(390px, 100%);
+      height: min(820px, 94vh);
+      background: linear-gradient(160deg, #4a3f36, #2e2822);
+      border-radius: 38px;
+      padding: 11px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.45);
+    }
+    .screen {
+      height: 100%;
+      border-radius: 30px;
+      overflow: hidden;
+      position: relative;
+      background:
+        linear-gradient(var(--paper-veil), var(--paper-veil)),
+        url("../../assets/chat/skin/wallpaper.jpg") center / cover no-repeat;
+      color: var(--choco-dark);
+    }
+
+    .shell {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      min-height: 0;
+      padding-bottom: 58px;
+    }
+    .shell.active { display: flex; }
+
+    .top {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px 14px 12px;
+      background: var(--mint-glass);
+      backdrop-filter: blur(10px);
+      border-bottom: 2px solid var(--choco-brown);
+      position: relative;
+      min-height: 52px;
+    }
+    .top .title { font-size: 17px; font-weight: 650; letter-spacing: 0.02em; }
+    .top .side {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      border: 0;
+      background: transparent;
+      color: var(--choco-dark);
+      font: inherit;
+      font-size: 20px;
+      line-height: 1;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .top .side.left { left: 6px; }
+    .top .side.right { right: 8px; font-size: 22px; }
+
+    .scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* 列表顶搜索 */
+    .search-bar {
+      margin: 10px 12px 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      background: rgba(248, 252, 251, 0.9);
+      border: 2px solid var(--choco-brown);
+      border-radius: 16px;
+      cursor: pointer;
+      color: rgba(110, 88, 79, 0.55);
+      font-size: 14px;
+    }
+    .search-bar:active { background: var(--mint-green); }
+
+    .sess {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: rgba(248, 252, 251, 0.78);
+      border-bottom: 1px solid rgba(181, 161, 152, 0.35);
+      cursor: pointer;
+      text-align: left;
+      width: 100%;
+      border-left: 0; border-right: 0; border-top: 0;
+      font: inherit; color: inherit;
+    }
+    .sess:active { background: rgba(225, 246, 241, 0.75); }
+    .sess .av-wrap {
+      position: relative;
+      width: 48px; height: 48px;
+      flex-shrink: 0;
+    }
+    .sess .av-wrap img.face {
+      width: 100%; height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.55);
+    }
+    .sess .av-wrap::after {
+      content: "";
+      position: absolute;
+      inset: -28%;
+      background: url("../../assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .sess .body { flex: 1; min-width: 0; }
+    .sess .row1 {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .sess .name { font-size: 16px; font-weight: 600; }
+    .sess .time { font-size: 11px; color: rgba(110,88,79,.55); flex-shrink: 0; }
+    .sess .preview {
+      font-size: 13px;
+      color: rgba(110,88,79,.72);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .badge {
+      position: absolute;
+      top: -2px; right: -2px;
+      min-width: 16px; height: 16px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: var(--mint-green);
+      color: var(--choco-dark);
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 14px;
+      text-align: center;
+      z-index: 2;
+      border: 1.5px solid var(--choco-brown);
+      box-shadow: 0 1px 4px rgba(181, 161, 152, 0.35);
+    }
+    .badge[hidden] { display: none; }
+    .hint-line {
+      margin: 14px 16px;
+      font-size: 11px;
+      line-height: 1.45;
+      color: rgba(110,88,79,.55);
+      text-align: center;
+    }
+
+    .sec-lab {
+      padding: 6px 14px;
+      font-size: 12px;
+      color: rgba(110,88,79,.65);
+      background: rgba(225, 246, 241, 0.55);
+      border-bottom: 1px solid rgba(181,161,152,.28);
+    }
+    .contact {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 14px;
+      background: rgba(248,252,251,.82);
+      border-bottom: 1px solid rgba(181,161,152,.28);
+      cursor: pointer;
+      width: 100%;
+      border-left: 0; border-right: 0; border-top: 0;
+      font: inherit; color: inherit; text-align: left;
+    }
+    .contact .av-wrap { width: 40px; height: 40px; position: relative; flex-shrink: 0; }
+    .contact .av-wrap img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.5);
+    }
+    .contact .av-wrap::after {
+      content: "";
+      position: absolute;
+      inset: -30%;
+      background: url("../../assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .contact .nm { font-size: 15px; font-weight: 550; }
+
+    .mom-cover {
+      height: 168px;
+      position: relative;
+      background:
+        linear-gradient(180deg, transparent 40%, rgba(110,88,79,.45)),
+        url("../../assets/chat/skin/wallpaper.jpg") center 30% / cover no-repeat;
+      flex-shrink: 0;
+    }
+    .mom-me {
+      position: absolute;
+      right: 16px; bottom: -22px;
+      display: flex;
+      align-items: flex-end;
+      gap: 10px;
+    }
+    .mom-me .nick {
+      color: #fff;
+      font-weight: 650;
+      font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,.35);
+      margin-bottom: 6px;
+    }
+    .mom-me .av {
+      width: 64px; height: 64px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(110,88,79,.35);
+    }
+    .mom-me .av img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 8px;
+      border: 2px solid rgba(255,255,255,.7);
+    }
+    .mom-feed { padding: 36px 12px 18px; display: flex; flex-direction: column; gap: 12px; }
+    .post {
+      background: var(--card-bg);
+      border: 2px solid var(--choco-brown);
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(181,161,152,.15);
+      padding: 12px 12px 10px;
+    }
+    .post-h { display: flex; gap: 10px; }
+    .post-av {
+      width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+      border: 1px solid rgba(255,255,255,.55); flex-shrink: 0;
+    }
+    .post-main { flex: 1; min-width: 0; }
+    .post-name { font-weight: 650; font-size: 14px; color: var(--mint-focus); margin-bottom: 4px; }
+    .post-txt { font-size: 14px; line-height: 1.5; color: var(--choco-dark); white-space: pre-wrap; }
+    .post-meta {
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(110,88,79,.55);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .post-acts { display: flex; gap: 6px; }
+    .post-act {
+      background: rgba(225,246,241,.9);
+      border: 1.5px solid var(--choco-brown);
+      color: var(--choco-dark);
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .post-act.on {
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+    }
+    .post-likes, .post-comments {
+      margin-top: 8px;
+      padding: 6px 8px;
+      background: rgba(225,246,241,.65);
+      border-radius: 10px;
+      font-size: 12px;
+      color: rgba(110,88,79,.85);
+      line-height: 1.45;
+    }
+    .post-comments { margin-top: 4px; }
+    .post-comments .c { margin-top: 2px; }
+    .post-comments .c b { color: var(--mint-focus); font-weight: 650; }
+    .cmt-row {
+      display: none;
+      margin-top: 8px;
+      gap: 6px;
+    }
+    .cmt-row.open { display: flex; }
+    .cmt-row input {
+      flex: 1;
+      border: 1.5px solid var(--choco-brown);
+      border-radius: 12px;
+      padding: 6px 10px;
+      font: inherit;
+      font-size: 13px;
+      background: #fff;
+      color: var(--choco-dark);
+      outline: none;
+    }
+    .cmt-row button {
+      border: 1.5px solid var(--mint-green);
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+      border-radius: 12px;
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .me-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 14px 12px 10px;
+      padding: 14px;
+      background: var(--card-bg);
+      border: 2px solid var(--choco-brown);
+      border-radius: 20px;
+      box-shadow: 0 4px 12px rgba(181,161,152,.15);
+    }
+    .me-head .av { width: 64px; height: 64px; position: relative; flex-shrink: 0; }
+    .me-head .av img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.55);
+    }
+    .me-head .av::after {
+      content: "";
+      position: absolute;
+      inset: -28%;
+      background: url("../../assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .me-head .nm { font-size: 18px; font-weight: 650; }
+    .me-head .id { font-size: 12px; color: rgba(110,88,79,.6); margin-top: 4px; }
+    .menu {
+      margin: 0 12px 12px;
+      background: var(--card-bg);
+      border: 2px solid var(--choco-brown);
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(181,161,152,.15);
+    }
+    .menu button {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 14px;
+      border: 0;
+      border-bottom: 1px solid rgba(181,161,152,.28);
+      background: transparent;
+      font: inherit;
+      color: var(--choco-dark);
+      text-align: left;
+      cursor: pointer;
+    }
+    .menu button:last-child { border-bottom: 0; }
+    .menu button:active { background: rgba(225,246,241,.55); }
+    .menu .ico {
+      width: 28px; height: 28px; border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 14px; flex-shrink: 0;
+      background: var(--mint-green);
+      border: 1.5px solid var(--choco-brown);
+    }
+    .menu .lab { flex: 1; font-size: 15px; font-weight: 550; }
+    .menu .chev { color: rgba(110,88,79,.4); font-size: 16px; }
+    .menu-gap { height: 10px; }
+
+    .fav-item, .hit-item, .pref-row {
+      display: flex;
+      gap: 10px;
+      padding: 12px 14px;
+      background: rgba(248,252,251,.88);
+      border-bottom: 1px solid rgba(181,161,152,.28);
+      text-align: left;
+      width: 100%;
+      border-left: 0; border-right: 0; border-top: 0;
+      font: inherit; color: inherit;
+      cursor: pointer;
+    }
+    .fav-item:active, .hit-item:active { background: rgba(225,246,241,.7); }
+    .fav-item .t, .hit-item .t { font-size: 14px; line-height: 1.4; flex: 1; min-width: 0; }
+    .fav-item .meta, .hit-item .meta {
+      font-size: 11px; color: rgba(110,88,79,.55); margin-top: 4px;
+    }
+    .pref-row {
+      cursor: default;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .pref-row .lab { font-size: 14px; font-weight: 550; }
+    .pref-row .val { font-size: 12px; color: rgba(110,88,79,.6); }
+    .toggle {
+      width: 44px; height: 26px;
+      border-radius: 999px;
+      border: 2px solid var(--choco-brown);
+      background: var(--mint-green);
+      position: relative;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--choco-brown);
+      transition: transform .15s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      bottom: 78px;
+      transform: translateX(-50%);
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+      border: 2px solid var(--mint-green);
+      border-radius: 24px;
+      padding: 8px 16px;
+      font-size: 13px;
+      box-shadow: 0 4px 15px rgba(181,161,152,.4);
+      z-index: 50;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+      max-width: 88%;
+      text-align: center;
+    }
+    .toast.show { opacity: 1; }
+
+    .dock {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 58px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      background: var(--mint-glass);
+      backdrop-filter: blur(12px);
+      border-top: 2px solid var(--choco-brown);
+      box-shadow: 0 -4px 15px rgba(181,161,152,.2);
+      z-index: 20;
+    }
+    .dock button {
+      border: 0;
+      background: transparent;
+      color: rgba(110, 88, 79, 0.48);
+      font: inherit;
+      font-size: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+    }
+    .dock button.on { color: var(--choco-dark); }
+    .dock .di {
+      width: 28px; height: 28px;
+      display: grid; place-items: center;
+      line-height: 0;
+      color: inherit;
+      background: transparent;
+      border: 0;
+    }
+    .dock .di svg {
+      width: 24px; height: 24px;
+      display: block;
+    }
+    .dock .dot {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 18px);
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--choco-brown);
+      border: 1.5px solid var(--mint-green);
+      box-shadow: 0 1px 3px rgba(110, 88, 79, 0.25);
+    }
+    .dock .dot[hidden] { display: none; }
+
+    /* 子页 / 资料卡 / 发帖 / 搜索 */
+    .overlay {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      z-index: 35;
+      background:
+        linear-gradient(var(--paper-veil), var(--paper-veil)),
+        url("../../assets/chat/skin/wallpaper.jpg") center / cover no-repeat;
+    }
+    .overlay.active { display: flex; }
+    .overlay .pad { flex: 1; min-height: 0; overflow: auto; }
+    .sheet-card {
+      margin: 16px 14px;
+      background: var(--card-bg);
+      border: 2px solid var(--choco-brown);
+      border-radius: 20px;
+      padding: 16px;
+      box-shadow: 0 4px 12px rgba(181,161,152,.15);
+      text-align: center;
+    }
+    .sheet-card .big-av {
+      width: 72px; height: 72px; margin: 0 auto 10px; position: relative;
+    }
+    .sheet-card .big-av img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.55);
+    }
+    .sheet-card .big-av::after {
+      content: "";
+      position: absolute;
+      inset: -28%;
+      background: url("../../assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .sheet-card .nm { font-size: 18px; font-weight: 650; }
+    .sheet-card .sub { font-size: 12px; color: rgba(110,88,79,.6); margin-top: 4px; }
+    .sheet-card .acts {
+      display: flex; flex-direction: column; gap: 8px; margin-top: 16px;
+    }
+    .btn-primary, .btn-ghost {
+      border-radius: 24px;
+      padding: 10px 14px;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+      border: 2px solid var(--mint-green);
+    }
+    .btn-ghost {
+      background: var(--mint-green);
+      color: var(--choco-dark);
+      border: 2px solid var(--choco-brown);
+    }
+    .compose-box {
+      margin: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .compose-box textarea {
+      min-height: 120px;
+      border: 2px solid var(--choco-brown);
+      border-radius: 16px;
+      padding: 12px;
+      font: inherit;
+      font-size: 15px;
+      background: var(--card-bg);
+      color: var(--choco-dark);
+      resize: none;
+      outline: none;
+    }
+    .search-input-wrap {
+      margin: 10px 12px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .search-input-wrap input {
+      flex: 1;
+      border: 2px solid var(--choco-brown);
+      border-radius: 16px;
+      padding: 8px 12px;
+      font: inherit;
+      background: rgba(248,252,251,.95);
+      color: var(--choco-dark);
+      outline: none;
+    }
+    .search-input-wrap .cancel {
+      border: 0; background: transparent;
+      color: var(--choco-dark); font: inherit; cursor: pointer;
+    }
+
+    /* 冻结气泡 */
+    .thread-layer {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      background: url("../../assets/chat/skin/wallpaper.jpg") center / cover no-repeat;
+    }
+    .thread-layer.active { display: flex; }
+    .freeze-tag {
+      flex-shrink: 0;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: .04em;
+      color: rgba(110,88,79,.7);
+      background: rgba(225,246,241,.92);
+      border-bottom: 1px dashed var(--choco-brown);
+      padding: 4px 8px;
+    }
+    .wx-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 12px;
+      background: var(--mint-glass);
+      backdrop-filter: blur(10px);
+      border-bottom: 2px solid var(--choco-brown);
+      flex-shrink: 0;
+      position: relative;
+    }
+    .wx-bar .back {
+      position: absolute; left: 4px; top: 50%; transform: translateY(-50%);
+      border: 0; background: transparent; font: inherit; font-size: 20px;
+      color: var(--choco-dark); padding: 4px 8px; cursor: pointer;
+    }
+    .wx-bar .who { font-size: 17px; font-weight: 600; color: var(--choco-dark); }
+    .wx-thread {
+      flex: 1; min-height: 0; overflow: auto;
+      padding: 18px 16px 58px;
+      display: flex; flex-direction: column; gap: 22px;
+    }
+    .wx-time {
+      align-self: center;
+      font-size: 11px;
+      color: var(--choco-dark);
+      background: var(--mint-green);
+      border: 2px solid var(--choco-brown);
+      border-radius: 14px;
+      padding: 6px 48px;
+      position: relative;
+      min-height: 28px;
+      line-height: 1.3;
+    }
+    .wx-time::before,
+    .wx-time::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px; height: 36px;
+      background: url("../../assets/chat/skin/sys-deco.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .wx-time::before { left: 4px; }
+    .wx-time::after { right: 4px; }
+    .wx-row { display: flex; align-items: flex-start; gap: 10px; max-width: 100%; }
+    .wx-row.me { flex-direction: row-reverse; }
+    .wx-row .av { position: relative; width: 36px; height: 36px; flex-shrink: 0; }
+    .wx-row .av img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+      border: 1px solid rgba(255,255,255,.5);
+    }
+    .wx-row .av::after {
+      content: "";
+      position: absolute;
+      inset: -32%;
+      background: url("../../assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .bubble {
+      position: relative;
+      max-width: min(72%, 260px);
+      border-radius: 20px;
+      padding: 12px 14px 10px;
+      font-size: 15px;
+      line-height: 1.45;
+      overflow: visible;
+    }
+    .wx-row:not(.me) .bubble {
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+      border: 1px solid rgba(255,255,255,.3);
+      box-shadow: 0 2px 8px rgba(181,161,152,.2);
+    }
+    .wx-row:not(.me) .bubble::before {
+      content: "";
+      position: absolute;
+      top: -18px; left: -12px;
+      width: 42px; height: 42px;
+      background: url("../../assets/chat/skin/bubble-deco-them.png") center / cover no-repeat;
+      pointer-events: none;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,.1));
+    }
+    .wx-row.me .bubble {
+      background: var(--mint-green);
+      color: var(--text-on-mint);
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(225,246,241,.8);
+    }
+    .wx-row.me .bubble::after {
+      content: "";
+      position: absolute;
+      top: -18px; right: -12px;
+      width: 42px; height: 42px;
+      background: url("../../assets/chat/skin/bubble-deco-me.png") center / contain no-repeat;
+      pointer-events: none;
+    }
+    .wx-composer {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px 10px;
+      background: var(--mint-green);
+      border-top: 2px solid var(--choco-brown);
+      position: relative;
+    }
+    .wx-composer::before {
+      content: "";
+      position: absolute;
+      bottom: calc(100% - 12px);
+      left: 0; width: 100%; height: 48px;
+      background: url("../../assets/chat/skin/input-deco.png") center bottom / contain no-repeat;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .wx-composer input {
+      flex: 1;
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 20px;
+      padding: 8px 14px;
+      background: var(--choco-brown);
+      color: var(--text-on-choco);
+      font: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+    .wx-composer input::placeholder { color: rgba(255,255,255,.7); }
+    .wx-composer .ico {
+      border: 0; background: transparent; color: var(--choco-dark);
+      font-size: 18px; width: 32px; height: 32px; cursor: default; opacity: .85;
+    }
+  </style>
+</head>
+<body>
+  <p class="banner">
+    <strong>聊天 · 微信壳 DEMO v2</strong>（薄巧 + 本地 <code>assets/chat/skin</code>）<br />
+    建议做已可点：搜索、资料卡、朋友圈发/赞/评、收藏、设定；气泡<strong>冻结</strong>。<br />
+    <span class="muted">后置备忘（本 DEMO 不做）：通话、多 peer、MCP 产品化、[TODAY]、资产真账… → 见落地进度</span>
+  </p>
+
+  <div class="phone">
+    <div class="screen">
+      <!-- 微信 -->
+      <section class="shell active" id="tab-chat" data-tab="chat">
+        <header class="top">
+          <span class="title">微信</span>
+          <button type="button" class="side right" id="btnAdd" aria-label="加号">＋</button>
+        </header>
+        <div class="scroll">
+          <div class="search-bar" id="btnOpenSearch" role="button" tabindex="0">搜索聊天记录</div>
+          <button type="button" class="sess" id="sessHome" data-open-thread="家机">
+            <span class="av-wrap">
+              <img class="face" src="../../assets/cafe/avatar-bot.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" />
+              <span class="badge" id="sessBadge">2</span>
+            </span>
+            <span class="body">
+              <span class="row1"><span class="name">家机</span><span class="time" id="sessTime">刚刚</span></span>
+              <span class="preview" id="sessPreview">冰箱里还有半盒薄荷巧克力，你要不要…</span>
+            </span>
+          </button>
+          <p class="hint-line">正式：桌面→本列表→点「家机」进现行气泡；未读进会话后清掉（DEMO 已模拟）。</p>
+        </div>
+      </section>
+
+      <!-- 通讯录 -->
+      <section class="shell" id="tab-contacts" data-tab="contacts">
+        <header class="top"><span class="title">通讯录</span></header>
+        <div class="scroll">
+          <div class="sec-lab">家机</div>
+          <button type="button" class="contact" id="btnContactHome">
+            <span class="av-wrap">
+              <img src="../../assets/cafe/avatar-bot.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" />
+            </span>
+            <span class="nm">家机</span>
+          </button>
+          <p class="hint-line">极简通讯录：点进资料卡 → 发消息。多联系人后置。</p>
+        </div>
+      </section>
+
+      <!-- 朋友圈 -->
+      <section class="shell" id="tab-moments" data-tab="moments">
+        <header class="top">
+          <span class="title">朋友圈</span>
+          <button type="button" class="side right" id="btnCompose" aria-label="发动态">◎</button>
+        </header>
+        <div class="scroll">
+          <div class="mom-cover">
+            <div class="mom-me">
+              <span class="nick">你</span>
+              <div class="av">
+                <img src="../../assets/cafe/avatar-you.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" />
+              </div>
+            </div>
+          </div>
+          <div class="mom-feed" id="momFeed"></div>
+        </div>
+      </section>
+
+      <!-- 我 -->
+      <section class="shell" id="tab-me" data-tab="me">
+        <header class="top"><span class="title">我</span></header>
+        <div class="scroll">
+          <div class="me-head">
+            <div class="av">
+              <img src="../../assets/cafe/avatar-you.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" />
+            </div>
+            <div>
+              <div class="nm">你</div>
+              <div class="id">微信号 · DEMO</div>
+            </div>
+          </div>
+          <div class="menu">
+            <button type="button" data-toast="正式 → 资产 App · 微信钱包（不在此做账本）">
+              <span class="ico">¥</span><span class="lab">微信钱包</span><span class="chev">›</span>
+            </button>
+            <button type="button" data-toast="正式 → 资产 App · 银行卡">
+              <span class="ico">卡</span><span class="lab">银行卡</span><span class="chev">›</span>
+            </button>
+          </div>
+          <div class="menu-gap"></div>
+          <div class="menu">
+            <button type="button" id="btnFav">
+              <span class="ico">☆</span><span class="lab">收藏</span><span class="chev">›</span>
+            </button>
+            <button type="button" id="btnPrefs">
+              <span class="ico">⚙</span><span class="lab">设定</span><span class="chev">›</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <nav class="dock" aria-label="底栏">
+        <button type="button" class="on" data-go="chat" aria-label="微信" title="微信">
+          <span class="di" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4.5 6.2h11.2a2.4 2.4 0 0 1 2.4 2.4v5.2a2.4 2.4 0 0 1-2.4 2.4H11l-3.2 2.4v-2.4H4.5A2.4 2.4 0 0 1 2.1 13.8V8.6a2.4 2.4 0 0 1 2.4-2.4Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="M9.2 10.2h6.2M9.2 13h4.2" stroke="currentColor" stroke-width="1.55" stroke-linecap="round"/></svg>
+          </span>
+          <span class="dot" id="dockDot"></span>
+        </button>
+        <button type="button" data-go="contacts" aria-label="通讯录" title="通讯录">
+          <span class="di" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.1" stroke="currentColor" stroke-width="1.6"/><path d="M3.8 18.2c.4-2.8 2.6-4.4 5.2-4.4s4.8 1.6 5.2 4.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="16.6" cy="8.4" r="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M15.2 13.2c2 .3 3.5 1.5 4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </button>
+        <button type="button" data-go="moments" aria-label="朋友圈" title="朋友圈">
+          <span class="di" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.2" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.8v6.4M12 13.8v6.4M3.8 12h6.4M13.8 12h6.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/></svg>
+          </span>
+        </button>
+        <button type="button" data-go="me" aria-label="我" title="我">
+          <span class="di" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.2" stroke="currentColor" stroke-width="1.6"/><path d="M5 18.5c.6-3.2 3.2-5 7-5s6.4 1.8 7 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+        </button>
+      </nav>
+
+      <!-- 搜索 -->
+      <div class="overlay" id="ovSearch">
+        <header class="top">
+          <span class="title">搜索</span>
+        </header>
+        <div class="search-input-wrap">
+          <input id="searchQ" type="search" placeholder="搜聊天记录（DEMO 本地）" autocomplete="off" />
+          <button type="button" class="cancel" id="btnSearchClose">取消</button>
+        </div>
+        <div class="pad" id="searchHits"></div>
+      </div>
+
+      <!-- 资料卡 -->
+      <div class="overlay" id="ovProfile">
+        <header class="top">
+          <button type="button" class="side left" data-close-ov="ovProfile" aria-label="返回">←</button>
+          <span class="title">资料</span>
+        </header>
+        <div class="pad">
+          <div class="sheet-card">
+            <div class="big-av">
+              <img src="../../assets/cafe/avatar-bot.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" />
+            </div>
+            <div class="nm">家机</div>
+            <div class="sub">备注 · 同居日常短讯（≠ Chatbox 正剧）</div>
+            <div class="acts">
+              <button type="button" class="btn-primary" id="btnProfileChat">发消息</button>
+              <button type="button" class="btn-ghost" data-toast="通话后置 · 已记备忘">音视频通话（后置）</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 发动态 -->
+      <div class="overlay" id="ovCompose">
+        <header class="top">
+          <button type="button" class="side left" data-close-ov="ovCompose" aria-label="返回">←</button>
+          <span class="title">发动态</span>
+          <button type="button" class="side right" id="btnComposePost" style="font-size:14px;font-weight:650;">发表</button>
+        </header>
+        <div class="compose-box">
+          <textarea id="composeTxt" maxlength="200" placeholder="这一刻的想法…"></textarea>
+          <p class="hint-line" style="margin:0">DEMO 只落本页内存；正式再定家机是否自动跟帖。</p>
+        </div>
+      </div>
+
+      <!-- 收藏 -->
+      <div class="overlay" id="ovFav">
+        <header class="top">
+          <button type="button" class="side left" data-close-ov="ovFav" aria-label="返回">←</button>
+          <span class="title">收藏</span>
+        </header>
+        <div class="pad" id="favList"></div>
+      </div>
+
+      <!-- 设定 -->
+      <div class="overlay" id="ovPrefs">
+        <header class="top">
+          <button type="button" class="side left" data-close-ov="ovPrefs" aria-label="返回">←</button>
+          <span class="title">设定</span>
+        </header>
+        <div class="pad">
+          <p class="hint-line">仅本 App 偏好示意 · 不等于桌面「手机设置」</p>
+          <div class="pref-row">
+            <span class="lab">消息提示音</span>
+            <button type="button" class="toggle on" id="togSound" aria-label="消息提示音"></button>
+          </div>
+          <div class="pref-row">
+            <span class="lab">进会话清未读</span>
+            <button type="button" class="toggle on" id="togRead" aria-label="进会话清未读"></button>
+          </div>
+          <div class="pref-row">
+            <span class="lab">家机工具</span>
+            <span class="val">正式走手机设置 · MCP</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 冻结气泡 -->
+      <div class="thread-layer" id="thread" hidden>
+        <div class="freeze-tag">现行气泡界面 · DEMO 冻结示意 · 正式默认不改</div>
+        <header class="wx-bar">
+          <button type="button" class="back" id="btnThreadBack" aria-label="返回">←</button>
+          <div class="who" id="threadWho">家机</div>
+        </header>
+        <div class="wx-thread">
+          <div class="wx-time">今天 15:20</div>
+          <div class="wx-row">
+            <div class="av"><img src="../../assets/cafe/avatar-bot.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" /></div>
+            <div class="bubble">冰箱里还有半盒薄荷巧克力，你要不要分一点。</div>
+          </div>
+          <div class="wx-row me">
+            <div class="av"><img src="../../assets/cafe/avatar-you.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" /></div>
+            <div class="bubble">要。晚上一起写便签？</div>
+          </div>
+          <div class="wx-row">
+            <div class="av"><img src="../../assets/cafe/avatar-bot.png" alt="" onerror="this.src='../../assets/chat/stickers/decor-bear.png'" /></div>
+            <div class="bubble">好。日历那条也帮你钉一下。</div>
+          </div>
+        </div>
+        <div class="wx-composer">
+          <button type="button" class="ico" tabindex="-1" aria-hidden="true">☺</button>
+          <input type="text" placeholder="DEMO 输入，不落库" readonly />
+          <button type="button" class="ico" tabindex="-1" aria-hidden="true">+</button>
+        </div>
+      </div>
+
+      <div class="toast" id="toast" role="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const AV_BOT = "../../assets/cafe/avatar-bot.png";
+    const AV_YOU = "../../assets/cafe/avatar-you.png";
+    const AV_FALL = "../../assets/chat/stickers/decor-bear.png";
+
+    const shells = [...document.querySelectorAll(".shell")];
+    const dockBtns = [...document.querySelectorAll(".dock [data-go]")];
+    const thread = document.getElementById("thread");
+    const toastEl = document.getElementById("toast");
+    const sessBadge = document.getElementById("sessBadge");
+    const dockDot = document.getElementById("dockDot");
+    let toastTimer = 0;
+    let unread = 2;
+
+    const searchCorpus = [
+      { t: "冰箱里还有半盒薄荷巧克力，你要不要分一点。", meta: "家机 · 今天 15:20" },
+      { t: "要。晚上一起写便签？", meta: "你 · 今天 15:21" },
+      { t: "好。日历那条也帮你钉一下。", meta: "家机 · 今天 15:22" },
+      { t: "[工具] 查行程 · 今日 2 条", meta: "家机 · 昨天" },
+    ];
+
+    const favs = [
+      { t: "冰箱里还有半盒薄荷巧克力，你要不要分一点。", meta: "聊天 · 家机" },
+      { t: "窗台晒到一半的薄荷叶", meta: "朋友圈 · 家机" },
+    ];
+
+    let posts = [
+      {
+        id: 1,
+        name: "家机",
+        av: AV_BOT,
+        txt: "今日份薄巧：窗台晒到一半的薄荷叶，和没写完的日历便签。",
+        time: "2小时前",
+        liked: true,
+        likes: ["你"],
+        comments: [{ who: "你", txt: "叶子别晒焦了" }],
+      },
+      {
+        id: 2,
+        name: "家机",
+        av: AV_BOT,
+        txt: "正式朋友圈：本地时间线；家机可模板/偶发跟帖。不做发现页。",
+        time: "昨天",
+        liked: false,
+        likes: [],
+        comments: [],
+      },
+    ];
+
+    function showToast(msg) {
+      toastEl.textContent = msg;
+      toastEl.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 1700);
+    }
+
+    function syncUnread() {
+      const on = unread > 0 && document.getElementById("togRead").classList.contains("on");
+      // badge 显示真实 unread；开关只影响「进会话是否清」
+      if (unread > 0) {
+        sessBadge.hidden = false;
+        sessBadge.textContent = String(unread);
+        dockDot.hidden = false;
+      } else {
+        sessBadge.hidden = true;
+        dockDot.hidden = true;
+      }
+      void on;
+    }
+
+    function goTab(name) {
+      closeOverlays();
+      closeThread();
+      shells.forEach((el) => el.classList.toggle("active", el.dataset.tab === name));
+      dockBtns.forEach((b) => b.classList.toggle("on", b.dataset.go === name));
+    }
+
+    function openOverlay(id) {
+      closeThread();
+      document.querySelectorAll(".overlay").forEach((el) => {
+        el.classList.toggle("active", el.id === id);
+      });
+    }
+
+    function closeOverlays() {
+      document.querySelectorAll(".overlay").forEach((el) => el.classList.remove("active"));
+    }
+
+    function openThread(name) {
+      closeOverlays();
+      document.getElementById("threadWho").textContent = name || "家机";
+      thread.hidden = false;
+      thread.classList.add("active");
+      if (document.getElementById("togRead").classList.contains("on")) {
+        unread = 0;
+        syncUnread();
+      }
+    }
+
+    function closeThread() {
+      thread.classList.remove("active");
+      thread.hidden = true;
+    }
+
+    function renderFeed() {
+      const feed = document.getElementById("momFeed");
+      feed.innerHTML = posts.map((p) => {
+        const likes = p.likes.length ? `<div class="post-likes">${p.likes.join("、")}</div>` : "";
+        const cmts = p.comments.length
+          ? `<div class="post-comments">${p.comments.map((c) => `<div class="c"><b>${c.who}</b> ${escapeHtml(c.txt)}</div>`).join("")}</div>`
+          : "";
+        return `<article class="post" data-id="${p.id}">
+          <div class="post-h">
+            <img class="post-av" src="${p.av}" alt="" onerror="this.src='${AV_FALL}'" />
+            <div class="post-main">
+              <div class="post-name">${escapeHtml(p.name)}</div>
+              <div class="post-txt">${escapeHtml(p.txt)}</div>
+              <div class="post-meta">
+                <span>${escapeHtml(p.time)}</span>
+                <span class="post-acts">
+                  <button type="button" class="post-act ${p.liked ? "on" : ""}" data-like="${p.id}">赞</button>
+                  <button type="button" class="post-act" data-cmt="${p.id}">评</button>
+                </span>
+              </div>
+              ${likes}
+              ${cmts}
+              <div class="cmt-row" data-cmt-row="${p.id}">
+                <input type="text" maxlength="80" placeholder="评论…" />
+                <button type="button" data-cmt-send="${p.id}">发送</button>
+              </div>
+            </div>
+          </div>
+        </article>`;
+      }).join("");
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (ch) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      })[ch]);
+    }
+
+    function renderFavs() {
+      document.getElementById("favList").innerHTML = favs.map((f) =>
+        `<button type="button" class="fav-item" data-toast="正式可跳回原消息">
+          <div><div class="t">${escapeHtml(f.t)}</div><div class="meta">${escapeHtml(f.meta)}</div></div>
+        </button>`
+      ).join("");
+      document.querySelectorAll("#favList [data-toast]").forEach((el) => {
+        el.addEventListener("click", () => showToast(el.getAttribute("data-toast")));
+      });
+    }
+
+    function renderSearch(q) {
+      const qq = (q || "").trim().toLowerCase();
+      const hits = !qq ? searchCorpus : searchCorpus.filter((x) => x.t.toLowerCase().includes(qq));
+      const box = document.getElementById("searchHits");
+      if (!hits.length) {
+        box.innerHTML = `<p class="hint-line">无结果</p>`;
+        return;
+      }
+      box.innerHTML = hits.map((h) =>
+        `<button type="button" class="hit-item" data-open-thread="家机">
+          <div><div class="t">${escapeHtml(h.t)}</div><div class="meta">${escapeHtml(h.meta)}</div></div>
+        </button>`
+      ).join("");
+      box.querySelectorAll("[data-open-thread]").forEach((el) => {
+        el.addEventListener("click", () => openThread(el.getAttribute("data-open-thread")));
+      });
+    }
+
+    dockBtns.forEach((b) => b.addEventListener("click", () => goTab(b.dataset.go)));
+
+    document.getElementById("sessHome").addEventListener("click", () => openThread("家机"));
+    document.getElementById("btnThreadBack").addEventListener("click", closeThread);
+    document.getElementById("btnAdd").addEventListener("click", () => showToast("单 peer 够用 · 多会话后置"));
+    document.getElementById("btnContactHome").addEventListener("click", () => openOverlay("ovProfile"));
+    document.getElementById("btnProfileChat").addEventListener("click", () => {
+      closeOverlays();
+      openThread("家机");
+    });
+    document.getElementById("btnOpenSearch").addEventListener("click", () => {
+      openOverlay("ovSearch");
+      renderSearch("");
+      document.getElementById("searchQ").value = "";
+      document.getElementById("searchQ").focus();
+    });
+    document.getElementById("btnSearchClose").addEventListener("click", closeOverlays);
+    document.getElementById("searchQ").addEventListener("input", (e) => renderSearch(e.target.value));
+
+    document.getElementById("btnCompose").addEventListener("click", () => {
+      document.getElementById("composeTxt").value = "";
+      openOverlay("ovCompose");
+    });
+    document.getElementById("btnComposePost").addEventListener("click", () => {
+      const txt = document.getElementById("composeTxt").value.trim();
+      if (!txt) { showToast("写点什么再发"); return; }
+      posts.unshift({
+        id: Date.now(),
+        name: "你",
+        av: AV_YOU,
+        txt,
+        time: "刚刚",
+        liked: false,
+        likes: [],
+        comments: [],
+      });
+      renderFeed();
+      closeOverlays();
+      goTab("moments");
+      showToast("已发（DEMO 内存）");
+    });
+
+    document.getElementById("momFeed").addEventListener("click", (e) => {
+      const likeBtn = e.target.closest("[data-like]");
+      if (likeBtn) {
+        const id = Number(likeBtn.getAttribute("data-like"));
+        const p = posts.find((x) => x.id === id);
+        if (!p) return;
+        p.liked = !p.liked;
+        if (p.liked) {
+          if (!p.likes.includes("你")) p.likes.unshift("你");
+        } else {
+          p.likes = p.likes.filter((x) => x !== "你");
+        }
+        renderFeed();
+        return;
+      }
+      const cmtBtn = e.target.closest("[data-cmt]");
+      if (cmtBtn) {
+        const id = cmtBtn.getAttribute("data-cmt");
+        const row = document.querySelector(`[data-cmt-row="${id}"]`);
+        if (row) row.classList.toggle("open");
+        return;
+      }
+      const send = e.target.closest("[data-cmt-send]");
+      if (send) {
+        const id = Number(send.getAttribute("data-cmt-send"));
+        const p = posts.find((x) => x.id === id);
+        const input = send.parentElement.querySelector("input");
+        const txt = (input?.value || "").trim();
+        if (!p || !txt) return;
+        p.comments.push({ who: "你", txt });
+        input.value = "";
+        renderFeed();
+      }
+    });
+
+    document.getElementById("btnFav").addEventListener("click", () => {
+      renderFavs();
+      openOverlay("ovFav");
+    });
+    document.getElementById("btnPrefs").addEventListener("click", () => openOverlay("ovPrefs"));
+
+    document.querySelectorAll("[data-close-ov]").forEach((el) => {
+      el.addEventListener("click", () => {
+        document.getElementById(el.getAttribute("data-close-ov")).classList.remove("active");
+      });
+    });
+
+    document.querySelectorAll("[data-toast]").forEach((el) => {
+      el.addEventListener("click", () => showToast(el.getAttribute("data-toast")));
+    });
+
+    ["togSound", "togRead"].forEach((id) => {
+      document.getElementById(id).addEventListener("click", (e) => {
+        e.currentTarget.classList.toggle("on");
+        if (id === "togSound") showToast(e.currentTarget.classList.contains("on") ? "提示音开" : "提示音关");
+      });
+    });
+
+    renderFeed();
+    syncUnread();
+  </script>
+</body>
+</html>

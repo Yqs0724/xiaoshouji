@@ -20,18 +20,117 @@ const MEDIA_DIR = path.join(DATA_DIR, "chat-media");
 const THREAD_ID = "daily";
 const BODY_MAX = 800;
 const HISTORY = 20;
+const VARIANT_MAX = 5;
 const MEDIA_MAX_BYTES = 2 * 1024 * 1024;
-const MEDIA_ID_RE = /^[a-f0-9-]{36}\.(jpe?g|png|webp|gif)$/i;
+const MEDIA_ID_RE =
+  /^[a-f0-9-]{36}\.(jpe?g|png|webp|gif|webm|ogg|mp3|m4a|mp4|aac|wav)$/i;
 const MEDIA_URL_PREFIX = "/api/v1/chat/media/";
 const MONEY_KINDS = new Set(["redpacket", "transfer"]);
-const STRUCT_KINDS = new Set(["redpacket", "transfer", "location", "tool"]);
+const STRUCT_KINDS = new Set([
+  "redpacket",
+  "transfer",
+  "location",
+  "tool",
+  "call",
+  "pat",
+  "file",
+  "music",
+]);
+/** H1.30：拍一拍短后缀（无自定义面板） */
+const PAT_SUFFIXES = ["", "的脑袋", "一下"];
+const VOICE_DUR_MAX_MS = 120_000;
+const CALL_PHASES = new Set([
+  "invite",
+  "rejected",
+  "declined",
+  "answered",
+  "active",
+  "ended",
+]);
+/** H1.29：气泡表情回应（固定小套） */
+/** 家机偶发贴用的短清单；你侧可贴系统键盘任意 Emoji */
+const REACTION_EMOJI = ["❤️", "👍", "😄", "😮", "😢", "🥰"];
+const REACTION_LABEL = {
+  "❤️": "爱心",
+  "👍": "赞",
+  "😄": "笑",
+  "😮": "惊讶",
+  "😢": "哭",
+  "🥰": "喜欢",
+};
+
+function firstGrapheme(raw) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  try {
+    if (typeof Intl !== "undefined" && Intl.Segmenter) {
+      const it = new Intl.Segmenter("en", { granularity: "grapheme" }).segment(
+        t
+      );
+      const first = it[Symbol.iterator]().next().value;
+      return first && first.segment ? first.segment : "";
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  const m = t.match(
+    /(?:\p{Extended_Pictographic}(?:\uFE0F|\u200D\p{Extended_Pictographic})*|\p{Regional_Indicator}{2})/u
+  );
+  return m ? m[0] : "";
+}
+
+/** 单枚 Emoji（含 ZWJ / 肤色 / 旗），拒纯文字 */
+function isReactionEmoji(raw) {
+  const e = firstGrapheme(raw);
+  if (!e || e.length > 24) return false;
+  if (/[\u0000-\u001f]/.test(e)) return false;
+  if (/\p{Extended_Pictographic}/u.test(e)) return true;
+  if (/^\p{Regional_Indicator}{2}$/u.test(e)) return true;
+  return false;
+}
+
+function normalizeReactionEmoji(raw) {
+  const e = firstGrapheme(raw);
+  return isReactionEmoji(e) ? e : "";
+}
 
 const DAILY_SYSTEM_BASE =
   "你是同居室友「家机」，在小手机日常聊天里回短讯。" +
   "语气像室友短信：短、口语、轻松。" +
   "不要长篇剧情连载，不要章节目录，不要扮演系统通知。" +
   "问到日程/安排/几点有事/帮我加日程/改日程/删日程时：必须调用 calendar_* 工具，禁止口头编造或说「翻不到日历」。" +
-  "工具结果用一两句口语告诉对方；今天日期以工具返回的 today 为准。";
+  "工具结果用一两句口语告诉对方；今天日期以 [TODAY] 段或工具返回的 today 为准。";
+
+/** 接话前塞进 system：今日日历摘要（有则列标题，无则写无行程） */
+function buildTodayPrompt() {
+  try {
+    const { listEvents, localDateISO } = require("../../日历app/gateway/calendar");
+    const today = localDateISO(new Date());
+    const events = (listEvents({ date: today }).events || []).filter(
+      (e) => e && String(e.title || "").trim()
+    );
+    if (!events.length) {
+      return (
+        "[TODAY] 今天是 " +
+        today +
+        "，今日无行程。谈安排时先信这段；要增删改或查别日再调 calendar_*。"
+      );
+    }
+    const cap = 6;
+    const titles = events.slice(0, cap).map((e) => {
+      const t = String(e.title).trim();
+      return t.length > 20 ? t.slice(0, 20) + "…" : t;
+    });
+    let line =
+      "[TODAY] 今天是 " + today + "，今日行程：" + titles.join("、");
+    if (events.length > cap) line += " 等共" + events.length + "条";
+    line +=
+      "。谈安排时先信这段；要细查/改动再调 calendar_*，勿口头编造未列出的事。";
+    return line;
+  } catch (_) {
+    return "[TODAY] 今日行程暂不可读；问到日程请调 calendar_*。";
+  }
+}
 
 function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -53,14 +152,161 @@ function normalizeKind(raw) {
   if (
     raw === "sticker" ||
     raw === "image" ||
+    raw === "voice" ||
+    raw === "call" ||
     raw === "redpacket" ||
     raw === "transfer" ||
     raw === "location" ||
-    raw === "tool"
+    raw === "file" ||
+    raw === "music" ||
+    raw === "tool" ||
+    raw === "pat"
   ) {
     return raw;
   }
   return "text";
+}
+
+function randomPatSuffix() {
+  return PAT_SUFFIXES[Math.floor(Math.random() * PAT_SUFFIXES.length)] || "";
+}
+
+/** target = 被拍的人：bot=家机 / you=自己（仅你侧自拍） */
+function normalizePatPayload(raw) {
+  const src = raw && raw.payload && typeof raw.payload === "object" ? raw.payload : raw;
+  const target = src && src.target === "you" ? "you" : "bot";
+  const suffix = String((src && src.suffix) || "").trim().slice(0, 12);
+  const out = { target };
+  if (suffix) out.suffix = suffix;
+  return out;
+}
+
+function patDisplayBody(from, payload) {
+  const p = payload || {};
+  const suffix = String(p.suffix || "");
+  if (from === "bot") return "家机拍了拍你" + suffix;
+  if (p.target === "you") return "你拍了拍自己" + suffix;
+  return "你拍了拍家机" + suffix;
+}
+
+function formatCallClock(sec) {
+  const s = Math.max(0, Math.floor(Number(sec) || 0));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
+}
+
+/** 气泡正文（不含 ᯅ / 视频图标；图标由前端画） */
+function callDisplayBody(payload) {
+  const p = payload || {};
+  const media = p.media === "video" ? "video" : "voice";
+  const out = p.dir === "out";
+  const peer = String(p.peer || "家机").trim().slice(0, 32) || "家机";
+  const lab = media === "video" ? "视频通话" : "语音通话";
+  const clock = formatCallClock(p.durationSec);
+  switch (p.phase) {
+    case "invite":
+      return out ? "等待对方接听" : peer + "邀请你" + lab;
+    case "rejected":
+      return "对方已拒绝";
+    case "declined":
+      return out ? "已取消" : "已拒绝";
+    case "answered":
+      return out ? "对方已接听" : "已接听";
+    case "active":
+      return "通话中 " + clock;
+    case "ended":
+      return "通话时长 " + clock;
+    default:
+      return lab;
+  }
+}
+
+function normalizeCallPayload(raw) {
+  const src =
+    raw && typeof raw.payload === "object" && raw.payload
+      ? raw.payload
+      : raw || {};
+  const media = src.media === "video" ? "video" : "voice";
+  const dir = src.dir === "out" ? "out" : "in";
+  let phase = String(src.phase || "invite").trim();
+  if (!CALL_PHASES.has(phase)) phase = "invite";
+  let durationSec = Math.floor(Number(src.durationSec) || 0);
+  if (!Number.isFinite(durationSec) || durationSec < 0) durationSec = 0;
+  if (durationSec > 36000) durationSec = 36000;
+  const peer = String(src.peer || "家机").trim().slice(0, 32) || "家机";
+  return { media, dir, phase, durationSec, peer };
+}
+
+/** 语音时长 ms → 展示秒（至少 1） */
+function voiceSec(ms) {
+  const n = Math.floor(Number(ms) || 0);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return Math.max(1, Math.round(n / 1000));
+}
+
+/** 占位转写。真识别接上后写入 transcript 且不要标 transcriptStub。 */
+const VOICE_TRANSCRIPT_STUB = "（示意转写 · 还没接上家机语音识别）";
+
+function normalizeVoicePayload(raw) {
+  const src =
+    raw && typeof raw.payload === "object" && raw.payload
+      ? raw.payload
+      : raw || {};
+  let ms = Math.floor(
+    Number(src.durationMs != null ? src.durationMs : raw && raw.durationMs) || 0
+  );
+  if (!Number.isFinite(ms) || ms < 0) ms = 0;
+  if (ms > VOICE_DUR_MAX_MS) ms = VOICE_DUR_MAX_MS;
+  const out = { durationMs: ms };
+  const tr = String(src.transcript || "").trim().slice(0, 400);
+  if (tr) {
+    out.transcript = tr;
+    if (src.transcriptStub === true) out.transcriptStub = true;
+    if (src.transcriptHidden === true) out.transcriptHidden = true;
+  }
+  if (src.voiceStub === true) out.voiceStub = true;
+  return out;
+}
+
+function silentWav(sec) {
+  const sr = 8000;
+  const n = Math.max(1, Math.floor(sr * Math.max(1, Number(sec) || 1)));
+  const data = Buffer.alloc(n * 2);
+  const h = Buffer.alloc(44);
+  h.write("RIFF", 0);
+  h.writeUInt32LE(36 + data.length, 4);
+  h.write("WAVE", 8);
+  h.write("fmt ", 12);
+  h.writeUInt32LE(16, 16);
+  h.writeUInt16LE(1, 20);
+  h.writeUInt16LE(1, 22);
+  h.writeUInt32LE(sr, 24);
+  h.writeUInt32LE(sr * 2, 28);
+  h.writeUInt16LE(2, 32);
+  h.writeUInt16LE(16, 34);
+  h.write("data", 36);
+  h.writeUInt32LE(data.length, 40);
+  return Buffer.concat([h, data]);
+}
+
+/** 无声短音频，只为画出语音气泡。真语音接上后不要标 voiceStub。 */
+function appendStubBotVoice(sec) {
+  const durationSec = Math.max(1, Math.min(15, Math.floor(Number(sec) || 3)));
+  const saved = saveChatMedia(silentWav(durationSec), "audio/wav");
+  return appendMessage("bot", saved.url, "voice", {
+    payload: { durationMs: durationSec * 1000, voiceStub: true },
+  });
+}
+
+function wantsBotVoice(you) {
+  if (!you || you.from !== "you" || you.recalled || you.kind !== "text") return false;
+  return /语音|听你说|说一句/.test(String(you.body || ""));
+}
+
+function maybeBotVoice(you) {
+  if (!wantsBotVoice(you)) return null;
+  return appendStubBotVoice(2 + Math.floor(Math.random() * 4));
 }
 
 function normalizeToolPayload(raw) {
@@ -103,11 +349,14 @@ function normalizeMoneyPayload(raw, kind) {
   /* sent=待领；received/done=已收（旧数据 done 当已收） */
   const st = String(src.status || "").trim();
   const status = st === "sent" ? "sent" : "received";
-  return {
+  const out = {
     amount,
     note: note || (kind === "redpacket" ? "恭喜发财" : "转账"),
     status,
   };
+  const receipt = String(src.receipt || "").trim().slice(0, 40);
+  if (receipt) out.receipt = receipt;
+  return out;
 }
 
 function normalizeLocationPayload(raw) {
@@ -125,40 +374,176 @@ function normalizeLocationPayload(raw) {
   return { name, detail };
 }
 
+function normalizeFilePayload(raw) {
+  const src =
+    raw && typeof raw.payload === "object" && raw.payload ? raw.payload : raw || {};
+  const name = String(src.name != null ? src.name : (raw && raw.name) || "")
+    .trim()
+    .replace(/[/\\]/g, "")
+    .slice(0, 80);
+  if (!name) return null;
+  return { name, fileStub: true };
+}
+
+function normalizeMusicPayload(raw) {
+  const src =
+    raw && typeof raw.payload === "object" && raw.payload ? raw.payload : raw || {};
+  const name = String(src.name != null ? src.name : (raw && raw.name) || "")
+    .trim()
+    .replace(/[/\\]/g, "")
+    .slice(0, 80);
+  if (!name) return null;
+  return { name, musicStub: true };
+}
+
 function bodyForKind(kind, payload, fallback) {
   if (kind === "redpacket" || kind === "transfer") {
     return "¥" + Number(payload.amount).toFixed(2) + " " + (payload.note || "");
   }
   if (kind === "location") return payload.name;
+  if (kind === "file" || kind === "music") return payload.name;
   if (kind === "tool") {
     const lab = (payload && payload.label) || (payload && payload.name) || "tool";
     const sum = payload && payload.summary;
     return String(sum ? lab + " · " + sum : lab).trim();
   }
+  if (kind === "pat") return String(fallback || "").trim();
   return String(fallback || "").trim();
+}
+
+/** 撤回原文进 LLM 用的短摘要（不进搜索） */
+function recallLlmSnippet(m) {
+  const kind = (m && m.kind) || "text";
+  const raw = String((m && (m.recall_body || m.peek_body)) || "").trim();
+  if (kind === "image") return "[图片]";
+  if (kind === "sticker") {
+    const st = raw ? getSticker(raw) : null;
+    return "[贴纸:" + ((st && st.label) || raw || "表情") + "]";
+  }
+  if (kind === "voice") return "[语音]";
+  if (kind === "redpacket") return "[红包]";
+  if (kind === "transfer") return "[转账]";
+  if (kind === "location") return "[位置]";
+  if (kind === "call") return "[通话]";
+  if (kind === "file") return "[文件]";
+  if (kind === "music") return "[音乐]";
+  if (!raw) return "";
+  return raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+}
+
+function normalizeReactions(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw.slice(0, 16)) {
+    if (!item || typeof item !== "object") continue;
+    const emoji = normalizeReactionEmoji(item.emoji);
+    if (!emoji) continue;
+    const from = item.from === "bot" ? "bot" : "you";
+    const key = from + "\0" + emoji;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ from, emoji });
+  }
+  return out;
+}
+
+function reactionsLlmSuffix(m) {
+  const rs = normalizeReactions(m && m.reactions);
+  if (!rs.length) return "";
+  return (
+    " " +
+    rs
+      .map((r) => {
+        const who = r.from === "bot" ? "对方" : "我";
+        const lab = REACTION_LABEL[r.emoji] || r.emoji;
+        return "[" + who + "表情:" + lab + "]";
+      })
+      .join("")
+  );
 }
 
 function llmContent(m) {
   if (!m) return "";
+  /* 撤回：原文进模型（心意/表白才好品），界面与搜索仍当已撤 */
+  if (m.recalled) {
+    const who = m.from === "bot" ? "对方" : "我";
+    const snip = recallLlmSnippet(m);
+    if (!snip) return "（" + who + "撤回了一条消息）";
+    return "（" + who + "撤回了：「" + snip + "」）" + reactionsLlmSuffix(m);
+  }
   if (m.kind === "tool") return "";
+  let core = "";
   if (m.kind === "sticker") {
     const st = getSticker(m.body);
-    return "[贴纸:" + ((st && st.label) || m.body) + "]";
-  }
-  if (m.kind === "image") return "[图片]";
-  if (m.kind === "redpacket") {
+    core = "[贴纸:" + ((st && st.label) || m.body) + "]";
+  } else if (m.kind === "image") {
+    core = "[图片]";
+  } else if (m.kind === "voice") {
+    const ms = (m.payload && m.payload.durationMs) || 0;
+    core = "[语音 " + voiceSec(ms) + "″]";
+    /* 占位转写不进模型。真识别接上且 transcriptStub 不为 true 时，再把正文拼进来。 */
+  } else if (m.kind === "call") {
     const p = m.payload || {};
-    return "[红包 ¥" + Number(p.amount || 0).toFixed(2) + "：" + (p.note || "") + "]";
-  }
-  if (m.kind === "transfer") {
+    const tag = p.media === "video" ? "[视频通话]" : "[语音通话]";
+    core = tag + " " + callDisplayBody(p);
+  } else if (m.kind === "redpacket") {
     const p = m.payload || {};
-    return "[转账 ¥" + Number(p.amount || 0).toFixed(2) + "：" + (p.note || "") + "]";
-  }
-  if (m.kind === "location") {
+    core =
+      "[红包 ¥" + Number(p.amount || 0).toFixed(2) + "：" + (p.note || "") + "]";
+  } else if (m.kind === "transfer") {
     const p = m.payload || {};
-    return "[位置：" + (p.name || m.body) + (p.detail ? " · " + p.detail : "") + "]";
+    core =
+      "[转账 ¥" + Number(p.amount || 0).toFixed(2) + "：" + (p.note || "") + "]";
+  } else if (m.kind === "location") {
+    const p = m.payload || {};
+    core =
+      "[位置：" + (p.name || m.body) + (p.detail ? " · " + p.detail : "") + "]";
+  } else if (m.kind === "file") {
+    /* H1.39：占位只报有文件，文件名和内容都不进模型 */
+    core = "[文件]";
+  } else if (m.kind === "music") {
+    /* H1.40：占位只报有音乐，文件名和内容都不进模型 */
+    core = "[音乐]";
+  } else if (m.kind === "pat") {
+    core = "（" + String(m.body || "拍一拍") + "）";
+  } else {
+    let body = String(m.body || "");
+    if (m.quote && m.quote.text) {
+      const q =
+        "[引用 " +
+        String(m.quote.who || "") +
+        "：" +
+        String(m.quote.text).slice(0, 200) +
+        "]";
+      body = body ? q + "\n" + body : q;
+    }
+    core = body;
   }
-  return String(m.body || "");
+  return core + reactionsLlmSuffix(m);
+}
+
+function normalizeQuote(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const text = String(raw.text || "").trim().slice(0, 200);
+  if (!text) return null;
+  const out = {
+    who: String(raw.who || "").trim().slice(0, 32) || "对方",
+    text,
+  };
+  const refId = String(raw.refId || raw.ref_id || "").trim().slice(0, 64);
+  if (refId) out.refId = refId;
+  return out;
+}
+
+/** 转发标记：落库后气泡顶「转发」；不触发家机 LLM */
+function normalizeForward(raw) {
+  if (!raw) return null;
+  if (raw === true) return { who: "对方" };
+  if (typeof raw !== "object") return null;
+  return {
+    who: String(raw.who || "").trim().slice(0, 32) || "对方",
+  };
 }
 
 function normalizeMsg(raw) {
@@ -167,6 +552,28 @@ function normalizeMsg(raw) {
   if (!id) return null;
   const kind = normalizeKind(raw.kind);
   const from = raw.from === "bot" ? "bot" : "you";
+  if (raw.recalled === true) {
+    const out = {
+      id,
+      threadId: THREAD_ID,
+      from,
+      kind: kind || "text",
+      body: "",
+      recalled: true,
+      ts: Number(raw.ts) || Date.now(),
+      read: true,
+    };
+    /* recall_body：进 LLM、不进搜索；peek_body：仅 peek 时 UI 可回看 */
+    const rb = String(raw.recall_body || "").trim().slice(0, BODY_MAX);
+    if (rb) out.recall_body = rb;
+    const sight = String(raw.recall_sight || "").trim();
+    if (sight === "miss" || sight === "peek") out.recall_sight = sight;
+    if (sight === "peek") {
+      const pb = String(raw.peek_body || rb || "").trim().slice(0, BODY_MAX);
+      if (pb) out.peek_body = pb;
+    }
+    return out;
+  }
   let body = String(raw.body || "").trim();
   let payload = null;
 
@@ -174,12 +581,30 @@ function normalizeMsg(raw) {
     if (!isStickerId(body)) return null;
   } else if (kind === "image") {
     if (!isMediaUrl(body)) return null;
+  } else if (kind === "voice") {
+    if (!isMediaUrl(body)) return null;
+    payload = normalizeVoicePayload(raw);
+  } else if (kind === "call") {
+    payload = normalizeCallPayload(raw);
+    if (!payload) return null;
+    body = callDisplayBody(payload).slice(0, BODY_MAX);
+  } else if (kind === "pat") {
+    payload = normalizePatPayload(raw);
+    body = patDisplayBody(from, payload).slice(0, BODY_MAX);
   } else if (MONEY_KINDS.has(kind)) {
     payload = normalizeMoneyPayload(raw, kind);
     if (!payload) return null;
     body = bodyForKind(kind, payload, body).slice(0, BODY_MAX);
   } else if (kind === "location") {
     payload = normalizeLocationPayload(raw);
+    if (!payload) return null;
+    body = bodyForKind(kind, payload, body).slice(0, BODY_MAX);
+  } else if (kind === "file") {
+    payload = normalizeFilePayload(raw);
+    if (!payload) return null;
+    body = bodyForKind(kind, payload, body).slice(0, BODY_MAX);
+  } else if (kind === "music") {
+    payload = normalizeMusicPayload(raw);
     if (!payload) return null;
     body = bodyForKind(kind, payload, body).slice(0, BODY_MAX);
   } else if (kind === "tool") {
@@ -202,6 +627,10 @@ function normalizeMsg(raw) {
     read: from === "you" ? true : raw.read !== false,
   };
   if (payload) out.payload = payload;
+  const quote = normalizeQuote(raw.quote);
+  if (quote) out.quote = quote;
+  const forward = normalizeForward(raw.forward);
+  if (forward) out.forward = forward;
   const think = String(raw.think || "").trim();
   if (think) out.think = think.slice(0, 12000);
   const thinkSec = Number(raw.think_sec);
@@ -217,7 +646,451 @@ function normalizeMsg(raw) {
     }
     if (tools.length) out.tools = tools;
   }
+  /* 家机文字多版本（重生）；顶层字段镜像当前 index */
+  if (from === "bot" && kind === "text" && Array.isArray(raw.variants) && raw.variants.length) {
+    const variants = [];
+    for (const v of raw.variants.slice(-VARIANT_MAX)) {
+      const n = normalizeVariant(v);
+      if (n) variants.push(n);
+    }
+    if (variants.length) {
+      let idx = Number(raw.variantIndex);
+      if (!Number.isFinite(idx) || idx < 0) idx = 0;
+      if (idx >= variants.length) idx = variants.length - 1;
+      out.variants = variants;
+      out.variantIndex = idx;
+      mirrorVariant(out, variants[idx]);
+    }
+  }
+  const reactions = normalizeReactions(raw.reactions);
+  if (reactions.length) out.reactions = reactions;
   return out;
+}
+
+function normalizeVariant(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const body = String(raw.body || "").trim().slice(0, BODY_MAX);
+  if (!body) return null;
+  const v = { body, ts: Number(raw.ts) || Date.now() };
+  const think = String(raw.think || "").trim();
+  if (think) v.think = think.slice(0, 12000);
+  const thinkSec = Number(raw.think_sec);
+  if (Number.isFinite(thinkSec) && thinkSec > 0) {
+    v.think_sec = Math.round(thinkSec * 10) / 10;
+  }
+  if (Array.isArray(raw.tools) && raw.tools.length) {
+    const tools = [];
+    for (const t of raw.tools.slice(0, 16)) {
+      const p = normalizeToolPayload(t);
+      if (p) tools.push(p);
+    }
+    if (tools.length) v.tools = tools;
+  }
+  return v;
+}
+
+function snapshotVariant(msg) {
+  if (!msg) return null;
+  return normalizeVariant({
+    body: msg.body,
+    think: msg.think,
+    think_sec: msg.think_sec,
+    tools: msg.tools,
+    ts: msg.ts,
+  });
+}
+
+function mirrorVariant(out, v) {
+  if (!out || !v) return;
+  out.body = v.body;
+  if (v.think) out.think = v.think;
+  else delete out.think;
+  if (v.think_sec) out.think_sec = v.think_sec;
+  else delete out.think_sec;
+  if (v.tools && v.tools.length) out.tools = v.tools;
+  else delete out.tools;
+}
+
+function updateMessageById(id, mutator) {
+  const sid = String(id || "");
+  const all = readAll();
+  const idx = all.messages.findIndex((m) => m.id === sid);
+  if (idx < 0) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  const cur = all.messages[idx];
+  const next = typeof mutator === "function" ? mutator(cur) : cur;
+  const norm = normalizeMsg(next);
+  if (!norm) {
+    const err = new Error("消息无效");
+    err.code = "bad_chat_body";
+    throw err;
+  }
+  all.messages[idx] = norm;
+  writeAll(all);
+  return norm;
+}
+
+/** 仅最新家机文字可重生：其后不能有你的消息 */
+function assertRegenTarget(id) {
+  const sid = String(id || "");
+  const messages = listMessages().messages;
+  const idx = messages.findIndex((m) => m.id === sid);
+  if (idx < 0) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  const msg = messages[idx];
+  if (msg.from !== "bot" || msg.kind !== "text") {
+    const err = new Error("只能重生家机文字");
+    err.code = "not_regen_target";
+    throw err;
+  }
+  let lastBotText = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].from === "bot" && messages[i].kind === "text") {
+      lastBotText = i;
+      break;
+    }
+  }
+  if (idx !== lastBotText) {
+    const err = new Error("只能重生最新一条家机文字");
+    err.code = "not_latest";
+    throw err;
+  }
+  for (let i = idx + 1; i < messages.length; i++) {
+    if (messages[i].from === "you") {
+      const err = new Error("这条后面已有新对话，不能重生");
+      err.code = "not_latest";
+      throw err;
+    }
+  }
+  return { messages, idx, msg };
+}
+
+/**
+ * 撤回落库。opts.from = "you"|"bot"（默认 you）。
+ * 家机撤回时附带你侧 miss/peek（H1.28）。
+ */
+function recallMessage(id, opts) {
+  const sid = String(id || "");
+  const expectFrom = opts && opts.from === "bot" ? "bot" : "you";
+  const all = readAll();
+  const msgIdx = all.messages.findIndex((m) => m.id === sid);
+  if (msgIdx < 0) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  const cur = all.messages[msgIdx];
+  if (cur.from !== expectFrom) {
+    const err = new Error(
+      expectFrom === "bot" ? "只能撤回家机消息" : "只能撤回自己发的消息"
+    );
+    err.code = "not_yours";
+    throw err;
+  }
+  if (cur.recalled) {
+    return { ok: true, message: cur, already: true, snap: null };
+  }
+  const snap = {
+    body: String(cur.body || ""),
+    kind: cur.kind || "text",
+  };
+  const next = {
+    id: cur.id,
+    from: expectFrom,
+    kind: cur.kind || "text",
+    body: "",
+    recalled: true,
+    ts: cur.ts || Date.now(),
+    read: true,
+  };
+  /* 原文留给模型「心里有数」；搜索仍忽略 recalled */
+  if (snap.body) next.recall_body = String(snap.body).slice(0, BODY_MAX);
+  if (expectFrom === "bot") {
+    const sight = decideBotRecallYouSight(
+      snap,
+      opts && opts.forceSight ? String(opts.forceSight) : ""
+    );
+    next.recall_sight = sight.mode;
+    if (sight.mode === "peek" && sight.body) {
+      next.peek_body = String(sight.body).slice(0, BODY_MAX);
+    }
+  }
+  const norm = normalizeMsg(next);
+  all.messages[msgIdx] = norm;
+  writeAll(all);
+  return { ok: true, message: norm, already: false, snap };
+}
+
+/**
+ * H1.19：你撤回 → 家机可见性。miss / silent / roast。
+ * @param {{ body?: string, kind?: string }|null} snap
+ * @param {string} [force] 自检用
+ */
+function decideRecallSight(snap, force) {
+  const body = String((snap && snap.body) || "").trim();
+  const kind = String((snap && snap.kind) || "text");
+  if (force === "miss" || force === "silent" || force === "roast") {
+    return { mode: force, body, kind };
+  }
+  const r = Math.random();
+  if (r < 0.35) return { mode: "miss", body: "", kind };
+  if (r < 0.65) return { mode: "silent", body, kind };
+  return { mode: "roast", body, kind };
+}
+
+/**
+ * H1.28：家机撤回 → 你侧可见性。miss 没看见 / peek 点灰条能回看。
+ */
+function decideBotRecallYouSight(snap, force) {
+  const body = String((snap && snap.body) || "").trim();
+  if (force === "miss" || force === "peek") {
+    return { mode: force, body: force === "peek" ? body : "" };
+  }
+  if (!body) return { mode: "miss", body: "" };
+  /* 略偏 miss，撤回才有意义 */
+  if (Math.random() < 0.55) return { mode: "miss", body: "" };
+  return { mode: "peek", body };
+}
+
+function botSelfRecallChance() {
+  try {
+    const { readMood } = require("./mood");
+    const m = readMood();
+    const na = Number(m && m.na) || 0;
+    return 0.07 + Math.min(0.2, na * 0.22);
+  } catch (_) {
+    return 0.12;
+  }
+}
+
+/**
+ * H1.29：切换表情回应。每人每条最多一个；同表情再点取消。
+ * @returns {object} 更新后的消息
+ */
+function toggleMessageReaction(id, emojiRaw, fromRaw) {
+  const sid = String(id || "").trim();
+  const emoji = normalizeReactionEmoji(emojiRaw);
+  const who = fromRaw === "bot" ? "bot" : "you";
+  if (!sid) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  if (!emoji) {
+    const err = new Error("请选一个表情");
+    err.code = "bad_reaction";
+    throw err;
+  }
+  return updateMessageById(sid, (cur) => {
+    if (!cur || cur.recalled) {
+      const err = new Error("这条不能回应");
+      err.code = "bad_reaction";
+      throw err;
+    }
+    if (cur.kind === "tool" || cur.kind === "call" || cur.kind === "pat") {
+      const err = new Error("这条不能回应");
+      err.code = "bad_reaction";
+      throw err;
+    }
+    let reactions = normalizeReactions(cur.reactions);
+    const same = reactions.findIndex((r) => r.from === who && r.emoji === emoji);
+    if (same >= 0) {
+      reactions = reactions.filter((_, i) => i !== same);
+    } else {
+      reactions = reactions.filter((r) => r.from !== who);
+      reactions.push({ from: who, emoji });
+    }
+    const next = Object.assign({}, cur);
+    if (reactions.length) next.reactions = reactions;
+    else delete next.reactions;
+    return next;
+  });
+}
+
+/** 家机偶发给你刚发的消息贴表情 */
+async function maybeBotReact(write, youMsg, opts) {
+  if (opts && opts.skipBotReact) return;
+  if (!youMsg || youMsg.from !== "you" || youMsg.recalled) return;
+  if (youMsg.kind === "tool" || youMsg.kind === "call" || youMsg.kind === "pat")
+    return;
+  if (Math.random() >= 0.16) return;
+  const emoji = REACTION_EMOJI[Math.floor(Math.random() * REACTION_EMOJI.length)];
+  try {
+    const msg = toggleMessageReaction(youMsg.id, emoji, "bot");
+    await write({ type: "react", ok: true, message: msg });
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+/**
+ * 家机刚发完文字后：小概率过几秒撤回（仍挂在同一条 SSE 上）。
+ * emit: bot_recall
+ */
+async function maybeBotSelfRecall(write, botMsg, opts) {
+  if (opts && opts.skipBotRecall) return;
+  if (!botMsg || botMsg.from !== "bot" || botMsg.kind !== "text") return;
+  const body = String(botMsg.body || "").trim();
+  if (body.length < 2) return;
+
+  const force = opts && opts.forceBotRecall;
+  const forceSight =
+    force === "miss" || force === "peek"
+      ? force
+      : force
+        ? "peek"
+        : "";
+  if (!force && Math.random() >= botSelfRecallChance()) return;
+
+  const { sleep } = require("./mood");
+  await sleep(force ? 40 : 2000 + Math.floor(Math.random() * 7000));
+
+  const msgs = listMessages().messages || [];
+  const still = msgs.find((m) => m && m.id === botMsg.id);
+  if (!still || still.recalled || still.from !== "bot") return;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (!m || m.from !== "bot" || m.recalled) continue;
+    if (m.kind !== "text") continue;
+    if (m.id !== botMsg.id) return;
+    break;
+  }
+
+  let out;
+  try {
+    out = recallMessage(botMsg.id, {
+      from: "bot",
+      forceSight: forceSight || undefined,
+    });
+  } catch (_) {
+    return;
+  }
+  if (!out || out.already || !out.message) return;
+  await write({
+    type: "bot_recall",
+    ok: true,
+    message: out.message,
+    sight: out.message.recall_sight || "miss",
+    peek: out.message.peek_body || "",
+  });
+}
+
+function resolveRecallScreenshotUrl(sight, opts) {
+  let url = String((opts && opts.screenshotUrl) || "").trim();
+  if (url && isMediaUrl(url)) return url;
+  if (!sight || sight.mode !== "roast") return "";
+  if (sight.kind === "image" && isMediaUrl(sight.body)) return sight.body;
+  return "";
+}
+
+/**
+ * 删消息。若有多版重生且传入 index（或默认当前 variantIndex），只删那一版；
+ * 剩一版则收成普通气泡；一版都不剩 / 无 variants → 整条删除。
+ */
+function deleteMessage(id, indexOpt) {
+  const sid = String(id || "");
+  const all = readAll();
+  const msgIdx = all.messages.findIndex((m) => m.id === sid);
+  if (msgIdx < 0) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  const cur = all.messages[msgIdx];
+  const variants = Array.isArray(cur.variants)
+    ? cur.variants.map(normalizeVariant).filter(Boolean)
+    : [];
+
+  if (variants.length >= 2) {
+    let vi = Number(indexOpt);
+    if (!Number.isFinite(vi)) vi = Number(cur.variantIndex) || 0;
+    if (vi < 0 || vi >= variants.length) {
+      const err = new Error("版本序号无效");
+      err.code = "bad_variant_index";
+      throw err;
+    }
+    const nextVars = variants.filter((_, i) => i !== vi);
+    if (nextVars.length >= 2) {
+      const newIndex = Math.min(vi, nextVars.length - 1);
+      const next = Object.assign({}, cur, {
+        variants: nextVars,
+        variantIndex: newIndex,
+      });
+      mirrorVariant(next, nextVars[newIndex]);
+      const norm = normalizeMsg(next);
+      all.messages[msgIdx] = norm;
+      writeAll(all);
+      return { ok: true, id: sid, deleted: false, message: norm };
+    }
+    /* 只剩一版：折叠掉 variants */
+    const only = nextVars[0];
+    const next = Object.assign({}, cur);
+    delete next.variants;
+    delete next.variantIndex;
+    mirrorVariant(next, only);
+    const norm = normalizeMsg(next);
+    all.messages[msgIdx] = norm;
+    writeAll(all);
+    return { ok: true, id: sid, deleted: false, message: norm };
+  }
+
+  const removed = all.messages[msgIdx];
+  all.messages.splice(msgIdx, 1);
+  writeAll(all);
+  return { ok: true, id: sid, deleted: true, message: removed };
+}
+
+function setMessageVariant(id, index) {
+  const want = Number(index);
+  return updateMessageById(id, (cur) => {
+    if (cur.from !== "bot" || cur.kind !== "text") {
+      const err = new Error("只能切换家机文字版本");
+      err.code = "not_regen_target";
+      throw err;
+    }
+    const variants = Array.isArray(cur.variants) ? cur.variants.slice() : [];
+    if (variants.length < 2) {
+      const err = new Error("还没有可切换的版本");
+      err.code = "no_variants";
+      throw err;
+    }
+    if (!Number.isFinite(want) || want < 0 || want >= variants.length) {
+      const err = new Error("版本序号无效");
+      err.code = "bad_variant_index";
+      throw err;
+    }
+    const next = Object.assign({}, cur, { variantIndex: want });
+    mirrorVariant(next, variants[want]);
+    return next;
+  });
+}
+
+function appendVariantToMessage(id, variantRaw) {
+  const neu = normalizeVariant(variantRaw);
+  if (!neu) {
+    const err = new Error("新回复为空");
+    err.code = "llm_empty";
+    throw err;
+  }
+  return updateMessageById(id, (cur) => {
+    let variants = Array.isArray(cur.variants) ? cur.variants.map(normalizeVariant).filter(Boolean) : [];
+    if (!variants.length) {
+      const old = snapshotVariant(cur);
+      if (old) variants = [old];
+    }
+    variants.push(neu);
+    if (variants.length > VARIANT_MAX) variants = variants.slice(-VARIANT_MAX);
+    const variantIndex = variants.length - 1;
+    const next = Object.assign({}, cur, { variants, variantIndex, ts: neu.ts || Date.now() });
+    mirrorVariant(next, variants[variantIndex]);
+    return next;
+  });
 }
 
 function extFromContentType(ct) {
@@ -225,18 +1098,23 @@ function extFromContentType(ct) {
   if (s.includes("png")) return "png";
   if (s.includes("webp")) return "webp";
   if (s.includes("gif")) return "gif";
+  if (s.includes("webm")) return "webm";
+  if (s.includes("ogg")) return "ogg";
+  if (s.includes("mpeg") || s.includes("mp3")) return "mp3";
+  if (s.includes("mp4") || s.includes("m4a") || s.includes("aac")) return "m4a";
+  if (s.includes("wav")) return "wav";
   return "jpg";
 }
 
 function saveChatMedia(buf, contentType) {
   ensureFile();
   if (!Buffer.isBuffer(buf) || !buf.length) {
-    const err = new Error("图片为空");
+    const err = new Error("文件为空");
     err.code = "bad_chat_media";
     throw err;
   }
   if (buf.length > MEDIA_MAX_BYTES) {
-    const err = new Error("图片太大（上限 2MB）");
+    const err = new Error("文件太大（上限 2MB）");
     err.code = "chat_media_too_large";
     throw err;
   }
@@ -271,6 +1149,8 @@ function readAll() {
       last_poke_day: String(raw.last_poke_day || "").trim(),
       poke_count: Math.max(0, Math.floor(Number(raw.poke_count) || 0)),
       think: !!raw.think,
+      /* 默认开慢回；显式 false 才关 */
+      slow_reply: raw.slow_reply === false ? false : true,
     };
   } catch {
     return {
@@ -281,6 +1161,7 @@ function readAll() {
       last_poke_day: "",
       poke_count: 0,
       think: false,
+      slow_reply: true,
     };
   }
 }
@@ -299,6 +1180,9 @@ function writeAll(data) {
   const think = Object.prototype.hasOwnProperty.call(data, "think")
     ? !!data.think
     : !!prev.think;
+  const slow_reply = Object.prototype.hasOwnProperty.call(data, "slow_reply")
+    ? data.slow_reply !== false
+    : prev.slow_reply !== false;
   fs.writeFileSync(
     CHAT_PATH,
     JSON.stringify(
@@ -310,6 +1194,7 @@ function writeAll(data) {
         last_poke_day,
         poke_count,
         think,
+        slow_reply,
       },
       null,
       2
@@ -324,12 +1209,17 @@ function writeAll(data) {
     last_poke_day,
     poke_count,
     think,
+    slow_reply,
   };
 }
 
 function getChatPrefs() {
   const all = readAll();
-  return { ok: true, think: !!all.think };
+  return {
+    ok: true,
+    think: !!all.think,
+    slow_reply: all.slow_reply !== false,
+  };
 }
 
 function setChatPrefs(patch) {
@@ -338,8 +1228,19 @@ function setChatPrefs(patch) {
   if (patch && Object.prototype.hasOwnProperty.call(patch, "think")) {
     next.think = !!patch.think;
   }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "slow_reply")) {
+    next.slow_reply = !!patch.slow_reply;
+  }
   writeAll(next);
   return getChatPrefs();
+}
+
+/** H1.32：只清空本会话消息。偏好、额度、主动短讯计数、心情/收藏/朋友圈不动。 */
+function clearChatMessages() {
+  const all = readAll();
+  const removed = all.messages.length;
+  writeAll({ ...all, messages: [] });
+  return { ok: true, removed };
 }
 
 function localDateISO(d) {
@@ -369,7 +1270,10 @@ function pokeDaily(opts) {
     return { ok: true, poked: false, count: unreadCount().count, message: null };
   }
   let message;
-  if (Math.random() < 0.28) {
+  if (Math.random() < 0.12) {
+    /* 偶发来电（inbound） */
+    message = startChatCall(Math.random() < 0.35 ? "video" : "voice", "in").message;
+  } else if (Math.random() < 0.28) {
     message = appendMessage("bot", randomSticker().id, "sticker");
   } else {
     const line = POKE_LINES[Math.floor(Math.random() * POKE_LINES.length)];
@@ -445,13 +1349,32 @@ function dayEndMs(day) {
 
 function messageSearchText(m) {
   if (!m) return "";
+  if (m.recalled) return "";
+  /* H1.30：拍一拍不进搜索 */
+  if (m.kind === "pat") return "";
   const p = m.payload || {};
   const parts = [m.body, p.note, p.name, p.detail];
+  if (m.quote) parts.push(m.quote.who, m.quote.text, "引用");
+  if (m.forward) parts.push(m.forward.who, "转发");
   if (m.kind === "redpacket") parts.push("红包", "微信红包");
   if (m.kind === "transfer") parts.push("转账");
   if (m.kind === "sticker") parts.push("贴纸", "表情");
   if (m.kind === "image") parts.push("图片");
+  if (m.kind === "voice") {
+    parts.push("语音", "语音消息");
+    if (p.transcript) parts.push(p.transcript, "转文字");
+  }
+  if (m.kind === "call") {
+    const mp = m.payload || {};
+    parts.push(
+      mp.media === "video" ? "视频通话" : "语音通话",
+      "通话",
+      callDisplayBody(mp)
+    );
+  }
   if (m.kind === "location") parts.push("位置");
+  if (m.kind === "file") parts.push("文件", p.name);
+  if (m.kind === "music") parts.push("音乐", p.name);
   if (m.kind === "tool") {
     parts.push("工具", p.name, p.label, p.summary);
   }
@@ -532,6 +1455,11 @@ function appendMessage(from, body, kind, extra) {
     if (k === "image" && !isMediaUrl(text)) {
       const err = new Error("图片无效");
       err.code = "bad_chat_image";
+      throw err;
+    }
+    if (k === "voice" && !isMediaUrl(text)) {
+      const err = new Error("语音无效");
+      err.code = "bad_chat_voice";
       throw err;
     }
     patch.body = text;
@@ -648,10 +1576,204 @@ function markAllRead() {
   return { ok: true, count: 0 };
 }
 
+/**
+ * H1.27：发起通话。
+ * dir=out 你拨出（from you，等待对方）；dir=in 家机来电（from bot）。
+ */
+function startChatCall(mediaRaw, dirRaw) {
+  const media = mediaRaw === "video" ? "video" : "voice";
+  const dir = dirRaw === "in" ? "in" : "out";
+  const payload = normalizeCallPayload({
+    media,
+    dir,
+    phase: "invite",
+    durationSec: 0,
+    peer: "家机",
+  });
+  const from = dir === "in" ? "bot" : "you";
+  const msg = normalizeMsg({
+    id: randomUUID(),
+    from,
+    kind: "call",
+    payload,
+    body: callDisplayBody(payload),
+    ts: Date.now(),
+    read: from === "you",
+  });
+  if (!msg) {
+    const err = new Error("通话无效");
+    err.code = "bad_chat_call";
+    throw err;
+  }
+  const all = readAll();
+  all.messages.push(msg);
+  writeAll(all);
+  return { ok: true, message: msg };
+}
+
+function setChatCallPhase(id, patch) {
+  const sid = String(id || "").trim();
+  if (!sid) {
+    const err = new Error("通话不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  return updateMessageById(sid, (cur) => {
+    if (!cur || cur.kind !== "call") {
+      const err = new Error("不是通话消息");
+      err.code = "bad_chat_call";
+      throw err;
+    }
+    const nextPhase = String((patch && patch.phase) || "").trim();
+    if (!CALL_PHASES.has(nextPhase)) {
+      const err = new Error("通话状态无效");
+      err.code = "bad_chat_call";
+      throw err;
+    }
+    const payload = normalizeCallPayload({
+      ...(cur.payload || {}),
+      phase: nextPhase,
+      durationSec:
+        patch && patch.durationSec != null
+          ? patch.durationSec
+          : (cur.payload && cur.payload.durationSec) || 0,
+    });
+    return {
+      ...cur,
+      payload,
+      body: callDisplayBody(payload),
+      read: true,
+    };
+  });
+}
+
+/**
+ * 拒绝 / 结束通话；接通过并 ended 时家机可接一句。
+ * emit: call → (可选 bot_*) → done
+ */
+async function finishChatCallStream(id, patch, emit) {
+  const write = async (obj) => {
+    if (typeof emit !== "function") return;
+    await Promise.resolve(emit(obj));
+  };
+  const phase = String((patch && patch.phase) || "").trim();
+  if (phase !== "rejected" && phase !== "declined" && phase !== "ended") {
+    const err = new Error("通话结束状态无效");
+    err.code = "bad_chat_call";
+    throw err;
+  }
+  const msg = setChatCallPhase(id, {
+    phase,
+    durationSec: patch && patch.durationSec,
+  });
+  await write({ type: "call", ok: true, message: msg });
+  if (phase === "ended") {
+    const { observeUserText } = require("./mood");
+    const obs = llmContent(msg);
+    if (obs) observeUserText(obs);
+    /* prior 里跳过同 id 的 bot 通话条，改以 user 角色注入 */
+    const asYou = Object.assign({}, msg, { from: "you" });
+    return exclusiveBotReply(() =>
+      runBotReplyStream(write, asYou, {
+        skipObserve: true,
+        coalesced: true,
+      })
+    );
+  }
+  const messages = listMessages().messages;
+  await write({
+    type: "done",
+    ok: true,
+    message: msg,
+    bot_message: null,
+    messages,
+  });
+  return { ok: true, message: msg, bot_message: null, messages };
+}
+
+/**
+ * H1.33：语音转文字占位。无转写则写入示意句；再点只折叠/展开，不删正文。
+ * 以后家机真识别：直接写 payload.transcript，不要设 transcriptStub。
+ */
+function toggleVoiceTranscript(id) {
+  const sid = String(id || "").trim();
+  if (!sid) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  return updateMessageById(sid, (cur) => {
+    if (!cur || cur.recalled || cur.kind !== "voice") {
+      const err = new Error("这条不是语音");
+      err.code = "bad_voice";
+      throw err;
+    }
+    const payload = Object.assign({}, cur.payload || { durationMs: 0 });
+    if (!payload.transcript) {
+      payload.transcript = VOICE_TRANSCRIPT_STUB;
+      payload.transcriptStub = true;
+      delete payload.transcriptHidden;
+    } else if (payload.transcriptHidden) {
+      delete payload.transcriptHidden;
+    } else {
+      payload.transcriptHidden = true;
+    }
+    const next = Object.assign({}, cur);
+    next.payload = payload;
+    return next;
+  });
+}
+
+/**
+ * H1.30：你侧拍一拍。target=bot 拍家机；target=you 拍自己。
+ * 拍家机时约 1/3 概率立刻回拍（不调 LLM）。
+ */
+function createPat(patch) {
+  const target = patch && patch.target === "you" ? "you" : "bot";
+  const forceSuffix =
+    patch && patch.suffix != null ? String(patch.suffix).trim().slice(0, 12) : null;
+  const suffix = forceSuffix != null ? forceSuffix : randomPatSuffix();
+  const payload = { target };
+  if (suffix) payload.suffix = suffix;
+  const msg = appendMessage("you", patDisplayBody("you", payload), "pat", {
+    payload,
+  });
+  let bot_pat = null;
+  const forceBack = patch && patch.forceBotPat;
+  if (
+    target === "bot" &&
+    (forceBack === true || (forceBack == null && Math.random() < 0.34))
+  ) {
+    const backSuffix =
+      forceBack === true && forceSuffix != null
+        ? forceSuffix
+        : randomPatSuffix();
+    const backPayload = { target: "you" };
+    if (backSuffix) backPayload.suffix = backSuffix;
+    bot_pat = appendMessage(
+      "bot",
+      patDisplayBody("bot", backPayload),
+      "pat",
+      { payload: backPayload }
+    );
+  }
+  return { ok: true, message: msg, bot_pat };
+}
+
 function createMessage(patch) {
   const kind = normalizeKind(patch && patch.kind);
   if (kind === "tool") {
     const err = new Error("工具摘要不能手发");
+    err.code = "bad_chat_kind";
+    throw err;
+  }
+  if (kind === "call") {
+    const err = new Error("通话请走通话接口");
+    err.code = "bad_chat_kind";
+    throw err;
+  }
+  if (kind === "pat") {
+    const err = new Error("拍一拍请走拍一拍接口");
     err.code = "bad_chat_kind";
     throw err;
   }
@@ -702,7 +1824,32 @@ function createMessage(patch) {
       err.code = "bad_chat_location";
       throw err;
     }
-    const msg = appendMessage("you", payload.name, "location", { payload });
+    const locExtra = { payload };
+    const locFwd = normalizeForward(patch && patch.forward);
+    if (locFwd) locExtra.forward = locFwd;
+    const msg = appendMessage("you", payload.name, "location", locExtra);
+    return { ok: true, message: msg };
+  }
+
+  if (kind === "file") {
+    const payload = normalizeFilePayload(patch);
+    if (!payload) {
+      const err = new Error("请选择文件");
+      err.code = "bad_chat_file";
+      throw err;
+    }
+    const msg = appendMessage("you", payload.name, "file", { payload });
+    return { ok: true, message: msg };
+  }
+
+  if (kind === "music") {
+    const payload = normalizeMusicPayload(patch);
+    if (!payload) {
+      const err = new Error("请选择音乐");
+      err.code = "bad_chat_music";
+      throw err;
+    }
+    const msg = appendMessage("you", payload.name, "music", { payload });
     return { ok: true, message: msg };
   }
 
@@ -712,11 +1859,19 @@ function createMessage(patch) {
     err.code = "bad_chat_body";
     throw err;
   }
-  const msg = appendMessage("you", body, kind);
+  const extra = {};
+  const quote = normalizeQuote(patch && patch.quote);
+  if (quote) extra.quote = quote;
+  const forward = normalizeForward(patch && patch.forward);
+  if (forward) extra.forward = forward;
+  if (kind === "voice") {
+    extra.payload = normalizeVoicePayload(patch);
+  }
+  const msg = appendMessage("you", body, kind, extra);
   return { ok: true, message: msg };
 }
 
-function markMoneyReceived(msgId) {
+function markMoneyReceived(msgId, receiptText) {
   const id = String(msgId || "").trim();
   if (!id) return null;
   const all = readAll();
@@ -724,6 +1879,8 @@ function markMoneyReceived(msgId) {
   const messages = all.messages.map((m) => {
     if (!m || m.id !== id || !MONEY_KINDS.has(m.kind)) return m;
     const payload = Object.assign({}, m.payload || {}, { status: "received" });
+    const tip = String(receiptText || payload.receipt || "").trim().slice(0, 40);
+    if (tip) payload.receipt = tip;
     found = normalizeMsg(Object.assign({}, m, { payload }));
     return found || m;
   });
@@ -736,12 +1893,14 @@ function markMoneyReceived(msgId) {
 async function emitMoneyClaim(msg, write) {
   if (!msg || !MONEY_KINDS.has(msg.kind) || msg.from !== "you") return;
   await new Promise((r) => setTimeout(r, 380));
-  const claimed = markMoneyReceived(msg.id);
+  const tip =
+    msg.kind === "redpacket" ? "对方已领取你的红包" : "对方已收款";
+  const claimed = markMoneyReceived(msg.id, tip);
   if (!claimed) return;
   await write({ type: "money_claim", message: claimed });
   await write({
     type: "money_tip",
-    text: msg.kind === "redpacket" ? "对方已领取你的红包" : "对方已收款",
+    text: tip,
     ts: Date.now(),
   });
 }
@@ -762,21 +1921,21 @@ function claimIncomingMoney(msgId) {
     throw err;
   }
   if (m.payload && m.payload.status === "received") {
+    const tip = (m.payload && m.payload.receipt) || null;
     return {
       ok: true,
       already: true,
       message: m,
-      tip: null,
+      tip,
     };
   }
-  const claimed = markMoneyReceived(id);
+  const tip = m.kind === "redpacket" ? "你已领取红包" : "你已收款";
+  const claimed = markMoneyReceived(id, tip);
   if (!claimed) {
     const err = new Error("领取失败");
     err.code = "bad_money_claim";
     throw err;
   }
-  const tip =
-    claimed.kind === "redpacket" ? "你已领取红包" : "你已收款";
   return { ok: true, already: false, message: claimed, tip: tip };
 }
 
@@ -808,32 +1967,188 @@ function looksLikeNeedsReply(body) {
   return false;
 }
 
-/**
- * 短应答且上文不催回时跳过家机 LLM（仍落你侧）。
- * ponytail: 规则启发式，误杀就放宽 ACK 或加 LLM 裁判。
- */
-function shouldSkipBotReply(you, messages) {
-  if (!you || you.kind !== "text") return false;
-  if (!isAckText(you.body)) return false;
-  const hist = Array.isArray(messages) ? messages : [];
-  let lastBotText = null;
-  for (let i = hist.length - 1; i >= 0; i--) {
-    const m = hist[i];
-    if (!m || m.id === you.id) continue;
-    if (m.from === "bot" && m.kind === "text") {
-      lastBotText = m.body;
-      break;
-    }
-    if (m.from === "you") break;
+function observeTextForMessage(you) {
+  if (!you) return "";
+  if (you.recalled) return "（我撤回了一条消息）";
+  if (you.kind === "sticker") return "[贴纸]";
+  if (you.kind === "image") return "[图片]";
+  if (you.kind === "voice") return llmContent(you) || "[语音]";
+  if (you.kind === "call") return llmContent(you) || "[通话]";
+  if (you.kind === "location") return "[位置]";
+  if (you.kind === "file") return "[文件]";
+  if (you.kind === "music") return "[音乐]";
+  if (you.kind === "redpacket" || you.kind === "transfer") {
+    return you.kind === "redpacket" ? "[红包]" : "[转账]";
   }
-  if (lastBotText && looksLikeNeedsReply(lastBotText)) return false;
-  return true;
+  return String(llmContent(you) || you.body || "").trim();
 }
 
 /**
- * 你侧落库后立刻请家机流式接一句（A-daily）。LLM / 额度失败不回滚你侧。
- * emit(obj) 写 SSE 事件：you → bot_start → bot_delta* → bot_done|bot_error → done
- * （短应答可跳过 bot_*，直接 done + skipped:true）
+ * H1.17′：随机 1–12s 看一眼会不会连发（慢回关则只留短抖动）。
+ * 不顶掉上路——一条条回也行；等完若已有更新的你侧短讯则本条 deferred，让最新那条带上下文回。
+ */
+let llmReplyChain = Promise.resolve();
+
+function messageWaitsForCoalesce(you) {
+  if (!you) return false;
+  if (MONEY_KINDS.has(you.kind)) return false;
+  return true;
+}
+
+function coalesceWaitMs(prefs) {
+  if (prefs && prefs.slow_reply === false) {
+    return 200 + Math.floor(Math.random() * 500);
+  }
+  /* 1000..12000 ms，含端点 */
+  return 1000 + Math.floor(Math.random() * 11001);
+}
+
+function hasNewerYouMessage(you) {
+  if (!you || !you.id) return false;
+  const msgs = listMessages().messages || [];
+  const idx = msgs.findIndex((m) => m && m.id === you.id);
+  if (idx < 0) return false;
+  for (let i = idx + 1; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (!m || m.from !== "you" || m.recalled) continue;
+    if (MONEY_KINDS.has(m.kind)) continue;
+    return true;
+  }
+  return false;
+}
+
+function exclusiveBotReply(fn) {
+  const run = llmReplyChain.then(fn, fn);
+  llmReplyChain = run.then(
+    () => {},
+    () => {}
+  );
+  return run;
+}
+
+/**
+ * 心情门控 + 流式接一句。you 可为 null（撤回后仅接话）。
+ * emit: bot_start → (delay) → bot_delta* → bot_done|bot_error → done
+ */
+async function runBotReplyStream(write, you, opts) {
+  const { observeUserText, decideReplyGate, sleep } = require("./mood");
+  if (!(opts && opts.skipObserve)) {
+    const observe =
+      (opts && opts.observeText) != null
+        ? String(opts.observeText)
+        : observeTextForMessage(you);
+    if (observe) observeUserText(observe);
+  }
+
+  const prefs = getChatPrefs();
+  const gate = decideReplyGate({
+    slowReply: prefs.slow_reply !== false,
+    coalesced: !!(opts && opts.coalesced),
+  });
+  if (gate.skip) {
+    const messages = listMessages().messages;
+    await write({
+      type: "done",
+      ok: true,
+      message: you || null,
+      bot_message: null,
+      bot_error: null,
+      skipped: true,
+      skip_reason: "mood_cold",
+      messages,
+    });
+    return {
+      ok: true,
+      message: you || null,
+      bot_message: null,
+      bot_error: null,
+      skipped: true,
+      skip_reason: "mood_cold",
+      messages,
+    };
+  }
+
+  const state = ensureBudget();
+  if (budgetExhausted(state)) {
+    const bot_error = {
+      code: "budget_exhausted",
+      message: "额度已用尽 · 你侧已留下",
+    };
+    await write({ type: "bot_error", ...bot_error });
+    const messages = listMessages().messages;
+    await write({
+      type: "done",
+      ok: true,
+      message: you || null,
+      bot_message: null,
+      bot_error,
+      messages,
+    });
+    return {
+      ok: true,
+      message: you || null,
+      bot_message: null,
+      bot_error,
+      messages,
+    };
+  }
+
+  let bot_message = null;
+  let bot_error = null;
+  try {
+    const hist = listMessages().messages;
+    let prior = buildChatPrior(hist, you);
+    if (opts && opts.extraUser) {
+      prior = prior.concat([{ role: "user", content: String(opts.extraUser) }]);
+    }
+    await write({ type: "bot_start" });
+    if (gate.delayMs > 0) await sleep(gate.delayMs);
+    const { text, thinkExtra, used } = await streamBotReply(write, prior, {
+      moodPrompt: gate.moodPrompt,
+    });
+    bot_message = appendMessage("bot", text, "text", thinkExtra);
+    addTokensUsed(used > 0 ? used : 400);
+    await write({ type: "bot_done", message: bot_message });
+    const bot_money = maybeBotMoney(you, text);
+    if (bot_money) await write({ type: "bot_money", message: bot_money });
+    const bot_sticker = maybeBotSticker(you, text);
+    if (bot_sticker) await write({ type: "bot_sticker", message: bot_sticker });
+    const bot_voice = maybeBotVoice(you);
+    if (bot_voice) await write({ type: "bot_voice", message: bot_voice });
+    /* H1.29：偶发给你侧消息贴表情 */
+    if (you) await maybeBotReact(write, you, opts);
+    /* H1.28：偶发撤回刚发的文字（miss/peek 落在 bot_recall） */
+    if (bot_message) await maybeBotSelfRecall(write, bot_message, opts);
+  } catch (e) {
+    bot_error = {
+      code: e.code || "llm_failed",
+      message: e.message || "家机暂时接不上",
+    };
+    await write({ type: "bot_error", ...bot_error });
+  }
+
+  const messages = listMessages().messages;
+  await write({
+    type: "done",
+    ok: true,
+    message: you || null,
+    bot_message,
+    bot_error,
+    messages,
+  });
+  return {
+    ok: true,
+    message: you || null,
+    bot_message,
+    bot_error,
+    messages,
+  };
+}
+
+/**
+ * 你侧落库后请家机流式接一句（A-daily）。LLM / 额度失败不回滚你侧。
+ * H1.17′：随机 1–12s 后再回；不顶掉上路。等完若有更新的你侧短讯则本条 deferred。
+ * emit: you → … → done（deferred:true 时本条不回，由更新那条带上下文）
  */
 async function createMessageWithReplyStream(patch, emit) {
   const write = async (obj) => {
@@ -851,226 +2166,449 @@ async function createMessageWithReplyStream(patch, emit) {
 
   await emitMoneyClaim(you, write);
 
-  const afterYou = listMessages().messages;
-  if (shouldSkipBotReply(you, afterYou)) {
-    await write({
-      type: "done",
-      ok: true,
-      message: you,
-      bot_message: null,
-      bot_error: null,
-      skipped: true,
-      messages: afterYou,
-    });
-    return {
-      ok: true,
-      message: you,
-      bot_message: null,
-      bot_error: null,
-      skipped: true,
-      messages: afterYou,
-    };
+  const { observeUserText, sleep } = require("./mood");
+  const obs = observeTextForMessage(you);
+  if (obs) observeUserText(obs);
+
+  if (!messageWaitsForCoalesce(you)) {
+    return exclusiveBotReply(() =>
+      runBotReplyStream(write, you, { skipObserve: true })
+    );
   }
 
-  const state = ensureBudget();
-  if (budgetExhausted(state)) {
-    const bot_error = {
-      code: "budget_exhausted",
-      message: "额度已用尽 · 你侧已留下",
-    };
-    await write({ type: "bot_error", ...bot_error });
+  const prefs = getChatPrefs();
+  await sleep(coalesceWaitMs(prefs));
+  if (hasNewerYouMessage(you)) {
     const messages = listMessages().messages;
     await write({
       type: "done",
       ok: true,
       message: you,
       bot_message: null,
-      bot_error,
+      deferred: true,
       messages,
     });
     return {
       ok: true,
       message: you,
       bot_message: null,
-      bot_error,
+      deferred: true,
+      messages,
+    };
+  }
+  return exclusiveBotReply(() =>
+    runBotReplyStream(write, you, { skipObserve: true, coalesced: true })
+  );
+}
+
+/** 撤回后家机接一句（SSE）；opts.screenshotUrl = 客户端抓拍的真气泡图 */
+async function recallMessageWithReplyStream(id, emit, opts) {
+  const write = async (obj) => {
+    if (typeof emit !== "function") return;
+    await Promise.resolve(emit(obj));
+  };
+  const recalled = recallMessage(id);
+  const sight = decideRecallSight(
+    recalled.snap,
+    opts && opts.forceSight ? String(opts.forceSight) : ""
+  );
+  await write({
+    type: "you_recall",
+    ok: true,
+    message: recalled.message,
+    already: !!recalled.already,
+    sight: sight.mode,
+  });
+  if (recalled.already) {
+    const messages = listMessages().messages;
+    await write({
+      type: "done",
+      ok: true,
+      message: recalled.message,
+      bot_message: null,
+      bot_error: null,
+      skipped: true,
+      skip_reason: "already_recalled",
+      messages,
+    });
+    return {
+      ok: true,
+      message: recalled.message,
+      already: true,
+      bot_message: null,
       messages,
     };
   }
 
-  let bot_message = null;
+  if (sight.mode === "miss") {
+    return exclusiveBotReply(() =>
+      runBotReplyStream(write, null, {
+        skipBotRecall: true,
+        observeText: "（对方撤回了一条消息）",
+        extraUser:
+          "（系统：对方刚撤回一条消息，你没看清内容。用一两句口语接住即可，不要猜测原文，不要装看见了。）",
+      })
+    );
+  }
+
+  if (sight.mode === "silent") {
+    const hint = sight.body
+      ? "你其实看见了，原文是：「" + sight.body.slice(0, 200) + "」。"
+      : "你其实看见了撤回前的内容。";
+    return exclusiveBotReply(() =>
+      runBotReplyStream(write, null, {
+        skipBotRecall: true,
+        observeText: "（对方撤回了一条消息）",
+        extraUser:
+          "（系统：" +
+          hint +
+          "心照不宣：不要引用原文、不要截图、不要点破；可淡淡回一句，或几乎不提撤回。）",
+      })
+    );
+  }
+
+  /* roast：有真截图就先发图，再调侃 */
+  const shot = resolveRecallScreenshotUrl(sight, opts);
+  if (shot) {
+    try {
+      const imgMsg = appendMessage("bot", shot, "image");
+      await write({ type: "bot_image", message: imgMsg });
+    } catch (_) {
+      /* 贴纸非 media URL 时 append 可能失败，改走纯文字调侃 */
+    }
+  }
+  const bodyHint = sight.body
+    ? "撤回原文：「" + sight.body.slice(0, 200) + "」。"
+    : "";
+  const shotHint = shot
+    ? "你已经把聊天截图（图片消息）发给对方看了，对方能在聊天里看到那张图。"
+    : "截图没发出去：禁止说「我截图了/存证了」，只口头提你看见的内容即可。";
+  return exclusiveBotReply(() =>
+    runBotReplyStream(write, null, {
+      skipBotRecall: true,
+      observeText: "（对方撤回了一条消息）",
+      extraUser:
+        "（系统：你看见了对方撤回的内容。" +
+        shotHint +
+        bodyHint +
+        "用一两句口语调侃/接话，不要长篇。）",
+    })
+  );
+}
+
+const TIME_GAP_MS = 60 * 60 * 1000; /* ≥1h 插时间标记（H1.16 / Wave14） */
+
+function formatHistoryGapHint(ms) {
+  const hours = Math.max(1, Math.round(Number(ms) / 3600000));
+  if (hours < 24) {
+    return "[系统提示: 以上对话发生在约 " + hours + " 小时前。以下是更近的对话。]";
+  }
+  const days = Math.max(1, Math.round(hours / 24));
+  return "[系统提示: 以上对话发生在约 " + days + " 天前。以下是更近的对话。]";
+}
+
+function pushHistoryGap(prior, lastTs, nextTs) {
+  const a = Number(lastTs) || 0;
+  const b = Number(nextTs) || 0;
+  if (!a || !b || b - a < TIME_GAP_MS) return;
+  prior.push({ role: "user", content: formatHistoryGapHint(b - a) });
+}
+
+/** H1.20：中文多 → 译英；拉丁多 → 译中 */
+function detectTranslateTarget(text) {
+  const raw = String(text || "");
+  const cjk = (raw.match(/[\u4e00-\u9fff]/g) || []).length;
+  const letters = (raw.match(/[A-Za-z]/g) || []).length;
+  return letters > cjk ? "zh" : "en";
+}
+
+/**
+ * 短讯翻译（不落库）。think:false。
+ * @returns {Promise<{ ok: true, text: string, translation: string, to: string }>}
+ */
+async function translateChatText(text) {
+  const raw = String(text || "").trim().slice(0, 800);
+  if (!raw) {
+    const err = new Error("没有可翻译的文字");
+    err.code = "bad_translate";
+    throw err;
+  }
+  if (
+    raw === "[图片]" ||
+    raw === "[贴纸]" ||
+    /^\[(红包|转账|位置|工具)/.test(raw)
+  ) {
+    const err = new Error("这类消息暂不翻译");
+    err.code = "bad_translate_kind";
+    throw err;
+  }
+  const to = detectTranslateTarget(raw);
+  const { chatCompletion, parseThinkBody } = require("../../共读app/gateway/llm");
+  const system =
+    "你是翻译助手。只输出译文本身，不要解释、不要加引号、不要标注语言名。";
+  const user =
+    to === "zh"
+      ? "把下面内容译成简体中文：\n" + raw
+      : "Translate the following into natural English:\n" + raw;
+  const out = await chatCompletion({
+    system,
+    user,
+    think: false,
+    replyKind: "chat",
+  });
+  const parsed = parseThinkBody(out.content, false);
+  const translation = String((parsed && parsed.body) || out.content || "")
+    .trim()
+    .replace(/^["「『]|["」』]$/g, "");
+  if (!translation) {
+    const err = new Error("翻译失败");
+    err.code = "translate_empty";
+    throw err;
+  }
+  return { ok: true, text: raw, translation, to };
+}
+
+/** 构建 LLM prior；excludeId 跳过该条（重生时跳过旧家机气泡） */
+function buildChatPrior(hist, youOrNull, excludeId) {
+  const { readSettings } = require("../../共读app/gateway/settings");
+  const settings = readSettings();
+  const toolsOn = settings.chat_tools_enabled !== false;
+  const skip = excludeId ? String(excludeId) : "";
+  const youId = youOrNull && youOrNull.id ? String(youOrNull.id) : "";
+  const prior = [];
+  const slice = Array.isArray(hist) ? hist.slice(-HISTORY) : [];
+  let lastTs = null;
+  for (const m of slice) {
+    if (!m) continue;
+    if (skip && m.id === skip) continue;
+    if (youId && m.id === youId) continue;
+    if (m.kind === "tool") continue;
+    const ts = Number(m.ts) || 0;
+    if (lastTs != null) pushHistoryGap(prior, lastTs, ts);
+    if (m.from === "bot") {
+      const am = { role: "assistant", content: llmContent(m) };
+      if (toolsOn) am.reasoning_content = m.think || "";
+      prior.push(am);
+    } else {
+      prior.push({ role: "user", content: llmContent(m) });
+    }
+    if (ts) lastTs = ts;
+  }
+  if (youOrNull) {
+    const yTs = Number(youOrNull.ts) || Date.now();
+    if (lastTs != null) pushHistoryGap(prior, lastTs, yTs);
+    prior.push({ role: "user", content: llmContent(youOrNull) });
+  }
+  return prior;
+}
+
+/**
+ * 流式跑一轮家机文字（含工具）。emit bot_delta / bot_think / bot_tool*。
+ * 不写库；调用方负责 append / appendVariant。
+ */
+async function streamBotReply(write, priorIn, opts) {
+  const { chatCompletionStream, parseThinkBody, resolveThinkText } = require(
+    "../../共读app/gateway/llm"
+  );
+  const { readSettings, resolveAppPersona } = require("../../共读app/gateway/settings");
+  const {
+    MAX_TOOL_ROUNDS,
+    runChatTool,
+    resolveToolLabel,
+    summarizeToolResult,
+    getToolBundle,
+  } = require("./chat-tools");
+  const settings = readSettings();
+  const resolved = resolveAppPersona("chat", settings);
+  const toolsOn = settings.chat_tools_enabled !== false;
+  const toolLabels = settings.chat_tool_labels || {};
+  let toolBundle = null;
+  if (toolsOn) toolBundle = await getToolBundle(settings);
+  const tools = toolBundle && toolBundle.defs.length ? toolBundle.defs : undefined;
+  let system = DAILY_SYSTEM_BASE;
+  system +=
+    "对方可能发贴纸、图片、红包、转账或位置；用一两句口语接住即可。" +
+    "不要每条都提表情包，也不要说「我发了贴纸/红包」（贴纸与红包由系统按气氛另发）。";
+  if (!toolsOn) {
+    system += "\n（工具已关闭：不要声称已查/已改日历，可请对方去日历 App 看。）";
+  } else if (toolBundle && toolBundle.mcpMap.size) {
+    system += "\n（另有外接 MCP 工具可用，名称见工具表。）";
+  } else if (toolBundle && toolBundle.mcpError) {
+    system += "\n（外接 MCP 暂不可用：" + String(toolBundle.mcpError).slice(0, 80) + "）";
+  }
+  const card = String((resolved && resolved.persona_card) || "").trim();
+  if (card) {
+    /* ponytail: 聊天人设硬截 4000，与跟批同级；以后要省额度再加开关 */
+    system += "\n人设（请遵守，勿整段复述）：\n" + card.slice(0, 4000);
+  }
+  const nameBot = String(settings.name_bot || "").trim();
+  if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+  const moodPrompt = opts && opts.moodPrompt ? String(opts.moodPrompt).trim() : "";
+  if (moodPrompt) system += "\n" + moodPrompt;
+  system += "\n" + buildTodayPrompt();
+  system +=
+    "\n对话历史里若出现「以上对话发生在约…前」的系统提示，那些是旧对话；" +
+    "不要让旧对话的情绪盖过你当前的心情状态。对方当前这条消息才是前景。";
+
+  const prior = Array.isArray(priorIn) ? priorIn.slice() : [];
+  try {
+    const { appendWorldbookForChat } = require("../../共读app/gateway/world");
+    system = appendWorldbookForChat(system, prior, settings);
+  } catch (_) {
+    /* 世界书模块异常时不挡接话 */
+  }
+  let deltaChain = Promise.resolve();
+  let used = 0;
+  let text = "";
+  let streamed = "";
+  let thinkParts = [];
+  let thinkSecTotal = 0;
+  const toolMetas = [];
+
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const t0 = Date.now();
+    const roundStream = { buf: "" };
+    const raw = await chatCompletionStream({
+      system,
+      messages: prior,
+      think: true,
+      replyKind: "chat",
+      tools,
+      onDelta: (piece) => {
+        if (!piece) return;
+        roundStream.buf += piece;
+        streamed += piece;
+        deltaChain = deltaChain.then(() => write({ type: "bot_delta", text: piece }));
+      },
+    });
+    used += (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0);
+    await deltaChain;
+    deltaChain = Promise.resolve();
+
+    const thinkText = resolveThinkText(parseThinkBody(raw.content, false), raw, true);
+    if (thinkText) thinkParts.push(thinkText);
+    const sec = Math.max(0.1, (Date.now() - t0) / 1000);
+    thinkSecTotal += sec;
+    await write({
+      type: "bot_think",
+      seconds: Math.round(sec * 10) / 10,
+      text: thinkText || "",
+    });
+
+    const calls = Array.isArray(raw.tool_calls) ? raw.tool_calls : [];
+    if (!calls.length) {
+      const parsed = parseThinkBody(raw.content, false);
+      text = String(parsed.body || raw.content || roundStream.buf || "").trim();
+      break;
+    }
+
+    const amsg = {
+      role: "assistant",
+      content: raw.content || "",
+      reasoning_content: raw.reasoning || "",
+      tool_calls: calls,
+    };
+    prior.push(amsg);
+    for (const tc of calls) {
+      const name = (tc.function && tc.function.name) || "";
+      const label = resolveToolLabel(name, toolLabels);
+      await write({ type: "bot_tool", name, label });
+      const ran = await runChatTool(name, tc.function && tc.function.arguments, {
+        mcpMap: toolBundle && toolBundle.mcpMap,
+        settings,
+      });
+      const summary = summarizeToolResult(ran.name, ran.result, !!ran.ok);
+      const meta = { name: ran.name, label, summary, ok: !!ran.ok };
+      toolMetas.push(meta);
+      await write({
+        type: "bot_tool_done",
+        name: ran.name,
+        label,
+        ok: !!ran.ok,
+        summary,
+      });
+      prior.push({
+        role: "tool",
+        tool_call_id: tc.id,
+        content: ran.result,
+      });
+    }
+  }
+
+  if (!text) text = String(streamed || "").trim();
+  if (!text && thinkParts.length) text = "嗯。";
+  if (!text) {
+    const err = new Error("家机没说出话来");
+    err.code = "llm_empty";
+    throw err;
+  }
+  const thinkJoined = thinkParts.filter(Boolean).join("\n---\n").slice(0, 12000);
+  const thinkExtra = {};
+  if (thinkJoined) thinkExtra.think = thinkJoined;
+  else if (thinkSecTotal > 0) {
+    thinkExtra.think = "（本轮已深度思考，模型未返回思考正文）";
+  }
+  if (thinkSecTotal > 0) {
+    thinkExtra.think_sec = Math.round(thinkSecTotal * 10) / 10;
+  }
+  if (toolMetas.length) thinkExtra.tools = toolMetas;
+  return { text, thinkExtra, used };
+}
+
+/**
+ * 同气泡重生：SSE bot_start → … → bot_done（同一 id）→ done；失败不删旧版。
+ */
+async function regenerateMessageStream(id, emit) {
+  const write = async (obj) => {
+    if (typeof emit !== "function") return;
+    await Promise.resolve(emit(obj));
+  };
+  const { messages, idx, msg } = assertRegenTarget(id);
+
+  const state = ensureBudget();
+  if (budgetExhausted(state)) {
+    const bot_error = {
+      code: "budget_exhausted",
+      message: "额度已用尽 · 旧版仍在",
+    };
+    await write({ type: "bot_error", ...bot_error });
+    await write({
+      type: "done",
+      ok: true,
+      message: msg,
+      bot_message: msg,
+      bot_error,
+      messages: listMessages().messages,
+    });
+    return { ok: true, message: msg, bot_error };
+  }
+
+  /* prior：该气泡之前的历史；若紧前是 you，当作本轮用户句 */
+  let you = null;
+  for (let i = idx - 1; i >= 0; i--) {
+    if (messages[i].from === "you") {
+      you = messages[i];
+      break;
+    }
+    if (messages[i].from === "bot" && messages[i].kind === "text") break;
+  }
+  const histBefore = messages.slice(0, idx);
+  const prior = buildChatPrior(histBefore, you, msg.id);
+
+  let bot_message = msg;
   let bot_error = null;
   try {
-    const { chatCompletionStream, parseThinkBody, resolveThinkText } = require(
-      "../../共读app/gateway/llm"
-    );
-    const { readSettings, effectiveDialogue } = require("../../共读app/gateway/settings");
-    const {
-      MAX_TOOL_ROUNDS,
-      runChatTool,
-      resolveToolLabel,
-      summarizeToolResult,
-      getToolBundle,
-    } = require("./chat-tools");
-    const settings = readSettings();
-    const dlg = effectiveDialogue(settings);
-    const toolsOn = settings.chat_tools_enabled !== false;
-    const toolLabels = settings.chat_tool_labels || {};
-    let toolBundle = null;
-    if (toolsOn) {
-      toolBundle = await getToolBundle(settings);
-    }
-    const tools = toolBundle && toolBundle.defs.length ? toolBundle.defs : undefined;
-    let system = DAILY_SYSTEM_BASE;
-    system +=
-      "对方可能发贴纸、图片、红包、转账或位置；用一两句口语接住即可。" +
-      "不要每条都提表情包，也不要说「我发了贴纸/红包」（贴纸与红包由系统按气氛另发）。";
-    if (!toolsOn) {
-      system += "\n（工具已关闭：不要声称已查/已改日历，可请对方去日历 App 看。）";
-    } else if (toolBundle && toolBundle.mcpMap.size) {
-      system += "\n（另有外接 MCP 工具可用，名称见工具表。）";
-    } else if (toolBundle && toolBundle.mcpError) {
-      system += "\n（外接 MCP 暂不可用：" + String(toolBundle.mcpError).slice(0, 80) + "）";
-    }
-    const persona = String((dlg && dlg.persona) || "").trim();
-    if (persona) system += "\n人设（请遵守语气与关系）：" + persona;
-    const nameBot = String((dlg && dlg.name_bot) || "").trim();
-    if (nameBot) system += "\n你的显示名：" + nameBot + "。";
-
-    const hist = listMessages().messages;
-    const prior = [];
-    for (const m of hist.slice(-HISTORY)) {
-      if (m.id === you.id) continue;
-      if (m.kind === "tool") continue;
-      if (m.from === "bot") {
-        const am = { role: "assistant", content: llmContent(m) };
-        /* DS+tools：历史轮必须带 reasoning_content（可空串） */
-        if (toolsOn) am.reasoning_content = m.think || "";
-        prior.push(am);
-      } else {
-        prior.push({ role: "user", content: llmContent(m) });
-      }
-    }
-    prior.push({ role: "user", content: llmContent(you) });
-
-    await write({ type: "bot_start" });
-    let deltaChain = Promise.resolve();
-    let used = 0;
-    let text = "";
-    let streamed = "";
-    let thinkParts = [];
-    let thinkSecTotal = 0;
-    const toolMetas = [];
-
-    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const t0 = Date.now();
-      const roundStream = { buf: "" };
-      const raw = await chatCompletionStream({
-        system,
-        messages: prior,
-        think: true,
-        replyKind: "chat",
-        tools,
-        onDelta: (piece) => {
-          if (!piece) return;
-          roundStream.buf += piece;
-          streamed += piece;
-          deltaChain = deltaChain.then(() => write({ type: "bot_delta", text: piece }));
-        },
-      });
-      used += (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0);
-      await deltaChain;
-      deltaChain = Promise.resolve();
-
-      const thinkText = resolveThinkText(
-        parseThinkBody(raw.content, false),
-        raw,
-        true
-      );
-      if (thinkText) thinkParts.push(thinkText);
-      const sec = Math.max(0.1, (Date.now() - t0) / 1000);
-      thinkSecTotal += sec;
-      await write({
-        type: "bot_think",
-        seconds: Math.round(sec * 10) / 10,
-        text: thinkText || "",
-      });
-
-      const calls = Array.isArray(raw.tool_calls) ? raw.tool_calls : [];
-      if (!calls.length) {
-        const parsed = parseThinkBody(raw.content, false);
-        text = String(parsed.body || raw.content || roundStream.buf || "").trim();
-        break;
-      }
-
-      /* DS 要求：带 tools 时 assistant 必须带回 reasoning_content */
-      const amsg = {
-        role: "assistant",
-        content: raw.content || "",
-        reasoning_content: raw.reasoning || "",
-        tool_calls: calls,
-      };
-      prior.push(amsg);
-      for (const tc of calls) {
-        const name = (tc.function && tc.function.name) || "";
-        const label = resolveToolLabel(name, toolLabels);
-        await write({ type: "bot_tool", name, label });
-        const ran = await runChatTool(name, tc.function && tc.function.arguments, {
-          mcpMap: toolBundle && toolBundle.mcpMap,
-          settings,
-        });
-        const summary = summarizeToolResult(ran.name, ran.result, !!ran.ok);
-        const meta = {
-          name: ran.name,
-          label,
-          summary,
-          ok: !!ran.ok,
-        };
-        toolMetas.push(meta);
-        await write({
-          type: "bot_tool_done",
-          name: ran.name,
-          label,
-          ok: !!ran.ok,
-          summary,
-        });
-        prior.push({
-          role: "tool",
-          tool_call_id: tc.id,
-          content: ran.result,
-        });
-      }
-    }
-
-    if (!text) text = String(streamed || "").trim();
-    if (!text && thinkParts.length) text = "嗯。";
-    if (!text) {
-      const err = new Error("家机没说出话来");
-      err.code = "llm_empty";
-      throw err;
-    }
-    const thinkJoined = thinkParts.filter(Boolean).join("\n---\n").slice(0, 12000);
-    const thinkExtra = {};
-    if (thinkJoined) thinkExtra.think = thinkJoined;
-    else if (thinkSecTotal > 0) {
-      /* DS 偶发空 reasoning：仍挂可点兔子，避免「没有深度思考」 */
-      thinkExtra.think = "（本轮已深度思考，模型未返回思考正文）";
-    }
-    if (thinkSecTotal > 0) {
-      thinkExtra.think_sec = Math.round(thinkSecTotal * 10) / 10;
-    }
-    if (toolMetas.length) thinkExtra.tools = toolMetas;
-    bot_message = appendMessage("bot", text, "text", thinkExtra);
-    // ponytail: 流式偶发空 usage；粗估一条短讯 ≈400 token，升级=强制 stream_options
-    if (used <= 0) used = 400;
-    addTokensUsed(used);
-    await write({ type: "bot_done", message: bot_message });
-    const bot_money = maybeBotMoney(you, text);
-    if (bot_money) {
-      /* 待你点击领取，不自动回执 */
-      await write({ type: "bot_money", message: bot_money });
-    }
-    const bot_sticker = maybeBotSticker(you, text);
-    if (bot_sticker) await write({ type: "bot_sticker", message: bot_sticker });
+    await write({ type: "bot_start", regen: true, id: msg.id });
+    const { text, thinkExtra, used } = await streamBotReply(write, prior);
+    bot_message = appendVariantToMessage(msg.id, {
+      body: text,
+      ts: Date.now(),
+      think: thinkExtra.think,
+      think_sec: thinkExtra.think_sec,
+      tools: thinkExtra.tools,
+    });
+    addTokensUsed(used > 0 ? used : 400);
+    await write({ type: "bot_done", message: bot_message, regen: true });
   } catch (e) {
     bot_error = {
       code: e.code || "llm_failed",
@@ -1079,22 +2617,16 @@ async function createMessageWithReplyStream(patch, emit) {
     await write({ type: "bot_error", ...bot_error });
   }
 
-  const messages = listMessages().messages;
+  const all = listMessages().messages;
   await write({
     type: "done",
     ok: true,
-    message: you,
+    message: bot_message,
     bot_message,
     bot_error,
-    messages,
+    messages: all,
   });
-  return {
-    ok: true,
-    message: you,
-    bot_message,
-    bot_error,
-    messages,
-  };
+  return { ok: true, message: bot_message, bot_error, messages: all };
 }
 
 async function createMessageWithReply(patch) {
@@ -1152,8 +2684,42 @@ if (require.main === module) {
   console.assert(fakeImg.url && resolveChatMediaPath(fakeImg.id));
   const imgMsg = createMessage({ kind: "image", body: fakeImg.url });
   console.assert(imgMsg.message.kind === "image");
+  const fakeVoice = saveChatMedia(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), "audio/webm");
+  console.assert(fakeVoice.url && resolveChatMediaPath(fakeVoice.id));
+  const voiceMsg = createMessage({
+    kind: "voice",
+    body: fakeVoice.url,
+    durationMs: 3200,
+  });
+  console.assert(voiceMsg.message.kind === "voice");
+  console.assert(voiceMsg.message.payload.durationMs === 3200);
+  console.assert(llmContent(voiceMsg.message) === "[语音 3″]");
+  const asr = toggleVoiceTranscript(voiceMsg.message.id);
+  console.assert(asr.payload.transcriptStub === true);
+  console.assert(llmContent(asr) === "[语音 3″]");
+  console.assert(
+    searchMessages({ q: "示意转写" }).messages.some((m) => m.id === asr.id)
+  );
+  const folded = toggleVoiceTranscript(asr.id);
+  console.assert(folded.payload.transcriptHidden === true);
+  console.assert(folded.payload.transcript);
+  console.assert(wantsBotVoice({ from: "you", kind: "text", body: "发一条语音" }));
+  const stubVoice = appendStubBotVoice(2);
+  console.assert(stubVoice.kind === "voice" && stubVoice.payload.voiceStub === true);
   const loc = createMessage({ kind: "location", name: "楼下咖啡馆", detail: "靠窗" });
   console.assert(loc.message.kind === "location" && loc.message.payload.name === "楼下咖啡馆");
+  const fileMsg = createMessage({ kind: "file", name: "笔记.txt" });
+  console.assert(fileMsg.message.kind === "file" && fileMsg.message.payload.fileStub === true);
+  console.assert(llmContent(fileMsg.message) === "[文件]");
+  console.assert(
+    searchMessages({ q: "笔记.txt" }).messages.some((m) => m.id === fileMsg.message.id)
+  );
+  const musicMsg = createMessage({ kind: "music", name: "夜曲.mp3" });
+  console.assert(musicMsg.message.kind === "music" && musicMsg.message.payload.musicStub === true);
+  console.assert(llmContent(musicMsg.message) === "[音乐]");
+  console.assert(
+    searchMessages({ q: "夜曲.mp3" }).messages.some((m) => m.id === musicMsg.message.id)
+  );
   const { readWallet, writeWallet, walletTransfer } = require("../../资产app/gateway/wallet");
   const snap = readWallet();
   const rp = createMessage({ kind: "redpacket", amount: 2.5, note: "自检红包" });
@@ -1190,7 +2756,11 @@ if (require.main === module) {
         m.id !== withTools.id &&
         m.id !== stick.message.id &&
         m.id !== imgMsg.message.id &&
+        m.id !== voiceMsg.message.id &&
+        m.id !== stubVoice.id &&
         m.id !== loc.message.id &&
+        m.id !== fileMsg.message.id &&
+        m.id !== musicMsg.message.id &&
         m.id !== rp.message.id &&
         !pokeSet.has(m.id)
     ),
@@ -1203,22 +2773,35 @@ if (require.main === module) {
   try {
     fs.unlinkSync(path.join(MEDIA_DIR, fakeImg.id));
   } catch (_) {}
+  try {
+    fs.unlinkSync(path.join(MEDIA_DIR, fakeVoice.id));
+  } catch (_) {}
+  try {
+    const stubId = String(stubVoice.body || "").split("/").pop();
+    if (stubId) fs.unlinkSync(path.join(MEDIA_DIR, stubId));
+  } catch (_) {}
   console.assert(isAckText("嗯") && isAckText("好的") && isAckText("哈哈"));
   console.assert(!isAckText("今天吃什么"));
   console.assert(looksLikeNeedsReply("今晚去超市吗？"));
   console.assert(!looksLikeNeedsReply("我先去倒杯水。"));
-  console.assert(
-    shouldSkipBotReply(
-      { id: "y1", kind: "text", body: "嗯" },
-      [{ id: "b1", from: "bot", kind: "text", body: "我先去倒杯水。" }, { id: "y1", from: "you", kind: "text", body: "嗯" }]
-    )
-  );
-  console.assert(
-    !shouldSkipBotReply(
-      { id: "y2", kind: "text", body: "好" },
-      [{ id: "b2", from: "bot", kind: "text", body: "要不要一起看电影？" }, { id: "y2", from: "you", kind: "text", body: "好" }]
-    )
-  );
+  const { observeUserText, decideReplyGate, writeMood } = require("./mood");
+  writeMood({ pa: 0.4, na: 0.1, updatedAt: Date.now() });
+  const fought = observeUserText("你滚 分手吧 我受够了");
+  console.assert(fought.mood.na > 0.35);
+  const gate = decideReplyGate();
+  console.assert(gate.delayMs >= 400);
+  const fwdMsg = createMessage({
+    body: "fwd-selfcheck-" + Date.now(),
+    forward: { who: "家机" },
+  });
+  console.assert(fwdMsg.message.forward && fwdMsg.message.forward.who === "家机");
+  writeAll({
+    messages: readAll().messages.filter((m) => m.id !== fwdMsg.message.id),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
   const snap2 = readWallet();
   const rp2 = createMessage({ kind: "transfer", amount: 1.01, note: "回执自检" });
   console.assert(rp2.message.payload.status === "sent");
@@ -1239,6 +2822,198 @@ if (require.main === module) {
   const hit = searchMessages({ q: "自检", kind: "all" });
   console.assert(hit.ok && Array.isArray(hit.messages));
   console.assert(searchMessages({ kind: "redpacket" }).ok);
+
+  const vYou = createMessage({ body: "variant-selfcheck-you-" + Date.now() });
+  const vBot = appendMessage("bot", "版本甲");
+  const v1 = appendVariantToMessage(vBot.id, { body: "版本乙", think: "想了想乙" });
+  console.assert(v1.variants && v1.variants.length === 2);
+  console.assert(v1.variantIndex === 1 && v1.body === "版本乙" && v1.think === "想了想乙");
+  const v0 = setMessageVariant(vBot.id, 0);
+  console.assert(v0.variantIndex === 0 && v0.body === "版本甲");
+  try {
+    assertRegenTarget(vBot.id);
+  } catch (e) {
+    throw e;
+  }
+  const older = appendMessage("bot", "更新的一条");
+  try {
+    assertRegenTarget(vBot.id);
+    throw new Error("expected not_latest");
+  } catch (e) {
+    if (e.code !== "not_latest") throw e;
+  }
+  const delOlder = deleteMessage(older.id);
+  console.assert(delOlder.ok && delOlder.id === older.id && delOlder.deleted === true);
+  console.assert(!listMessages().messages.some((m) => m.id === older.id));
+  const vDel = deleteMessage(vBot.id, 0);
+  console.assert(vDel.ok && vDel.deleted === false && vDel.message);
+  console.assert(vDel.message.body === "版本乙");
+  console.assert(!vDel.message.variants);
+  console.assert(listMessages().messages.some((m) => m.id === vBot.id));
+  const recalled = recallMessage(vYou.message.id);
+  console.assert(recalled.ok && recalled.message && recalled.message.recalled);
+  console.assert(recalled.message.recall_body);
+  console.assert(/撤回了：/.test(llmContent(recalled.message)));
+  console.assert(messageSearchText(recalled.message) === "");
+  console.assert(recalled.snap && recalled.snap.body);
+  console.assert(decideRecallSight({ body: "秘密", kind: "text" }, "miss").mode === "miss");
+  console.assert(decideRecallSight({ body: "秘密", kind: "text" }, "silent").mode === "silent");
+  console.assert(decideRecallSight({ body: "秘密", kind: "text" }, "roast").mode === "roast");
+  console.assert(decideBotRecallYouSight({ body: "溜了" }, "miss").mode === "miss");
+  console.assert(decideBotRecallYouSight({ body: "溜了" }, "peek").mode === "peek");
+  console.assert(decideBotRecallYouSight({ body: "溜了" }, "peek").body === "溜了");
+  const botLine = appendMessage("bot", "bot-recall-selfcheck-" + Date.now(), "text");
+  const botRec = recallMessage(botLine.id, { from: "bot", forceSight: "peek" });
+  console.assert(botRec.message.recalled && botRec.message.recall_sight === "peek");
+  console.assert(botRec.message.peek_body && botRec.message.peek_body.includes("bot-recall"));
+  console.assert(botRec.message.recall_body && botRec.message.recall_body.includes("bot-recall"));
+  console.assert(/对方撤回了：/.test(llmContent(botRec.message)));
+  console.assert(messageSearchText(botRec.message) === "");
+  writeAll({
+    messages: readAll().messages.filter((m) => m.id !== botLine.id),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+  console.assert(detectTranslateTarget("hello world") === "zh");
+  console.assert(detectTranslateTarget("你好呀") === "en");
+  console.assert(detectTranslateTarget("好的好的") === "en");
+  try {
+    recallMessage(vBot.id);
+    throw new Error("expected not_yours");
+  } catch (e) {
+    if (e.code !== "not_yours") throw e;
+  }
+  writeAll({
+    messages: readAll().messages.filter(
+      (m) => m.id !== vYou.message.id && m.id !== vBot.id
+    ),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+
+  const t0 = Date.now() - 5 * 3600000;
+  const t1 = Date.now();
+  const gapPrior = buildChatPrior(
+    [
+      { id: "g1", from: "you", kind: "text", body: "早", ts: t0 },
+      { id: "g2", from: "bot", kind: "text", body: "早呀", ts: t0 + 1000 },
+      { id: "g3", from: "you", kind: "text", body: "现在", ts: t1 },
+    ],
+    null
+  );
+  console.assert(
+    gapPrior.some((p) => /系统提示/.test(p.content || "") && /小时前/.test(p.content || ""))
+  );
+  console.assert(!formatHistoryGapHint(30 * 60 * 1000).includes("天前"));
+  console.assert(/天前/.test(formatHistoryGapHint(50 * 3600000)));
+  console.assert(messageWaitsForCoalesce({ kind: "text" }));
+  console.assert(messageWaitsForCoalesce({ kind: "image" }));
+  console.assert(!messageWaitsForCoalesce({ kind: "redpacket" }));
+  console.assert(!messageWaitsForCoalesce({ kind: "transfer" }));
+  const todayP = buildTodayPrompt();
+  console.assert(/^\[TODAY\]/.test(todayP) && /今天是/.test(todayP));
+  for (let i = 0; i < 30; i++) {
+    const w = coalesceWaitMs({ slow_reply: true });
+    console.assert(w >= 1000 && w <= 12000);
+  }
+  const fast = coalesceWaitMs({ slow_reply: false });
+  console.assert(fast >= 200 && fast <= 700);
+
+  const callOut = startChatCall("voice", "out");
+  console.assert(callOut.message.kind === "call" && callOut.message.from === "you");
+  console.assert(callOut.message.body === "等待对方接听");
+  console.assert(callOut.message.payload.dir === "out");
+  console.assert(formatCallClock(342) === "05:42");
+  const callOutEnd = setChatCallPhase(callOut.message.id, {
+    phase: "ended",
+    durationSec: 342,
+  });
+  console.assert(callOutEnd.body === "通话时长 05:42");
+  const callIn = startChatCall("voice", "in");
+  console.assert(callIn.message.from === "bot");
+  console.assert(callIn.message.body === "家机邀请你语音通话");
+  const callAns = setChatCallPhase(callIn.message.id, { phase: "answered" });
+  console.assert(callAns.body === "已接听");
+  const callAct = setChatCallPhase(callIn.message.id, {
+    phase: "active",
+    durationSec: 3,
+  });
+  console.assert(callAct.body === "通话中 00:03");
+  const callVid = startChatCall("video", "in");
+  console.assert(callVid.message.body === "家机邀请你视频通话");
+  writeAll({
+    messages: readAll().messages.filter(
+      (m) =>
+        m.id !== callOut.message.id &&
+        m.id !== callIn.message.id &&
+        m.id !== callVid.message.id
+    ),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+
+  const reactYou = createMessage({ body: "react-selfcheck-" + Date.now() });
+  const reacted = toggleMessageReaction(reactYou.message.id, "❤️", "you");
+  console.assert(
+    reacted.reactions &&
+      reacted.reactions.some((r) => r.from === "you" && r.emoji === "❤️")
+  );
+  console.assert(/表情:爱心/.test(llmContent(reacted)));
+  const reactedFree = toggleMessageReaction(reactYou.message.id, "🥹x", "you");
+  console.assert(
+    reactedFree.reactions &&
+      reactedFree.reactions.some((r) => r.from === "you" && r.emoji === "🥹")
+  );
+  const unreacted = toggleMessageReaction(reactYou.message.id, "🥹", "you");
+  console.assert(!unreacted.reactions || !unreacted.reactions.length);
+  writeAll({
+    messages: readAll().messages.filter((m) => m.id !== reactYou.message.id),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+
+  const patYou = createPat({ target: "bot", suffix: "的脑袋", forceBotPat: true });
+  console.assert(patYou.message.kind === "pat");
+  console.assert(patYou.message.body === "你拍了拍家机的脑袋");
+  console.assert(/拍了拍/.test(llmContent(patYou.message)));
+  console.assert(
+    !searchMessages({ q: "拍了拍" }).messages.some(
+      (m) => m.id === patYou.message.id
+    )
+  );
+  console.assert(patYou.bot_pat && patYou.bot_pat.from === "bot");
+  const patSelf = createPat({ target: "you", suffix: "", forceBotPat: true });
+  console.assert(patSelf.message.body === "你拍了拍自己");
+  console.assert(!patSelf.bot_pat);
+  writeAll({
+    messages: readAll().messages.filter(
+      (m) =>
+        m.id !== patYou.message.id &&
+        (!patYou.bot_pat || m.id !== patYou.bot_pat.id) &&
+        m.id !== patSelf.message.id
+    ),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+
+  const beforeClear = readAll();
+  createMessage({ body: "clear-selfcheck-" + Date.now() });
+  const cleared = clearChatMessages();
+  console.assert(cleared.ok && cleared.removed >= 1);
+  console.assert(listMessages().messages.length === 0);
+  console.assert(getChatPrefs().slow_reply === (beforeClear.slow_reply !== false));
+  writeAll(beforeClear);
+
   console.log("daily-chat ok");
 }
 
@@ -1246,8 +3021,20 @@ module.exports = {
   listMessages,
   searchMessages,
   createMessage,
+  createPat,
   createMessageWithReply,
   createMessageWithReplyStream,
+  recallMessageWithReplyStream,
+  regenerateMessageStream,
+  setMessageVariant,
+  deleteMessage,
+  recallMessage,
+  toggleMessageReaction,
+  toggleVoiceTranscript,
+  appendStubBotVoice,
+  maybeBotVoice,
+  appendVariantToMessage,
+  assertRegenTarget,
   appendMessage,
   appendToolMessage,
   unreadCount,
@@ -1255,15 +3042,32 @@ module.exports = {
   pokeDaily,
   getChatPrefs,
   setChatPrefs,
+  clearChatMessages,
   readAll,
   writeAll,
   listStickers,
   listAllStickers,
   saveChatMedia,
   resolveChatMediaPath,
-  shouldSkipBotReply,
   markMoneyReceived,
   claimIncomingMoney,
+  buildChatPrior,
+  buildTodayPrompt,
+  coalesceWaitMs,
+  hasNewerYouMessage,
+  decideRecallSight,
+  decideBotRecallYouSight,
+  maybeBotSelfRecall,
+  maybeBotReact,
+  detectTranslateTarget,
+  translateChatText,
+  REACTION_EMOJI,
+  startChatCall,
+  setChatCallPhase,
+  finishChatCallStream,
+  formatCallClock,
+  callDisplayBody,
   MEDIA_MAX_BYTES,
   CHAT_PATH,
+  VARIANT_MAX,
 };

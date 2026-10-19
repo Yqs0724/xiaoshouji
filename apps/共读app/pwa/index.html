@@ -75,7 +75,9 @@
     body.phone-status-app .cr-top,
     body.phone-status-app .wx-bar,
     body.phone-status-app .cw-bar,
-    body.phone-status-app .bud-bar {
+    body.phone-status-app .bud-bar,
+    body.phone-status-app .chat-top,
+    body.phone-status-app .wx-hist-top {
       margin-top: var(--phone-status-pad);
     }
     #phoneStatus .phone-status-time {
@@ -309,6 +311,50 @@
     .settings .field textarea:focus {
       border-color: rgba(139, 90, 60, .45);
     }
+    /* 人设长文：固定高度，框内翻滚 */
+    .settings .field textarea#inPersonaCard,
+    .settings .field textarea#inCoreadPersonaCard {
+      height: 12em;
+      min-height: 12em;
+      max-height: 12em;
+      resize: none;
+      overflow-y: auto;
+    }
+    .settings .world-book-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 4px 0 8px;
+      max-height: 12em;
+      overflow-y: auto;
+    }
+    .settings .world-book-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border: 1px solid rgba(200, 180, 160, .45);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, .7);
+      font-size: 12px;
+    }
+    .settings .world-book-row .nm {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .settings .world-book-row .meta {
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .settings .world-book-row button {
+      flex-shrink: 0;
+      font-size: 11px;
+      padding: 2px 8px;
+    }
     .settings .save-row {
       display: flex;
       align-items: center;
@@ -397,7 +443,7 @@
       align-items: center;
       gap: 8px;
     }
-    .mcp-tool-item .label-row input {
+    .mcp-tool-item .label-row input[type="text"] {
       flex: 1;
       min-width: 0;
       margin: 0;
@@ -407,6 +453,23 @@
       border-radius: 8px;
       background: #fff;
       color: var(--ink, #3d3229);
+    }
+    .mcp-tool-item .en-toggle {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--muted);
+      user-select: none;
+      white-space: nowrap;
+    }
+    .mcp-tool-item .en-toggle input {
+      width: auto;
+      margin: 0;
+    }
+    .mcp-tool-item.is-off {
+      opacity: 0.55;
     }
     .mcp-tool-item code {
       font-family: ui-monospace, Consolas, monospace;
@@ -2752,7 +2815,7 @@
   </style>
   <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css" />
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx28" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx120" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
   <link rel="stylesheet" href="/app-ui/资产app/pwa/wallet.css" />
@@ -2976,7 +3039,7 @@
             <span class="chev">›</span>
           </div>
           <div class="row tap" id="rowPersona" role="button" tabindex="0">
-            <div>人设<small>跟批短设 · 完整卡</small></div>
+            <div>人设<small>一份底稿 · 各 App 沿用</small></div>
             <span class="val" id="personaVal">未设置</span>
             <span class="chev">›</span>
           </div>
@@ -3038,9 +3101,9 @@
             </div>
           </div>
           <div class="conn-panel" id="mcpToolsPanel">
-            <div class="hint">开着时，日常聊天可调下列工具。显示名可改；模型仍用英文 name。勾选外接 MCP 并填 URL 后会并入远端工具（Streamable HTTP，可带 Bearer）。</div>
+            <div class="hint">开着时，日常聊天可调下列工具。显示名可改；模型仍用英文 name。MCP 工具可逐项关掉（不进模型工具表）；内置工具只受总开关控制。</div>
             <div class="field">
-              <label>当前工具<small>内置 + MCP · 显示名可改</small></label>
+              <label>当前工具<small>内置 + MCP · 显示名 / 显隐</small></label>
               <div class="mcp-tool-list" id="mcpToolList">加载中…</div>
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
@@ -3049,7 +3112,7 @@
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inMcpEnabled" type="checkbox" style="width:auto" />
-              <label for="inMcpEnabled" style="font-weight:500;margin:0">启用外接 MCP<small>协议客户端，后续接线</small></label>
+              <label for="inMcpEnabled" style="font-weight:500;margin:0">启用外接 MCP<small>Streamable HTTP</small></label>
             </div>
             <div class="field">
               <label for="inMcpUrl">MCP Base URL<small>如 http://127.0.0.1:8788/mcp</small></label>
@@ -3061,6 +3124,7 @@
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveMcpTools">保存</button>
+              <button type="button" class="ghost" id="btnMcpPing">测连通</button>
               <button type="button" class="ghost" id="btnCloseMcpTools">返回</button>
               <span class="save-msg" id="mcpToolsMsg"></span>
             </div>
@@ -3073,10 +3137,10 @@
             </div>
           </div>
           <div class="conn-panel" id="personaPanel">
-            <div class="hint">小屋默认：短人设进跟批；本场可在「对话」里临时改称呼与头像</div>
+            <div class="hint">一份人设底稿（可贴长文）。开「沿用」的 App 用这份；关掉则用该 App 自有。跟批是否注入在共读「对话」里勾。</div>
             <div class="field">
-              <label for="inPersona">跟批人设（短）<small>称呼与语气，一两句到一小段</small></label>
-              <textarea id="inPersona" rows="3" placeholder="例如：叫我阿州，语气轻松，少说教"></textarea>
+              <label for="inPersonaCard">小屋人设<small>世界书式长文；旧短人设会自动并入此处显示</small></label>
+              <textarea id="inPersonaCard" rows="10" placeholder="粘贴人设 / 角色卡 / 世界书式设定…"></textarea>
             </div>
             <div class="field">
               <label for="inNameUser">你的称呼<small>默认「你」</small></label>
@@ -3094,16 +3158,47 @@
               <label>对方头像</label>
               <div class="avatar-pick" id="pickAvatarBot" data-for="bot"></div>
             </div>
-            <div class="field">
-              <label for="inPersonaCard">完整角色卡（长）<small>可贴全文；默认不进跟批，省额度</small></label>
-              <textarea id="inPersonaCard" rows="8" placeholder="粘贴完整人设 / 角色卡…"></textarea>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPersonaUseChat" type="checkbox" style="width:auto" checked />
+              <label for="inPersonaUseChat" style="font-weight:500;margin:0">聊天沿用小屋<small>关→在聊天·资料里改自有</small></label>
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
-              <input id="inPersonaCardFollow" type="checkbox" style="width:auto" />
-              <label for="inPersonaCardFollow" style="font-weight:500;margin:0">跟批时也带上长卡<small>会截断到约 4000 字，费额度</small></label>
+              <input id="inPersonaUseCoread" type="checkbox" style="width:auto" checked />
+              <label for="inPersonaUseCoread" style="font-weight:500;margin:0">共读沿用小屋<small>关→用下方自有</small></label>
             </div>
+            <div id="coreadPersonaLocal" hidden>
+              <div class="field">
+                <label for="inCoreadPersonaCard">共读人设</label>
+                <textarea id="inCoreadPersonaCard" rows="8" placeholder="共读自有人设…"></textarea>
+              </div>
+            </div>
+            <div class="field" style="border-top:1px solid rgba(200,180,160,.45);margin-top:8px;padding-top:12px">
+              <label style="font-weight:700">世界书</label>
+              <div class="hint">酒馆式：勾启用的书（最多 3 本），近文命中关键词才注入；常驻条目不扫也进。总开关默认关。</div>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inWorldbookEnabled" type="checkbox" style="width:auto" />
+              <label for="inWorldbookEnabled" style="font-weight:500;margin:0">启用世界书<small>关=完全不注入</small></label>
+            </div>
+            <div class="field">
+              <label for="inWorldbookScanDepth">扫描深度<small>近几条消息；0=只常驻</small></label>
+              <input id="inWorldbookScanDepth" type="number" min="0" max="50" step="1" value="4" />
+            </div>
+            <div class="field">
+              <label for="inWorldbookBudget">字预算<small>整条放不下就跳过</small></label>
+              <input id="inWorldbookBudget" type="number" min="200" max="50000" step="100" value="6000" />
+            </div>
+            <div class="field">
+              <label for="inWorldbookFile">导入<small>酒馆 JSON / .txt / .md / .docx</small></label>
+              <input
+                id="inWorldbookFile"
+                type="file"
+                accept=".json,.txt,.md,.docx,text/plain,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              />
+            </div>
+            <div class="world-book-list" id="worldBookList"></div>
             <div class="save-row">
-              <button type="button" class="primary" id="btnSavePersona">保存</button>
+              <button type="button" class="primary" id="btnSavePersona">保存人设</button>
               <button type="button" class="ghost" id="btnClosePersona">返回</button>
               <span class="save-msg" id="personaMsg"></span>
             </div>
@@ -3486,13 +3581,17 @@
     <div class="sheet-panel">
       <div class="sum-head">对话设置</div>
       <div class="sheet-card">
-      <div class="dlg-hint">跟批方式管本场跟批；下面人设/称呼空着=用小屋默认。</div>
+      <div class="dlg-hint">跟批方式管本场；称呼空着=小屋默认。人设底稿在设置里；这里可写本场补充。</div>
       <div class="dlg-jump-block">
         <button type="button" class="dlg-jump" id="dlgMode">跟批方式<span class="val" id="dlgModeVal"></span></button>
       </div>
       <div class="field">
-        <label for="dlgPersona">本场短人设<small>空=小屋默认</small></label>
-        <textarea id="dlgPersona" rows="3" placeholder="例：叫我阿州；轻松少说教；可写想短一点或多问一句…"></textarea>
+        <label for="dlgPersona">本场补充<small>空=不加；不替代底稿人设</small></label>
+        <textarea id="dlgPersona" rows="3" placeholder="例：这场想短一点；多问一句；今晚别提那件事…"></textarea>
+      </div>
+      <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+        <input id="dlgPersonaCardFollow" type="checkbox" style="width:auto" />
+        <label for="dlgPersonaCardFollow" style="font-weight:500;margin:0">跟批带人设<small>截断约 4000 字，费额度</small></label>
       </div>
       <div class="field">
         <label for="dlgNameUser">你的称呼</label>
@@ -3647,7 +3746,7 @@
 
   <script src="/assets-colisten/colisten.js"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx28"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx121"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
@@ -3692,9 +3791,11 @@
     let sessionPassOrdinal = 1;
     /** 时间线范围：session=本场 · pass=本刷 · all=全部刷次 */
     let timelineScope = "session";
-    /** 小屋默认称呼/头像（来自设定） */
+    /** 共读有效人设 + 称呼/头像（来自设定；人设已按沿用开关解析） */
     let hutDialogue = {
       persona: "",
+      persona_card: "",
+      persona_card_in_follow: false,
       name_user: "你",
       name_bot: "熊",
       avatar_user: "/assets/cafe/avatar-you.png",
@@ -3822,16 +3923,43 @@
           has("avatar_bot") ? d.avatar_bot : hutDialogue.avatar_bot,
           hutDialogue.avatar_bot
         ),
+        persona_card: hutDialogue.persona_card || "",
+        persona_card_in_follow: !!hutDialogue.persona_card_in_follow,
       };
     }
 
+    /** 前端解析共读有效人设（对齐网关 resolveAppPersona('coread')） */
+    function resolveCoreadPersonaLocal(s) {
+      const use = s && s.persona_use_hut ? s.persona_use_hut : {};
+      if (use.coread === false) {
+        const local = (s.persona_apps && s.persona_apps.coread) || {};
+        const card =
+          String(local.persona_card || "").trim() ||
+          String(local.persona || "").trim();
+        return { persona: "", persona_card: card };
+      }
+      const card =
+        String((s && s.persona_card) || "").trim() ||
+        String((s && s.persona) || "").trim();
+      return { persona: "", persona_card: card };
+    }
+
     function applyHutDialogue(s) {
+      const resolved = resolveCoreadPersonaLocal(s || {});
       hutDialogue = {
-        persona: s.persona || "",
-        name_user: (s.name_user || "你").trim() || "你",
-        name_bot: (s.name_bot || "熊").trim() || "熊",
-        avatar_user: normalizeAvatarLocal(s.avatar_user, "/assets/cafe/avatar-you.png"),
-        avatar_bot: normalizeAvatarLocal(s.avatar_bot, "/assets/cafe/avatar-bot.png"),
+        persona: "",
+        persona_card: resolved.persona_card,
+        persona_card_in_follow: !!(s && s.persona_card_in_follow),
+        name_user: ((s && s.name_user) || "你").trim() || "你",
+        name_bot: ((s && s.name_bot) || "熊").trim() || "熊",
+        avatar_user: normalizeAvatarLocal(
+          s && s.avatar_user,
+          "/assets/cafe/avatar-you.png"
+        ),
+        avatar_bot: normalizeAvatarLocal(
+          s && s.avatar_bot,
+          "/assets/cafe/avatar-bot.png"
+        ),
       };
     }
 
@@ -4020,9 +4148,25 @@
         document.getElementById("inLlmKey").value = s.llm_key || "";
         document.getElementById("inLlmModel").value = s.llm_model || "";
         if (window.ColistenApp) ColistenApp.loadAuth();
-        document.getElementById("inPersona").value = s.persona || "";
-        document.getElementById("inPersonaCard").value = s.persona_card || "";
-        document.getElementById("inPersonaCardFollow").checked = !!s.persona_card_in_follow;
+        const hutCard = String(s.persona_card || "").trim() || String(s.persona || "").trim();
+        document.getElementById("inPersonaCard").value = hutCard;
+        const useHut = s.persona_use_hut || {};
+        document.getElementById("inPersonaUseChat").checked = useHut.chat !== false;
+        document.getElementById("inPersonaUseCoread").checked = useHut.coread !== false;
+        const apps = s.persona_apps || {};
+        const coreadLocal = (apps.coread && typeof apps.coread === "object") ? apps.coread : {};
+        const coreadCard =
+          String(coreadLocal.persona_card || "").trim() ||
+          String(coreadLocal.persona || "").trim();
+        document.getElementById("inCoreadPersonaCard").value = coreadCard;
+        syncCoreadPersonaLocalUi();
+        const wbEn = document.getElementById("inWorldbookEnabled");
+        if (wbEn) wbEn.checked = !!s.worldbook_enabled;
+        const wbDepth = document.getElementById("inWorldbookScanDepth");
+        if (wbDepth) wbDepth.value = String(s.worldbook_scan_depth != null ? s.worldbook_scan_depth : 4);
+        const wbBud = document.getElementById("inWorldbookBudget");
+        if (wbBud) wbBud.value = String(s.worldbook_budget_chars != null ? s.worldbook_budget_chars : 6000);
+        loadWorldBooks();
         document.getElementById("inNameUser").value = s.name_user || "你";
         document.getElementById("inNameBot").value = s.name_bot || "熊";
         document.getElementById("inLoreSummary").value = s.lore_summary || "";
@@ -4031,7 +4175,7 @@
         hutAvatarBot = normalizeAvatarLocal(s.avatar_bot, "/assets/cafe/avatar-bot.png");
         paintHutAvatarPicks();
         applyHutDialogue(s);
-        updatePersonaVal(s.persona || "", s.persona_card || "");
+        updatePersonaVal(hutCard);
         const mode = s.default_follow_mode || "immersive";
         const bud = Number(s.default_budget_rmb) || 0;
         document.getElementById("selDefaultMode").value = mode;
@@ -4148,8 +4292,27 @@
         for (const t of tools) {
           const row = document.createElement("div");
           row.className = "mcp-tool-item";
+          const isMcp = t.source === "mcp";
+          const enabled = t.enabled !== false;
+          if (isMcp && !enabled) row.classList.add("is-off");
           const lab = document.createElement("div");
           lab.className = "label-row";
+          if (isMcp) {
+            const toggle = document.createElement("label");
+            toggle.className = "en-toggle";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = enabled;
+            cb.dataset.mcpRemote = t.remote || t.name || "";
+            cb.setAttribute("aria-label", (t.label || t.name || "工具") + " 对模型可见");
+            cb.addEventListener("change", () => {
+              row.classList.toggle("is-off", !cb.checked);
+            });
+            const tip = document.createElement("span");
+            tip.textContent = "开";
+            toggle.append(cb, tip);
+            lab.append(toggle);
+          }
           const input = document.createElement("input");
           input.type = "text";
           input.maxLength = 32;
@@ -4165,7 +4328,7 @@
           const src = document.createElement("div");
           src.className = "src";
           src.textContent =
-            t.source === "mcp"
+            isMcp
               ? "MCP" + (t.remote && t.remote !== t.name ? " · " + t.remote : "")
               : "内置";
           row.append(src);
@@ -4192,6 +4355,16 @@
       return out;
     }
 
+    /** 未勾选的 MCP 远端名 → mcp_tool_hidden */
+    function collectMcpToolHidden() {
+      const hidden = [];
+      document.querySelectorAll("#mcpToolList input[data-mcp-remote]").forEach((el) => {
+        const remote = String(el.dataset.mcpRemote || "").trim();
+        if (remote && !el.checked) hidden.push(remote);
+      });
+      return hidden;
+    }
+
     function expandMcpTools() {
       document.getElementById("mcpToolsMsg").textContent = "";
       document.getElementById("mcpToolsMsg").className = "save-msg";
@@ -4216,6 +4389,7 @@
       const patch = {
         chat_tools_enabled: chatOn,
         chat_tool_labels: collectChatToolLabels(),
+        mcp_tool_hidden: collectMcpToolHidden(),
         mcp_enabled: mcpOn,
         mcp_url: document.getElementById("inMcpUrl").value,
         mcp_token: document.getElementById("inMcpToken").value,
@@ -4235,6 +4409,37 @@
       } catch (_) {
         msg.textContent = "保存失败";
         msg.className = "save-msg bad";
+      }
+    }
+
+    async function pingMcpTools() {
+      const msg = document.getElementById("mcpToolsMsg");
+      const btn = document.getElementById("btnMcpPing");
+      if (btn) btn.disabled = true;
+      msg.textContent = "测连通中…";
+      msg.className = "save-msg";
+      try {
+        const res = await fetch("/api/v1/chat/mcp/ping", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            url: document.getElementById("inMcpUrl").value,
+            token: document.getElementById("inMcpToken").value,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.message || data.error || "连通失败");
+        }
+        const n = Number(data.count) || 0;
+        msg.textContent =
+          n > 0 ? "已连通 · " + n + " 个工具" : "已连通 · 暂无工具";
+        msg.className = "save-msg ok";
+      } catch (e) {
+        msg.textContent = (e && e.message) || "连通失败";
+        msg.className = "save-msg bad";
+      } finally {
+        if (btn) btn.disabled = false;
       }
     }
 
@@ -4562,23 +4767,14 @@
         modeLabel + " · " + budLabel;
     }
 
-    function updatePersonaVal(shortText, cardText) {
-      const short = String(shortText || "").trim();
+    function updatePersonaVal(cardText) {
       const card = String(cardText || "").trim();
       const el = document.getElementById("personaVal");
-      if (!short && !card) {
+      if (!card) {
         el.textContent = "未设置";
         return;
       }
-      if (short && card) {
-        el.textContent = (short.length > 6 ? short.slice(0, 6) + "…" : short) + " · 有长卡";
-        return;
-      }
-      if (card) {
-        el.textContent = "仅长卡";
-        return;
-      }
-      el.textContent = short.length > 10 ? short.slice(0, 10) + "…" : short;
+      el.textContent = card.length > 10 ? card.slice(0, 10) + "…" : card;
     }
 
     async function loadModels() {
@@ -4661,7 +4857,7 @@
     function expandPersona() {
       document.getElementById("personaMsg").textContent = "";
       document.getElementById("personaMsg").className = "save-msg";
-      openSettingsSub("persona", "人设", "personaPanel", () => loadSettings());
+      openSettingsSub("persona", "小屋人设", "personaPanel", () => loadSettings());
     }
 
     function expandLore() {
@@ -4880,28 +5076,181 @@
       }
     }
 
+    function syncCoreadPersonaLocalUi() {
+      const on = document.getElementById("inPersonaUseCoread").checked;
+      const box = document.getElementById("coreadPersonaLocal");
+      if (box) box.hidden = on;
+    }
+
+    async function loadWorldBooks() {
+      const list = document.getElementById("worldBookList");
+      if (!list) return;
+      try {
+        const res = await fetch("/api/v1/world", { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "http");
+        paintWorldBooks(data.books || [], data.active_cap || 3);
+      } catch (_) {
+        list.innerHTML = '<div class="hint">世界书列表加载失败</div>';
+      }
+    }
+
+    function paintWorldBooks(books, activeCap) {
+      const list = document.getElementById("worldBookList");
+      if (!list) return;
+      if (!books.length) {
+        list.innerHTML = '<div class="hint">还没有世界书。导入酒馆 JSON / txt / docx。</div>';
+        return;
+      }
+      const cap = activeCap || 3;
+      list.innerHTML = books
+        .map((b) => {
+          const id = String(b.id || "").replace(/"/g, "");
+          const nm = escapeHtml(b.name || "未命名");
+          const fn = String(b.filename || "").trim();
+          const n = Number(b.entry_count) || 0;
+          const on = !!b.active;
+          const meta = n + " 条" + (fn ? " · " + escapeHtml(fn) : "");
+          return (
+            '<div class="world-book-row" data-world-id="' +
+            id +
+            '">' +
+            '<input type="checkbox" class="world-book-active" ' +
+            (on ? "checked " : "") +
+            'title="参与扫描（最多 ' +
+            cap +
+            ' 本）" />' +
+            '<span class="nm" title="' +
+            nm +
+            '">' +
+            nm +
+            "</span>" +
+            '<span class="meta">' +
+            meta +
+            "</span>" +
+            '<button type="button" class="ghost world-book-del">删</button>' +
+            "</div>"
+          );
+        })
+        .join("");
+    }
+
+    async function onWorldBookFileChange(ev) {
+      const input = ev && ev.target;
+      const file = input && input.files && input.files[0];
+      if (!file) return;
+      const msg = document.getElementById("personaMsg");
+      try {
+        const name = String(file.name || "");
+        let text;
+        if (/\.docx$/i.test(name)) {
+          text = await readDocxViaGateway(file);
+        } else {
+          text = await file.text();
+        }
+        const res = await fetch("/api/v1/world/books", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, name, filename: name }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "导入失败");
+        paintWorldBooks(data.books || [], data.active_cap || 3);
+        if (msg) {
+          msg.textContent = "已导入「" + (data.book && data.book.name ? data.book.name : name) + "」";
+          msg.className = "save-msg ok";
+        }
+      } catch (err) {
+        if (msg) {
+          msg.textContent = (err && err.message) || "导入失败";
+          msg.className = "save-msg bad";
+        }
+      } finally {
+        if (input) input.value = "";
+      }
+    }
+
+    async function onWorldBookListClick(ev) {
+      const row = ev.target.closest(".world-book-row");
+      if (!row) return;
+      const id = row.getAttribute("data-world-id");
+      if (!id) return;
+      const msg = document.getElementById("personaMsg");
+      if (ev.target.classList.contains("world-book-del")) {
+        try {
+          const res = await fetch("/api/v1/world/books/" + encodeURIComponent(id), {
+            method: "DELETE",
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "删除失败");
+          paintWorldBooks(data.books || [], data.active_cap || 3);
+        } catch (err) {
+          if (msg) {
+            msg.textContent = (err && err.message) || "删除失败";
+            msg.className = "save-msg bad";
+          }
+        }
+        return;
+      }
+      if (ev.target.classList.contains("world-book-active")) {
+        const active = !!ev.target.checked;
+        try {
+          const res = await fetch("/api/v1/world/books/" + encodeURIComponent(id), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ active }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            ev.target.checked = !active;
+            throw new Error(data.message || "更新失败");
+          }
+          paintWorldBooks(data.books || [], data.active_cap || 3);
+        } catch (err) {
+          if (msg) {
+            msg.textContent = (err && err.message) || "更新失败";
+            msg.className = "save-msg bad";
+          }
+        }
+      }
+    }
+
     async function savePersona() {
       const msg = document.getElementById("personaMsg");
       msg.textContent = "保存中…";
       msg.className = "save-msg";
-      const persona = document.getElementById("inPersona").value;
       const persona_card = document.getElementById("inPersonaCard").value;
-      const persona_card_in_follow = document.getElementById("inPersonaCardFollow").checked;
       const name_user = document.getElementById("inNameUser").value;
       const name_bot = document.getElementById("inNameBot").value;
+      const persona_use_hut = {
+        chat: document.getElementById("inPersonaUseChat").checked,
+        coread: document.getElementById("inPersonaUseCoread").checked,
+      };
+      const body = {
+        persona: "",
+        persona_card,
+        persona_use_hut,
+        worldbook_enabled: document.getElementById("inWorldbookEnabled").checked,
+        worldbook_scan_depth: Number(document.getElementById("inWorldbookScanDepth").value) || 0,
+        worldbook_budget_chars: Number(document.getElementById("inWorldbookBudget").value) || 6000,
+        name_user,
+        name_bot,
+        avatar_user: hutAvatarUser,
+        avatar_bot: hutAvatarBot,
+      };
+      if (!persona_use_hut.coread) {
+        body.persona_apps = {
+          coread: {
+            persona: "",
+            persona_card: document.getElementById("inCoreadPersonaCard").value,
+          },
+        };
+      }
       try {
         const res = await fetch("/api/v1/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            persona,
-            persona_card,
-            persona_card_in_follow,
-            name_user,
-            name_bot,
-            avatar_user: hutAvatarUser,
-            avatar_bot: hutAvatarBot,
-          }),
+          body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error("http " + res.status);
         const s = await res.json();
@@ -4911,7 +5260,9 @@
         hutAvatarUser = normalizeAvatarLocal(s.avatar_user, hutAvatarUser);
         hutAvatarBot = normalizeAvatarLocal(s.avatar_bot, hutAvatarBot);
         paintHutAvatarPicks();
-        updatePersonaVal(s.persona || persona, s.persona_card || persona_card);
+        const saved =
+          String(s.persona_card || "").trim() || String(persona_card || "").trim();
+        updatePersonaVal(saved);
         msg.textContent = "已保存";
         msg.className = "save-msg ok";
         collapsePersona();
@@ -6127,7 +6478,10 @@
       }
       if (name === "budget" && window.BudgetApp) BudgetApp.onShow();
       if (name === "wallet" && window.WalletApp) WalletApp.onShow();
-      if (name === "chat" && window.ChatApp) ChatApp.refreshThread();
+      if (name === "chat" && window.ChatApp) {
+        if (typeof ChatApp.onShow === "function") ChatApp.onShow();
+        else ChatApp.refreshThread();
+      }
       if (name === "cowatch" && window.CowatchApp) CowatchApp.refreshList();
       if (name === "colisten" && window.ColistenApp) ColistenApp.enterPlayer();
       if (name !== "cowatch-play" && window.CowatchApp) CowatchApp.leavePlay();
@@ -6240,8 +6594,28 @@
       }
     }
 
+    function chatListMuted() {
+      try {
+        const raw = JSON.parse(localStorage.getItem("ariadne.chat.mute") || "[]");
+        return Array.isArray(raw) && raw.indexOf("daily") >= 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    function chatMarkedUnread() {
+      try {
+        const raw = JSON.parse(localStorage.getItem("ariadne.chat.unread.mark") || "[]");
+        return Array.isArray(raw) && raw.indexOf("daily") >= 0;
+      } catch (_) {
+        return false;
+      }
+    }
+
     function paintChatUnread(count) {
-      const n = Math.max(0, Math.floor(Number(count) || 0));
+      let n = Math.max(0, Math.floor(Number(count) || 0));
+      if (chatMarkedUnread()) n = Math.max(n, 1);
+      if (chatListMuted()) n = 0;
       document.querySelectorAll('.home-app[data-go="chat"] .ico-wrap').forEach((wrap) => {
         let dot = wrap.querySelector(".ico-badge");
         if (!dot) {
@@ -6276,7 +6650,10 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
-        if (data.poked) paintChatUnread(data.count);
+        if (data.poked) {
+          paintChatUnread(data.count);
+          if (window.ChatApp && typeof ChatApp.noteBotPing === "function") ChatApp.noteBotPing();
+        }
         else refreshChatUnread();
       } catch (_) {
         /* 无主动短讯时忽略 */
@@ -8344,6 +8721,8 @@
       document.getElementById("dlgNameUser").value = has("name_user") ? d.name_user || "" : "";
       document.getElementById("dlgNameBot").value = has("name_bot") ? d.name_bot || "" : "";
       const eff = effectiveDialogueLocal();
+      const followCb = document.getElementById("dlgPersonaCardFollow");
+      if (followCb) followCb.checked = !!eff.persona_card_in_follow;
       dlgAvatarUser = has("avatar_user")
         ? normalizeAvatarLocal(d.avatar_user, eff.avatar_user)
         : eff.avatar_user;
@@ -8386,6 +8765,16 @@
         };
       }
       try {
+        const followCb = document.getElementById("dlgPersonaCardFollow");
+        if (followCb && !clearAll) {
+          const followOn = followCb.checked;
+          await fetch("/api/v1/settings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ persona_card_in_follow: followOn }),
+          });
+          hutDialogue.persona_card_in_follow = followOn;
+        }
         const res = await fetch("/api/v1/sessions/open", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -8744,9 +9133,15 @@
     document.getElementById("rowConn").addEventListener("click", toggleConn);
     document.getElementById("rowMcpTools").addEventListener("click", toggleMcpTools);
     document.getElementById("btnSaveMcpTools").addEventListener("click", saveMcpTools);
+    document.getElementById("btnMcpPing").addEventListener("click", pingMcpTools);
     document.getElementById("btnCloseMcpTools").addEventListener("click", collapseMcpTools);
     document.getElementById("btnSavePersona").addEventListener("click", savePersona);
     document.getElementById("btnClosePersona").addEventListener("click", collapsePersona);
+    document.getElementById("inPersonaUseCoread").addEventListener("change", syncCoreadPersonaLocalUi);
+    const worldFile = document.getElementById("inWorldbookFile");
+    if (worldFile) worldFile.addEventListener("change", onWorldBookFileChange);
+    const worldList = document.getElementById("worldBookList");
+    if (worldList) worldList.addEventListener("click", onWorldBookListClick);
     document.getElementById("rowPersona").addEventListener("click", togglePersona);
     document.getElementById("personaPanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("rowPhoneLore").addEventListener("click", togglePhoneLore);
