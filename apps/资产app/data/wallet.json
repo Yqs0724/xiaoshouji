@@ -1,6 +1,6 @@
 {
-  "you_balance": 477.99,
-  "bot_balance": 1522.01,
+  "you_balance": 85.85,
+  "bot_balance": 1914.15,
   "ledger": [
     {
       "id": "2c2ee370-42a4-4dcf-a606-eadc9579959b",
@@ -31,6 +31,66 @@
       "amount": 1,
       "note": "转账",
       "msg_id": "0cd8d4f0-21db-4712-9327-a2dbdf9367f3"
+    },
+    {
+      "id": "32c0ea52-0649-4921-9ded-b36d944ceffd",
+      "ts": 1792086758780,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 52,
+      "note": "恭喜发财",
+      "msg_id": "32268619-0752-4d18-8caf-71afc4ed5c50"
+    },
+    {
+      "id": "aba3d654-fe7e-4d24-b3da-972c04ce2c05",
+      "ts": 1792130560857,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 6.66,
+      "note": "一点心意",
+      "msg_id": "2912ca28-e19f-4bed-909d-0503ed907450"
+    },
+    {
+      "id": "76f49494-4ba7-4417-a6f5-761c4f892583",
+      "ts": 1792133682894,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 12,
+      "note": "午饭钱",
+      "msg_id": "1f768f3f-bad4-4971-8e25-fd61693dbe17"
+    },
+    {
+      "id": "ef08838a-f71e-4efc-9908-e03b4f7e240e",
+      "ts": 1792139044062,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 52,
+      "note": "恭喜发财",
+      "msg_id": "4575264e-d62b-498a-b1aa-cbcd983ad867"
+    },
+    {
+      "id": "c67f2bc5-2a0c-4a40-ac6b-801736c7a9f3",
+      "ts": 1792139078694,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 5.2,
+      "note": "开心收着",
+      "msg_id": "42581da1-63b6-42c8-9b80-ebf274b87393"
+    },
+    {
+      "id": "b8927400-01cb-4745-b623-5cdc25989b70",
+      "ts": 1792139170719,
+      "kind": "transfer",
+      "from": "you",
+      "to": "bot",
+      "amount": 520,
+      "note": "转账",
+      "msg_id": "3a3facab-944d-475a-a2eb-844987282324"
     }
   ]
 }
