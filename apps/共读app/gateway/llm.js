@@ -7,6 +7,97 @@ function chatCompletionsUrl(base) {
   return b + "/chat/completions";
 }
 
+function audioTranscriptionsUrl(base) {
+  const b = String(base || "").trim().replace(/\/$/, "");
+  if (!b) return "";
+  if (b.endsWith("/audio/transcriptions")) return b;
+  if (b.endsWith("/chat/completions")) {
+    return b.slice(0, -"/chat/completions".length) + "/audio/transcriptions";
+  }
+  return b + "/audio/transcriptions";
+}
+
+/**
+ * OpenAI 兼容语音转写：POST {base}/audio/transcriptions
+ * 复用设定里的 llm_base / llm_key；model 默认 whisper-1，可被 asr_model 覆盖。
+ */
+async function transcribeAudio({ buf, contentType, filename }) {
+  const s = readSettings();
+  const base = String(s.llm_base || "").trim();
+  const key = String(s.llm_key || "").trim();
+  const model =
+    String(s.asr_model || "").trim() ||
+    process.env.ASR_MODEL ||
+    "whisper-1";
+  if (!base || !key) {
+    const err = new Error("请先在设定里填写 LLM Base / Key");
+    err.code = "llm_not_configured";
+    throw err;
+  }
+  const url = audioTranscriptionsUrl(base);
+  if (!url) {
+    const err = new Error("LLM Base 无效");
+    err.code = "llm_not_configured";
+    throw err;
+  }
+  const body = Buffer.isBuffer(buf) ? buf : Buffer.from(buf || []);
+  if (!body.length) {
+    const err = new Error("音频为空");
+    err.code = "bad_audio";
+    throw err;
+  }
+  const form = new FormData();
+  const name = String(filename || "audio.webm").replace(/[/\\]/g, "") || "audio.webm";
+  const type = String(contentType || "application/octet-stream");
+  form.append("file", new Blob([body], { type }), name);
+  form.append("model", model);
+  form.append("language", "zh");
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key },
+      body: form,
+    });
+  } catch (e) {
+    const err = new Error((e && e.message) || "转写请求失败");
+    err.code = "asr_failed";
+    throw err;
+  }
+  const raw = await res.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    data = {};
+  }
+  if (!res.ok) {
+    const eObj = data && data.error;
+    const detail =
+      (typeof eObj === "string" && eObj) ||
+      (eObj && eObj.message) ||
+      (data && data.message) ||
+      "";
+    const err = new Error(
+      String(detail || "").trim() ||
+        "转写失败 HTTP " + res.status + "（请确认 Base 支持 /audio/transcriptions）"
+    );
+    err.code = res.status === 404 ? "asr_unsupported" : "asr_failed";
+    throw err;
+  }
+  const text = String(
+    (data && data.text) ||
+      (typeof data === "string" ? data : "") ||
+      ""
+  ).trim();
+  if (!text) {
+    const err = new Error("未识别出文字");
+    err.code = "asr_empty";
+    throw err;
+  }
+  return { text: text.slice(0, 2000), model };
+}
+
 function buildChatMessages({ system, user, messages, think, replyKind }) {
   const sys = withReplySuffix(system, { think, replyKind });
   if (Array.isArray(messages) && messages.length) {
@@ -271,6 +362,8 @@ module.exports = {
   parseThinkBody,
   resolveThinkText,
   chatCompletionsUrl,
+  audioTranscriptionsUrl,
+  transcribeAudio,
   withReplySuffix,
   replyKindLabel,
 };

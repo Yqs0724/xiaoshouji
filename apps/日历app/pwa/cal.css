@@ -663,6 +663,11 @@
   color: var(--cal-choco);
   box-shadow: inset 1px 1px 0 rgba(75, 44, 32, .08);
 }
+.cal-add input[type="time"] {
+  flex: 0 0 auto;
+  width: 7.2em;
+  padding: 10px 8px;
+}
 .cal-add input:focus {
   outline: none;
   box-shadow: 0 0 0 2px rgba(158, 207, 186, .65);

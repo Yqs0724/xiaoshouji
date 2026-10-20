@@ -13,6 +13,8 @@ const DEFAULTS = {
   llm_base: "",
   llm_key: "",
   llm_model: "",
+  /** 语音转写模型；空则 whisper-1 */
+  asr_model: "",
   /**
    * 小屋底稿人设 = persona_card（一份长文）。
    * persona 仅兼容旧数据：卡空时回落；新写入请只写 persona_card。
@@ -343,6 +345,7 @@ function readSettings() {
     llm_base: (env.llm_base || file.llm_base || "").trim(),
     llm_key: (env.llm_key || file.llm_key || "").trim(),
     llm_model: (env.llm_model || file.llm_model || "").trim(),
+    asr_model: String(file.asr_model || process.env.ASR_MODEL || "").trim(),
     persona: (env.persona || file.persona || "").trim(),
     persona_card: (env.persona_card || file.persona_card || "").trim(),
     persona_card_in_follow: !!file.persona_card_in_follow,
@@ -407,6 +410,7 @@ function patchSettings(patch) {
     "llm_base",
     "llm_key",
     "llm_model",
+    "asr_model",
     "persona",
     "persona_card",
     "lore_summary",

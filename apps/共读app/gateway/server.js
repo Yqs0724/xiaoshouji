@@ -46,9 +46,11 @@ const {
   setMessageVariant,
   deleteMessage,
   recallMessage,
+  recallExpired,
   toggleMessageReaction,
   toggleVoiceTranscript,
   createPat,
+  createMessage,
   assertRegenTarget,
   unreadCount,
   markAllRead,
@@ -91,6 +93,7 @@ const { listCards, createCard, deleteCard } = require("./lore");
 const {
   listTitles,
   getTitle,
+  getWatchPresence,
   addTitleFromStream,
   deleteTitle,
   streamMedia,
@@ -1589,6 +1592,10 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
+      if (body.noreply) {
+        sendJson(res, 200, createMessage(body));
+        return;
+      }
       res.writeHead(200, {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-store, no-cache",
@@ -1765,6 +1772,16 @@ const server = http.createServer(async (req, res) => {
     const recallMatch = urlPath.match(/^\/api\/v1\/chat\/messages\/([^/]+)\/recall$/);
     if (req.method === "POST" && recallMatch) {
       try {
+        const recallId = decodeURIComponent(recallMatch[1]);
+        const hit = (listMessages().messages || []).find((m) => m && m.id === recallId);
+        if (hit && !hit.recalled && recallExpired(hit.ts)) {
+          sendJson(res, 400, {
+            ok: false,
+            error: "recall_expired",
+            message: "超过2分钟不能撤回",
+          });
+          return;
+        }
         const raw = await readBody(req);
         let recallOpts = {};
         try {
@@ -1792,14 +1809,13 @@ const server = http.createServer(async (req, res) => {
             const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
             if (!ok) res.once("drain", resolve);
           });
-        await recallMessageWithReplyStream(
-          decodeURIComponent(recallMatch[1]),
-          emit,
-          recallOpts
-        );
+        await recallMessageWithReplyStream(recallId, emit, recallOpts);
         res.end();
       } catch (e) {
-        const bad = e.code === "not_found" || e.code === "not_yours";
+        const bad =
+          e.code === "not_found" ||
+          e.code === "not_yours" ||
+          e.code === "recall_expired";
         if (!res.headersSent) {
           sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
             ok: false,
@@ -1864,11 +1880,23 @@ const server = http.createServer(async (req, res) => {
     );
     if (req.method === "POST" && asrMatch) {
       try {
-        const msg = toggleVoiceTranscript(decodeURIComponent(asrMatch[1]));
+        const msg = await toggleVoiceTranscript(
+          decodeURIComponent(asrMatch[1])
+        );
         sendJson(res, 200, { ok: true, message: msg });
       } catch (e) {
         const status =
-          e.code === "not_found" ? 404 : e.code === "bad_voice" ? 400 : 500;
+          e.code === "not_found"
+            ? 404
+            : e.code === "bad_voice" ||
+                e.code === "llm_not_configured" ||
+                e.code === "bad_audio"
+              ? 400
+              : e.code === "asr_unsupported" ||
+                  e.code === "asr_failed" ||
+                  e.code === "asr_empty"
+                ? 502
+                : 500;
         sendJson(res, status, {
           ok: false,
           error: e.code || "chat_transcribe_failed",
@@ -1960,6 +1988,19 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "lore_delete_failed",
         message: e.message || "删除失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/watch/presence") {
+    try {
+      sendJson(res, 200, getWatchPresence());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "watch_failed",
+        message: e.message || "读取共看状态失败",
       });
     }
     return;

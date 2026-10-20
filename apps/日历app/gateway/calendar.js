@@ -39,6 +39,18 @@ function normalizeOwner(v) {
   return "you";
 }
 
+/** 可选钟点 HH:MM；空=全日 */
+function normalizeTime(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s);
+  if (!m) return "";
+  const h = Number(m[1]);
+  const mi = Number(m[2]);
+  if (h > 23 || mi > 59) return "";
+  return String(h).padStart(2, "0") + ":" + String(mi).padStart(2, "0");
+}
+
 function normalizeEvent(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = String(raw.id || "").trim();
@@ -50,11 +62,13 @@ function normalizeEvent(raw) {
   } catch {
     return null;
   }
+  const time = normalizeTime(raw.time);
   return {
     id,
     title: title.slice(0, 120),
     date,
-    allDay: raw.allDay !== false,
+    time,
+    allDay: !time,
     owner: normalizeOwner(raw.owner),
     created_at: Number(raw.created_at) || Date.now(),
     updated_at: Number(raw.updated_at) || Date.now(),
@@ -259,12 +273,13 @@ function createEvent(patch) {
     throw err;
   }
   const date = normalizeDate(patch && patch.date);
+  const time = normalizeTime(patch && patch.time);
   const now = Date.now();
   const ev = normalizeEvent({
     id: randomUUID(),
     title,
     date,
-    allDay: true,
+    time,
     owner: normalizeOwner(patch && patch.owner),
     created_at: now,
     updated_at: now,
@@ -295,6 +310,10 @@ function updateEvent(id, patch) {
       patch && Object.prototype.hasOwnProperty.call(patch, "date")
         ? normalizeDate(patch.date)
         : cur.date,
+    time:
+      patch && Object.prototype.hasOwnProperty.call(patch, "time")
+        ? normalizeTime(patch.time)
+        : cur.time || "",
     updated_at: Date.now(),
   };
   if (!next.title) {
@@ -566,6 +585,13 @@ if (require.main === module) {
     const created = createEvent({ title: stamp, date: "2026-10-02" });
     console.assert(created.event && created.event.title === stamp);
     console.assert(created.event.owner === "you");
+    const timed = createEvent({
+      title: "S8 timed " + stamp,
+      date: created.event.date,
+      time: "14:05",
+    });
+    console.assert(timed.event.time === "14:05" && timed.event.allDay === false);
+    deleteEvent(timed.event.id);
     const fromBot = createEvent({
       title: stamp + "-aji",
       date: "2026-10-02",

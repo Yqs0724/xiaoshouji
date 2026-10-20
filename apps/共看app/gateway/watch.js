@@ -137,6 +137,26 @@ function listTitles() {
   return { ok: true, titles };
 }
 
+/** 桌面胶囊 / 资料「正在做什么」：取最近更新的进行中场 */
+function getWatchPresence() {
+  const all = readAll();
+  const actives = all.passes.filter((p) => p.status === "active");
+  if (!actives.length) {
+    return { ok: true, active: false, label: "", titleId: "" };
+  }
+  actives.sort((a, b) => (Number(b.updated_at) || 0) - (Number(a.updated_at) || 0));
+  const pass = actives[0];
+  const title = all.titles.find((t) => t.id === pass.titleId);
+  const name = String((title && title.name) || "共看").trim() || "共看";
+  const short = name.length > 12 ? name.slice(0, 12) + "…" : name;
+  return {
+    ok: true,
+    active: true,
+    label: "共看中 · " + short,
+    titleId: pass.titleId,
+  };
+}
+
 function getTitle(id) {
   const tid = String(id || "").trim();
   if (!tid) return null;
@@ -660,6 +680,8 @@ if (require.main === module) {
     const a = listSpit(created.title.id);
     const b = listSpit(created.title.id);
     console.assert(a.pass.id === b.pass.id);
+    const pres = getWatchPresence();
+    console.assert(pres.active === true && pres.titleId === created.title.id);
     const spit = createSpit(created.title.id, { body: "吐槽" + Date.now() });
     console.assert(spit.message.from === "you");
     console.assert(listSpit(created.title.id).messages.some((m) => m.id === spit.message.id));
@@ -709,6 +731,7 @@ if (require.main === module) {
 
 module.exports = {
   listTitles,
+  getWatchPresence,
   getTitle,
   resolveMedia,
   streamMedia,

@@ -21,7 +21,11 @@
   let lastTimeBucket = -1;
   let stickerCache = null;
   let sending = false;
+  let regenBusy = false;
+  let recallBusy = false;
+  const RECALL_MAX_AGE_MS = 2 * 60 * 1000;
   let sheetMode = "";
+  let sheetYouBalance = null;
   let voiceMode = false;
   let longPressTimer = null;
   let callTimer = null;
@@ -32,16 +36,20 @@
   let momPosts = null;
   let composeDraft = { images: [], scope: "public" };
   let ctxPayload = null;
+  let reactMsgId = "";
   let multiMode = false;
   let multiIds = new Set();
   let pendingQuote = null;
   let callSession = null;
   let voiceRec = null;
   let voiceChunks = [];
+  let voiceHoldStarted = 0;
   let picUrls = [];
   let picIdx = 0;
   let draftTimer = null;
   let nearBottom = true;
+  let newMsgPending = 0;
+  let suppressNewCount = false;
 
   const LS = {
     draft: "ariadne.chat.draft.daily",
@@ -65,7 +73,6 @@
     { id: "redpacket", lab: "红包", tile: "红包", ok: true },
     { id: "transfer", lab: "转账", tile: "转账", ok: true },
     { id: "call", lab: "通话", tile: "通话", ok: true },
-    { id: "history", lab: "聊天记录", tile: "记录", ok: true },
     { id: "file", lab: "文件", tile: "文件", ok: true },
     { id: "music", lab: "音乐", tile: "音乐", ok: true },
   ];
@@ -220,12 +227,36 @@
     return "¥" + n.toFixed(2);
   }
 
+  function fileExtLabel(name) {
+    const m = String(name || "").match(/\.([^.]+)$/);
+    return m ? m[1].toUpperCase() : "";
+  }
+
+  function formatFileSize(bytes) {
+    const b = Math.max(0, Number(bytes) || 0);
+    if (!b) return "";
+    if (b < 1024) return b + " B";
+    if (b < 1024 * 1024) {
+      const kb = b / 1024;
+      return (kb >= 100 ? Math.round(kb) : kb.toFixed(kb >= 10 ? 0 : 1)) + " KB";
+    }
+    const mb = b / (1024 * 1024);
+    return mb.toFixed(mb >= 10 ? 0 : 1) + " MB";
+  }
+
+  function fileMetaLine(p, name) {
+    const size = formatFileSize(p && p.size);
+    const ext = String((p && p.ext) || fileExtLabel(name) || "").trim();
+    if (size && ext) return size + " · " + ext;
+    return size || ext || "";
+  }
+
   function moneyTagText(kind, msg) {
     const st = (msg && msg.payload && msg.payload.status) || "received";
     const received = st !== "sent";
     const fromYou = msg && msg.from === "you";
     if (kind === "redpacket") {
-      if (!received) return "微信红包";
+      if (!received) return "薄巧红包";
       return fromYou ? "已被领取" : "已领取";
     }
     if (!received) return "转账";
@@ -248,27 +279,42 @@
     delete peer.dataset.peerName;
   }
 
-  function appendMoneyTip(text, ts) {
+  function appendMoneyTip(text, ts, msgId) {
     const box = document.getElementById("chatThread");
-    if (!box || !text) return;
+    if (!box || !text) return null;
     const empty = box.querySelector(".wx-empty");
     if (empty) empty.remove();
     const tip = document.createElement("div");
     tip.className = "wx-sys-tip";
     tip.textContent = text;
     tip.dataset.ts = String(ts || Date.now());
+    if (msgId) tip.dataset.msgId = String(msgId);
     box.append(tip);
     box.scrollTop = box.scrollHeight;
+    return tip;
   }
 
+  function rowBubble(row) {
+    if (!row) return null;
+    return (
+      row.querySelector(":scope > .bubble") ||
+      row.querySelector(":scope > .wx-col > .wx-voice-line > .bubble") ||
+      row.querySelector(":scope > .wx-col > .bubble") ||
+      row.querySelector(".bubble")
+    );
+  }
   function patchMessageBubble(msg) {
     if (!msg || !msg.id) return;
     const box = document.getElementById("chatThread");
     if (!box) return;
     const row = box.querySelector('.wx-row[data-msg-id="' + msg.id + '"]');
     if (!row) return;
-    const bubble = row.querySelector(".bubble");
+    const bubble = rowBubble(row);
     if (bubble) fillBubble(bubble, msg);
+    paintVoiceAsr(row, msg);
+    paintQuoteRef(row, msg);
+    const col = row.querySelector(".wx-col");
+    if (col) syncVariantBar(col, msg);
   }
 
   function bubbleTextEl(bubble) {
@@ -283,10 +329,26 @@
     return t;
   }
 
+  function recallPeekText(msg) {
+    if (!msg || !msg.recalled) return "";
+    if (msg.recall_sight !== "peek") return "";
+    return String(msg.peek_body || "").trim();
+  }
+  (function checkRecallPeek() {
+    if (recallPeekText({ recalled: true, recall_sight: "miss", peek_body: "x" }) !== "")
+      throw new Error("miss");
+    if (recallPeekText({ recalled: true, recall_sight: "peek", peek_body: "  hi " }) !== "hi")
+      throw new Error("peek");
+    if (recallPeekText({ recalled: false, recall_sight: "peek", peek_body: "hi" }) !== "")
+      throw new Error("open");
+    if (recallPeekText({ recalled: true, recall_sight: "peek", peek_body: "  " }) !== "")
+      throw new Error("blank");
+  })();
   function fillBubble(bubble, msg) {
     const keepBunny = bubble.querySelector(".wx-bunny-deco");
     bubble.replaceChildren();
-    bubble.classList.remove("is-media", "is-card", "has-think");
+    bubble.classList.remove("is-media", "is-card", "is-voice", "has-think");
+    bubble.style.minWidth = "";
     const kind = (msg && msg.kind) || "text";
     const finish = () => {
       if (keepBunny) {
@@ -318,33 +380,79 @@
       bubble.classList.add("is-card");
       const p = msg.payload || {};
       const received = p.status !== "sent";
-      const claimable = msg.from === "bot" && !received;
+      const isReceipt = !!p.is_receipt;
+      const claimable = !isReceipt && msg.from === "bot" && !received;
+      const isRp = kind === "redpacket";
       const card = document.createElement("div");
       card.className =
-        "wx-money-card" +
+        "wx-money-card " +
+        (isRp ? "is-redpacket" : "is-transfer") +
+        (isReceipt ? " is-receipt" : "") +
         (received ? " is-received" : "") +
-        (claimable ? " is-claimable" : "");
-      const amt = document.createElement("div");
-      amt.className = "amt";
-      amt.textContent = moneyText(p.amount);
-      const note = document.createElement("div");
-      note.className = "note";
-      note.textContent = p.note || (kind === "redpacket" ? "恭喜发财" : "转账");
-      const tag = document.createElement("div");
-      tag.className = "tag";
-      tag.textContent = claimable
-        ? kind === "redpacket"
-          ? "点击领取"
-          : "点击收款"
-        : moneyTagText(kind, msg);
-      card.append(amt, note, tag);
-      if (claimable) {
+        (claimable || (isRp && !isReceipt) ? " is-claimable" : "");
+      if (isRp) {
+        const ico = document.createElement("div");
+        ico.className = "ico";
+        ico.setAttribute("aria-hidden", "true");
+        const mid = document.createElement("div");
+        mid.className = "mid";
+        const note = document.createElement("div");
+        note.className = "note";
+        note.textContent = p.note || "恭喜发财";
+        const tag = document.createElement("div");
+        tag.className = "tag";
+        tag.textContent = claimable
+          ? "薄巧红包"
+          : moneyTagText(kind, msg);
+        mid.append(note, tag);
+        card.append(ico, mid);
         card.setAttribute("role", "button");
         card.tabIndex = 0;
         card.addEventListener("click", (e) => {
           e.preventDefault();
-          claimMoneyCard(msg.id);
+          e.stopPropagation();
+          openRedpacketView(msg);
         });
+      } else {
+        /* 效果图：头行「转账给对方」+ 黄标「待确认」· 金额 · 脚注 · 右兔 */
+        const head = document.createElement("div");
+        head.className = "head";
+        const kindLab = document.createElement("div");
+        kindLab.className = "kind";
+        if (isReceipt) kindLab.textContent = "转账回执";
+        else if (msg.from === "you") kindLab.textContent = "转账给对方";
+        else kindLab.textContent = "转账给你";
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        if (isReceipt || received) {
+          badge.classList.add("is-done");
+          badge.textContent = moneyTagText(kind, msg);
+        } else if (claimable) {
+          badge.textContent = "待确认";
+        } else {
+          badge.textContent = "待确认";
+        }
+        head.append(kindLab, badge);
+        const amt = document.createElement("div");
+        amt.className = "amt";
+        amt.textContent = moneyText(p.amount);
+        const note = document.createElement("div");
+        note.className = "note";
+        const noteTxt = String(p.note || "").trim();
+        note.textContent = isReceipt
+          ? "已收款"
+          : noteTxt && noteTxt !== "转账"
+            ? noteTxt
+            : "薄巧系";
+        card.append(head, amt, note);
+        if (claimable) {
+          card.setAttribute("role", "button");
+          card.tabIndex = 0;
+          card.addEventListener("click", (e) => {
+            e.preventDefault();
+            claimMoneyCard(msg.id);
+          });
+        }
       }
       bubble.append(card);
       finish();
@@ -354,7 +462,7 @@
       bubble.classList.add("is-card");
       const p = msg.payload || {};
       const card = document.createElement("div");
-      card.className = "wx-loc-card";
+      card.className = "wx-loc-card is-claimable";
       const name = document.createElement("div");
       name.className = "name";
       name.textContent = p.name || msg.body || "位置";
@@ -369,30 +477,49 @@
       tag.className = "tag";
       tag.textContent = "位置";
       card.append(tag);
+      card.setAttribute("role", "button");
+      card.tabIndex = 0;
+      card.addEventListener("click", (e) => {
+        if (multiMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openLocView(p.name || msg.body || "位置", p.detail || "");
+      });
       bubble.append(card);
       finish();
       return;
     }
 
     if (kind === "voice") {
-      bubble.classList.add("is-card");
+      bubble.classList.add("is-voice");
       const p = msg.payload || {};
-      const card = document.createElement("div");
-      card.className = "wx-voice-card";
-      const sec = Math.max(1, Math.round(Number(p.duration || p.sec || 1)));
-      card.textContent = "语音 " + sec + '"';
-      card.setAttribute("role", "button");
-      card.addEventListener("click", () => {
-        if (p.url) {
+      const sec = voiceBubbleSec(p);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "wx-voice-btn";
+      const wave = document.createElement("span");
+      wave.className = "wx-voice-wave";
+      wave.setAttribute("aria-hidden", "true");
+      wave.textContent = "♪";
+      const dur = document.createElement("span");
+      dur.className = "wx-voice-dur";
+      dur.textContent = sec + '"';
+      btn.append(wave, dur);
+      btn.setAttribute("aria-label", "语音 " + sec + "秒");
+      btn.addEventListener("click", () => {
+        if (multiMode) return;
+        const src = voicePlaySrc(p, msg && msg.body);
+        if (src) {
           try {
-            const a = new Audio(p.url);
+            const a = new Audio(src);
             a.play().catch(() => shellToast("播放失败"));
           } catch (_) {
             shellToast("播放失败");
           }
         } else shellToast("语音 · 稍后");
       });
-      bubble.append(card);
+      bubble.append(btn);
+      bubble.style.minWidth = Math.min(168, 56 + sec * 10) + "px";
       finish();
       return;
     }
@@ -414,9 +541,27 @@
     if (kind === "file" || kind === "music") {
       bubble.classList.add("is-card");
       const p = msg.payload || {};
+      const name = String(p.name || msg.body || "").trim() || (kind === "music" ? "音乐" : "文件");
       const card = document.createElement("div");
-      card.className = "wx-file-card";
-      card.textContent = (kind === "music" ? "[音乐] " : "[文件] ") + (p.name || msg.body || "");
+      card.className = "wx-file-card" + (kind === "music" ? " is-music" : "");
+      const ico = document.createElement("div");
+      ico.className = "ico";
+      ico.setAttribute("aria-hidden", "true");
+      const mid = document.createElement("div");
+      mid.className = "mid";
+      const title = document.createElement("div");
+      title.className = "name";
+      title.textContent = name;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent =
+        kind === "music"
+          ? p.fromPresence
+            ? "共听 · 进行中"
+            : "音频"
+          : fileMetaLine(p, name) || "文件";
+      mid.append(title, meta);
+      card.append(ico, mid);
       bubble.append(card);
       finish();
       return;
@@ -432,8 +577,22 @@
     if (kind === "recall" || msg.recalled) {
       const t = document.createElement("span");
       t.className = "wx-bubble-text is-recall";
-      t.textContent = msg.body || "撤回了一条消息";
+      t.textContent = msg.from === "bot" ? "\u5bf9\u65b9\u64a4\u56de\u4e86\u4e00\u6761\u6d88\u606f" : "\u4f60\u64a4\u56de\u4e86\u4e00\u6761\u6d88\u606f";
       bubble.append(t);
+      const peek = recallPeekText(msg);
+      if (peek) {
+        t.classList.add("is-peek");
+        const body = document.createElement("div");
+        body.className = "wx-peek";
+        body.hidden = true;
+        body.textContent = peek;
+        bubble.append(body);
+        t.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          body.hidden = !body.hidden;
+        });
+      }
       finish();
       return;
     }
@@ -444,10 +603,25 @@
     finish();
   }
 
+  const THINK_PLACEHOLDER = "\uFF08\u672c\u8f6e\u5df2\u6df1\u5ea6\u601d\u8003\uff0c\u6a21\u578b\u672a\u8fd4\u56de\u601d\u8003\u6b63\u6587\uFF09";
+  function realThinkText(raw) {
+    const t = String(raw || "").trim();
+    if (!t || t === THINK_PLACEHOLDER) return "";
+    return t;
+  }
+  function thinkPanelText(raw) {
+    return realThinkText(raw) || "\u8fd9\u8f6e\u6ca1\u7559\u4e0b\u601d\u8003\u6b63\u6587";
+  }
+  (function checkThinkPanel() {
+    const hint = "\u8fd9\u8f6e\u6ca1\u7559\u4e0b\u601d\u8003\u6b63\u6587";
+    if (thinkPanelText("") !== hint) throw new Error("empty think");
+    if (thinkPanelText(THINK_PLACEHOLDER) !== hint) throw new Error("placeholder think");
+    if (thinkPanelText("  ") !== hint) throw new Error("blank think");
+    if (thinkPanelText("x") !== "x") throw new Error("real think");
+  })();
   function bindBunnyThink(bubble, col, thinkText) {
     if (!bubble || !col) return;
-    const body =
-      String(thinkText || "").trim() || "这条没有思考记录。新回复才会带上深度思考。";
+    const body = thinkPanelText(thinkText);
     bubble.classList.add("has-think");
     let bunny = bubble.querySelector(".wx-bunny-deco");
     if (!bunny) {
@@ -482,6 +656,9 @@
   function appendChatMessage(msg) {
     const box = document.getElementById("chatThread");
     if (!box || !msg) return null;
+    if (msg.kind === "sys") {
+      return appendMoneyTip(msg.body, msg.ts, msg.id);
+    }
     if (msg.kind === "tool") {
       const empty = box.querySelector(".wx-empty");
       if (empty) empty.remove();
@@ -514,6 +691,7 @@
     const row = document.createElement("div");
     row.className = "wx-row " + (msg.from === "you" ? "me" : "them");
     if (msg.id) row.dataset.msgId = msg.id;
+    if (msg.kind) row.dataset.kind = msg.kind;
     const av = document.createElement("div");
     av.className = "av";
     const avImg = document.createElement("img");
@@ -529,19 +707,23 @@
       col.append(bubble);
       /* 家机气泡始终可点兔子；有 think 显示正文，否则提示 */
       bindBunnyThink(bubble, col, msg.think);
+      syncVariantBar(col, msg);
       row.append(av, col);
     } else {
       row.append(av, bubble);
     }
     box.append(row);
+    paintVoiceAsr(row, msg);
     bindBubbleCtx(bubble, msg);
     bindPatAvatar(row, msg);
+    paintQuoteRef(row, msg);
+    paintReactions(row, msg.reactions);
     if (multiMode) syncMultiMarks();
     if (nearBottom || msg.from === "you") {
       box.scrollTop = box.scrollHeight;
-      showNewMsgChip(false);
-    } else if (msg.from === "bot") {
-      showNewMsgChip(true);
+      setNewMsgChip(0);
+    } else if (msg.from === "bot" && !suppressNewCount) {
+      setNewMsgChip(newMsgPending + 1);
     }
     return bubble;
   }
@@ -668,9 +850,16 @@
     setPanels(null);
     const stick = document.getElementById("btnChatSticker");
     if (stick) {
-      stick.textContent = voiceMode ? "键" : "表情";
+      /* 效果图：✦ 表情 / 键盘回切 */
+      stick.textContent = voiceMode ? "⌨" : "✦";
       stick.title = voiceMode ? "键盘" : "表情";
       stick.setAttribute("aria-label", voiceMode ? "键盘" : "表情");
+    }
+    const voiceBtn = document.getElementById("btnChatVoice");
+    if (voiceBtn) {
+      voiceBtn.setAttribute("aria-pressed", voiceMode ? "true" : "false");
+      voiceBtn.title = voiceMode ? "键盘" : "语音";
+      voiceBtn.setAttribute("aria-label", voiceMode ? "键盘" : "语音");
     }
     syncSendPlus();
     if (!voiceMode) {
@@ -679,8 +868,87 @@
     }
   }
 
+  const RP_GIFS = [
+    "/assets/chat/skin/redpacket-v1.gif",
+    "/assets/chat/skin/redpacket-v2.gif",
+  ];
+  let rpMsg = null;
+  let rpBusy = false;
+
+  function rpCanClaim(msg) {
+    if (!msg || msg.kind !== "redpacket") return false;
+    const st = (msg.payload && msg.payload.status) || "received";
+    return msg.from === "bot" && st === "sent";
+  }
+  function paintRpResult(msg) {
+    const fromEl = document.getElementById("chatRpFrom");
+    const amtEl = document.getElementById("chatRpAmt");
+    const noteEl = document.getElementById("chatRpNote");
+    const statusEl = document.getElementById("chatRpStatus");
+    const p = (msg && msg.payload) || {};
+    const who =
+      msg && msg.from === "you" ? "你" : displayPeerName();
+    const claimable = rpCanClaim(msg);
+    if (fromEl) fromEl.textContent = who + "的红包";
+    if (amtEl) amtEl.textContent = moneyText(p.amount);
+    if (noteEl) noteEl.textContent = p.note || "恭喜发财";
+    if (statusEl) {
+      let st = "";
+      if (msg && msg.from === "you" && (p.status || "") === "sent") st = "等待对方领取";
+      else if (!claimable) st = "已被领取";
+      statusEl.textContent = st;
+      statusEl.hidden = !st;
+    }
+  }
+  function showRpCover() {
+    const cover = document.getElementById("chatRpCover");
+    const result = document.getElementById("chatRpResult");
+    const openBtn = document.getElementById("chatRpOpen");
+    if (cover) cover.hidden = false;
+    if (result) result.hidden = true;
+    if (openBtn) {
+      openBtn.hidden = false;
+      openBtn.disabled = false;
+    }
+  }
+  function showRpResult(msg) {
+    const cover = document.getElementById("chatRpCover");
+    const result = document.getElementById("chatRpResult");
+    const openBtn = document.getElementById("chatRpOpen");
+    paintRpResult(msg);
+    if (cover) cover.hidden = true;
+    if (result) result.hidden = false;
+    if (openBtn) openBtn.hidden = true;
+  }
+  function openRedpacketView(msg) {
+    if (!msg || msg.kind !== "redpacket") return;
+    const view = document.getElementById("chatRpView");
+    const gif = document.getElementById("chatRpGif");
+    if (!view || !gif) return;
+    rpMsg = msg;
+    const src = RP_GIFS[Math.floor(Math.random() * RP_GIFS.length)];
+    gif.src = src + (src.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now();
+    /* 每次先播竖版动画，点「開」再看回执（已领也一样） */
+    showRpCover();
+    view.hidden = false;
+    view.classList.remove("is-in");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => view.classList.add("is-in"));
+    });
+  }
+  function closeRedpacketView() {
+    const view = document.getElementById("chatRpView");
+    const gif = document.getElementById("chatRpGif");
+    if (view) {
+      view.classList.remove("is-in");
+      view.hidden = true;
+    }
+    if (gif) gif.removeAttribute("src");
+    rpMsg = null;
+    rpBusy = false;
+  }
   async function claimMoneyCard(id) {
-    if (!id || sending) return;
+    if (!id || sending) return null;
     try {
       const res = await fetch("/api/v1/chat/money/claim", {
         method: "POST",
@@ -696,10 +964,32 @@
       }
       if (!res.ok) throw new Error(data.message || data.error || "领取失败");
       if (data.message) patchMessageBubble(data.message);
-      if (data.tip) appendMoneyTip(data.tip, Date.now());
+      if (data.tip_message) appendChatMessage(data.tip_message);
+      else if (data.tip) appendMoneyTip(data.tip, Date.now());
+      if (data.receipt_message) appendChatMessage(data.receipt_message);
       setChatErr("");
+      return data.message || null;
     } catch (e) {
       setChatErr((e && e.message) || "领取失败");
+      return null;
+    }
+  }
+  async function openRedpacketClaim() {
+    if (!rpMsg || rpBusy) return;
+    if (!rpCanClaim(rpMsg)) {
+      showRpResult(rpMsg);
+      return;
+    }
+    rpBusy = true;
+    const openBtn = document.getElementById("chatRpOpen");
+    if (openBtn) openBtn.disabled = true;
+    const updated = await claimMoneyCard(rpMsg.id);
+    rpBusy = false;
+    if (updated) {
+      rpMsg = updated;
+      showRpResult(updated);
+    } else if (openBtn) {
+      openBtn.disabled = false;
     }
   }
 
@@ -798,10 +1088,16 @@
         box.append(empty);
         return;
       }
-      for (const m of msgs) {
-        if (unreadFromId && String(m.id) === unreadFromId) appendUnreadBar();
-        appendChatMessage(m);
+      suppressNewCount = true;
+      try {
+        for (const m of msgs) {
+          if (unreadFromId && String(m.id) === unreadFromId) appendUnreadBar();
+          appendChatMessage(m);
+        }
+      } finally {
+        suppressNewCount = false;
       }
+      setNewMsgChip(0);
       setChatErr("");
       const bar = unreadFromId && box.querySelector(".wx-unread-bar");
       if (bar) bar.scrollIntoView({ block: "center" });
@@ -815,10 +1111,18 @@
   }
   function histPreview(m) {
     if (!m) return "";
-    if (m.recalled || m.kind === "recall") return "[已撤回]";
+    if (m.recalled || m.kind === "recall") return m.from === "bot" ? "\u5bf9\u65b9\u64a4\u56de\u4e86\u4e00\u6761\u6d88\u606f" : "\u4f60\u64a4\u56de\u4e86\u4e00\u6761\u6d88\u606f";
+    if (m.kind === "sys") return String(m.body || "").trim();
     const p = m.payload || {};
-    if (m.kind === "redpacket") return "[红包] " + moneyText(p.amount) + " " + (p.note || "");
-    if (m.kind === "transfer") return "[转账] " + moneyText(p.amount) + " " + (p.note || "");
+    /* 红包预览不露金额（微信式）；祝福有则带上 */
+    if (m.kind === "redpacket") {
+      const note = String(p.note || "").trim();
+      return note ? "[红包] " + note : "[红包]";
+    }
+    if (m.kind === "transfer") {
+      if (p.is_receipt) return "[转账回执] 已收款";
+      return "[转账] " + moneyText(p.amount) + " " + (p.note || "");
+    }
     if (m.kind === "location") return "[位置] " + (p.name || m.body || "");
     if (m.kind === "image") return "[图片]";
     if (m.kind === "sticker") return "[贴纸]";
@@ -839,6 +1143,23 @@
     }
     return m.body || "";
   }
+  /* ponytail: H1.79 预览自检；金额泄漏即失败 */
+  (function () {
+    const rp = histPreview({
+      kind: "redpacket",
+      payload: { amount: 8.8, note: "开心收着" },
+    });
+    if (!rp || /¥|8\.8|8\.80/.test(rp) || rp.indexOf("开心收着") < 0) {
+      throw new Error("histPreview redpacket");
+    }
+    const tip = histPreview({ kind: "sys", body: "对方已收款" });
+    if (tip !== "对方已收款") throw new Error("histPreview sys");
+    const rc = histPreview({
+      kind: "transfer",
+      payload: { amount: 1, note: "已收款", is_receipt: true },
+    });
+    if (rc.indexOf("转账回执") < 0 || /¥/.test(rc)) throw new Error("histPreview receipt");
+  })();
 
   function paintHistGrid() {
     const box = document.getElementById("chatHistGrid");
@@ -1157,15 +1478,198 @@
     });
   }
 
+  function recallStreamAction(type) {
+    if (type === "you_recall") return "patch";
+    if (
+      type === "bot_start" ||
+      type === "bot_delta" ||
+      type === "bot_done" ||
+      type === "bot_think" ||
+      type === "bot_image" ||
+      type === "bot_error" ||
+      type === "done"
+    )
+      return "paint";
+    return "";
+  }
+  (function checkRecallStream() {
+    if (recallStreamAction("you_recall") !== "patch") throw new Error("patch");
+    if (recallStreamAction("bot_delta") !== "paint") throw new Error("paint");
+    if (recallStreamAction("you") !== "") throw new Error("you");
+  })();
+  function makeChatStream(box) {
+    let botBubble = null;
+    let pendingToolRow = null;
+    const paintFrame = () =>
+      new Promise((r) => requestAnimationFrame(() => r()));
+    const handleEvent = async (ev) => {
+      if (!ev || !ev.type) return;
+      if (ev.type === "you" && ev.message) {
+        appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "you_recall" && ev.message) {
+        patchMessageBubble(ev.message);
+        shellToast("\u5df2\u64a4\u56de");
+        await paintFrame();
+      } else if (ev.type === "money_claim" && ev.message) {
+        patchMessageBubble(ev.message);
+        await paintFrame();
+      } else if (ev.type === "money_tip") {
+        if (ev.message) appendChatMessage(ev.message);
+        else if (ev.text) appendMoneyTip(ev.text, ev.ts);
+        await paintFrame();
+      } else if (ev.type === "bot_start") {
+        pendingThink = { sec: 0, text: "" };
+        thinkAttached = false;
+        setTyping(true);
+        await paintFrame();
+      } else if (ev.type === "bot_think") {
+        if (ev.text) {
+          pendingThink.text = pendingThink.text
+            ? pendingThink.text + "\n---\n" + ev.text
+            : String(ev.text);
+        }
+        if (Number(ev.seconds) > 0) pendingThink.sec += Number(ev.seconds);
+        if (botBubble) {
+          ensureBunnyThink(botBubble, {
+            think: pendingThink.text,
+            think_sec: pendingThink.sec,
+          });
+        }
+        await paintFrame();
+      } else if (ev.type === "bot_tool" && ev.name) {
+        pendingToolRow = appendToolChip(ev.name, ev.label);
+        await paintFrame();
+      } else if (ev.type === "bot_tool_done") {
+        const row = finishToolChip(pendingToolRow, ev);
+        if (row && ev.message && ev.message.id) row.dataset.msgId = ev.message.id;
+        pendingToolRow = null;
+        await paintFrame();
+      } else if (ev.type === "bot_delta" && ev.text) {
+        if (!botBubble) {
+          setTyping(true);
+          botBubble = appendChatBubble(
+            "bot",
+            "",
+            Date.now(),
+            takePendingThinkForFirstBubble()
+          );
+        }
+        if (botBubble) {
+          const te = bubbleTextEl(botBubble);
+          te.textContent = (te.textContent || "") + ev.text;
+          if (nearBottom && box) box.scrollTop = box.scrollHeight;
+        }
+        await paintFrame();
+      } else if (ev.type === "bot_done" && ev.message) {
+        const m = ev.message;
+        if (botBubble) {
+          const row = botBubble.closest(".wx-row");
+          if (row && m.id) row.dataset.msgId = String(m.id);
+          fillBubble(botBubble, m);
+          ensureBunnyThink(botBubble, m);
+        } else {
+          thinkAttached = true;
+          appendChatMessage(m);
+        }
+        botBubble = null;
+        setTyping(false);
+      } else if (ev.type === "bot_recall" && ev.message) {
+        const m = ev.message;
+        let row = null;
+        if (m.id && box) {
+          row = box.querySelector(
+            '.wx-row[data-msg-id="' + CSS.escape(String(m.id)) + '"]'
+          );
+        }
+        if (!row && botBubble) row = botBubble.closest(".wx-row");
+        if (row && m.id) row.dataset.msgId = String(m.id);
+        const bubble = row && row.querySelector(".bubble");
+        if (bubble) fillBubble(bubble, m);
+        else appendChatMessage(m);
+        const col = row && row.querySelector(".wx-col");
+        if (col) syncVariantBar(col, m);
+        await paintFrame();
+      } else if (ev.type === "bot_money" && ev.message) {
+        /* 连发后续条：不绑兔子思考 */
+        appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "bot_sticker" && ev.message) {
+        appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "bot_image" && ev.message) {
+        appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "react" && ev.message && ev.message.id) {
+        const hit =
+          box &&
+          box.querySelector(
+            '.wx-row[data-msg-id="' + CSS.escape(String(ev.message.id)) + '"]'
+          );
+        if (hit) paintReactions(hit, ev.message.reactions);
+        await paintFrame();
+      } else if (ev.type === "bot_error") {
+        if (botBubble && !(botBubble.textContent || "").trim()) {
+          const row = botBubble.closest(".wx-row");
+          if (row) row.remove();
+        }
+        botBubble = null;
+        setTyping(false);
+        if (ev.code === "wallet_insufficient") setChatErr("余额不足");
+      } else if (ev.type === "done") {
+        setTyping(false);
+        if (ev.bot_error) {
+          const tip =
+            ev.bot_error.code === "budget_exhausted"
+              ? ev.bot_error.message || "额度已用尽 · 你侧已留下"
+              : "家机未接上：" +
+                (ev.bot_error.message || ev.bot_error.code || "降级");
+          setChatErr(tip);
+        }
+      }
+    };
+    return handleEvent;
+  }
+  async function readChatSse(res, handleEvent) {
+    if (!res.body || !res.body.getReader) {
+      throw new Error("\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u6d41\u5f0f\u8bfb\u53d6");
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buf = "";
+    const consumeBlock = async (block) => {
+      const lines = String(block || "").split(/\r?\n/);
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t || t.startsWith(":")) continue;
+        if (!t.startsWith("data:")) continue;
+        const raw = t.slice(5).trim();
+        if (!raw || raw === "[DONE]") continue;
+        let evObj;
+        try {
+          evObj = JSON.parse(raw);
+        } catch {
+          continue;
+        }
+        await handleEvent(evObj);
+      }
+    };
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split(/\r?\n\r?\n/);
+      buf = parts.pop() || "";
+      for (const part of parts) await consumeBlock(part);
+    }
+    if (buf.trim()) await consumeBlock(buf);
+  }
+
   async function postChatPayload(payload) {
     const box = document.getElementById("chatThread");
     setChatErr("");
     setComposerBusy(true);
     setPanels(null);
-    let botBubble = null;
-    let pendingToolRow = null;
-    const paintFrame = () =>
-      new Promise((r) => requestAnimationFrame(() => r()));
     try {
       const res = await fetch("/api/v1/chat/messages", {
         method: "POST",
@@ -1188,130 +1692,7 @@
         if (data.error === "wallet_insufficient") throw new Error("余额不足");
         throw new Error(data.message || data.error || "发送失败");
       }
-      if (!res.body || !res.body.getReader) {
-        throw new Error("浏览器不支持流式读取");
-      }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buf = "";
-      const handleEvent = async (ev) => {
-        if (!ev || !ev.type) return;
-        if (ev.type === "you" && ev.message) {
-          appendChatMessage(ev.message);
-          await paintFrame();
-        } else if (ev.type === "money_claim" && ev.message) {
-          patchMessageBubble(ev.message);
-          await paintFrame();
-        } else if (ev.type === "money_tip" && ev.text) {
-          appendMoneyTip(ev.text, ev.ts);
-          await paintFrame();
-        } else if (ev.type === "bot_start") {
-          pendingThink = { sec: 0, text: "" };
-          thinkAttached = false;
-          setTyping(true);
-          await paintFrame();
-        } else if (ev.type === "bot_think") {
-          if (ev.text) {
-            pendingThink.text = pendingThink.text
-              ? pendingThink.text + "\n---\n" + ev.text
-              : String(ev.text);
-          }
-          if (Number(ev.seconds) > 0) pendingThink.sec += Number(ev.seconds);
-          if (botBubble) {
-            ensureBunnyThink(botBubble, {
-              think: pendingThink.text,
-              think_sec: pendingThink.sec,
-            });
-          }
-          await paintFrame();
-        } else if (ev.type === "bot_tool" && ev.name) {
-          pendingToolRow = appendToolChip(ev.name, ev.label);
-          await paintFrame();
-        } else if (ev.type === "bot_tool_done") {
-          const row = finishToolChip(pendingToolRow, ev);
-          if (row && ev.message && ev.message.id) row.dataset.msgId = ev.message.id;
-          pendingToolRow = null;
-          await paintFrame();
-        } else if (ev.type === "bot_delta" && ev.text) {
-          if (!botBubble) {
-            setTyping(true);
-            botBubble = appendChatBubble(
-              "bot",
-              "",
-              Date.now(),
-              takePendingThinkForFirstBubble()
-            );
-          }
-          if (botBubble) {
-            const te = bubbleTextEl(botBubble);
-            te.textContent = (te.textContent || "") + ev.text;
-            if (box) box.scrollTop = box.scrollHeight;
-          }
-          await paintFrame();
-        } else if (ev.type === "bot_done" && ev.message) {
-          const m = ev.message;
-          if (botBubble) {
-            fillBubble(botBubble, m);
-            ensureBunnyThink(botBubble, m);
-          } else {
-            thinkAttached = true;
-            appendChatMessage(m);
-          }
-          botBubble = null;
-          setTyping(false);
-        } else if (ev.type === "bot_money" && ev.message) {
-          /* 连发后续条：不绑兔子思考 */
-          appendChatMessage(ev.message);
-          await paintFrame();
-        } else if (ev.type === "bot_sticker" && ev.message) {
-          appendChatMessage(ev.message);
-          await paintFrame();
-        } else if (ev.type === "bot_error") {
-          if (botBubble && !(botBubble.textContent || "").trim()) {
-            const row = botBubble.closest(".wx-row");
-            if (row) row.remove();
-          }
-          botBubble = null;
-          setTyping(false);
-          if (ev.code === "wallet_insufficient") setChatErr("余额不足");
-        } else if (ev.type === "done") {
-          setTyping(false);
-          if (ev.bot_error) {
-            const tip =
-              ev.bot_error.code === "budget_exhausted"
-                ? ev.bot_error.message || "额度已用尽 · 你侧已留下"
-                : "家机未接上：" +
-                  (ev.bot_error.message || ev.bot_error.code || "降级");
-            setChatErr(tip);
-          }
-        }
-      };
-      const consumeBlock = async (block) => {
-        const lines = String(block || "").split(/\r?\n/);
-        for (const line of lines) {
-          const t = line.trim();
-          if (!t || t.startsWith(":")) continue;
-          if (!t.startsWith("data:")) continue;
-          const raw = t.slice(5).trim();
-          if (!raw || raw === "[DONE]") continue;
-          let evObj;
-          try {
-            evObj = JSON.parse(raw);
-          } catch {
-            continue;
-          }
-          await handleEvent(evObj);
-        }
-      };
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const parts = buf.split(/\r?\n\r?\n/);
-        buf = parts.pop() || "";
-        for (const part of parts) await consumeBlock(part);
-      }
-      if (buf.trim()) await consumeBlock(buf);
+      await readChatSse(res, makeChatStream(box));
       if (chatViewActive()) await markChatRead();
       else notifyUnread();
     } catch (e) {
@@ -1333,12 +1714,11 @@
     if (!body) return;
     if (input) input.value = "";
     syncSendPlus();
-    persistDraft();
     const payload = { kind: "text", body: body };
     if (pendingQuote) {
       payload.quote = { id: pendingQuote.id, who: pendingQuote.who, text: pendingQuote.text };
-      clearPendingQuote();
     }
+    clearPendingQuote();
     await postChatPayload(payload);
   }
 
@@ -1347,31 +1727,82 @@
     await postChatPayload({ kind: "sticker", body: id });
   }
 
-  async function sendPickedImage(file) {
-    if (sending || !file) return;
+  const ALBUM_MAX = 9;
+  function clampAlbumFiles(fileList) {
+    const all = Array.from(fileList || []).filter(Boolean);
+    return { files: all.slice(0, ALBUM_MAX), truncated: all.length > ALBUM_MAX };
+  }
+  /* ponytail: H1.82 多图上限自检 */
+  (function () {
+    const nine = clampAlbumFiles(Array(9).fill(1));
+    if (nine.files.length !== 9 || nine.truncated) throw new Error("album 9");
+    const ten = clampAlbumFiles(Array(10).fill(1));
+    if (ten.files.length !== 9 || !ten.truncated) throw new Error("album 10");
+  })();
+
+  async function uploadChatImage(file) {
+    const res = await fetch("/api/v1/chat/media", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) throw new Error(data.message || data.error || "上传失败");
+    if (!data.url) throw new Error("上传失败");
+    return data.url;
+  }
+
+  async function postSilentImage(url) {
+    const res = await fetch("/api/v1/chat/messages", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "image", body: url, noreply: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || "发送失败");
+    if (data.message) appendChatMessage(data.message);
+  }
+
+  async function sendPickedImages(fileList) {
+    if (sending) return;
+    const { files, truncated } = clampAlbumFiles(fileList);
+    if (!files.length) return;
+    if (truncated) shellToast("一次最多 9 张");
     setChatErr("");
     setComposerBusy(true);
+    const urls = [];
     try {
-      const res = await fetch("/api/v1/chat/media", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      let data = {};
-      try {
-        data = await res.json();
-      } catch (_) {
-        data = {};
+      for (let i = 0; i < files.length; i++) {
+        urls.push(await uploadChatImage(files[i]));
       }
-      if (!res.ok) throw new Error(data.message || data.error || "上传失败");
-      if (!data.url) throw new Error("上传失败");
-      setComposerBusy(false);
-      await postChatPayload({ kind: "image", body: data.url });
     } catch (e) {
+      if (!urls.length) {
+        setChatErr((e && e.message) || "上传失败");
+        setComposerBusy(false);
+        return;
+      }
       setChatErr((e && e.message) || "上传失败");
+    }
+    try {
+      for (let i = 0; i < urls.length - 1; i++) await postSilentImage(urls[i]);
+      setComposerBusy(false);
+      await postChatPayload({ kind: "image", body: urls[urls.length - 1] });
+    } catch (e) {
+      setChatErr((e && e.message) || "发送失败");
       setComposerBusy(false);
     }
+  }
+
+  async function sendPickedImage(file) {
+    if (!file) return;
+    await sendPickedImages([file]);
   }
 
   async function uploadUserSticker(file) {
@@ -1475,8 +1906,51 @@
     if (pick) pick.hidden = true;
   }
 
+  function sheetAmountExceeds(amount, bal) {
+    if (bal == null || !Number.isFinite(Number(bal))) return false;
+    return Number(amount) > Number(bal);
+  }
+  /* ponytail: H1.80 超额判定自检 */
+  if (sheetAmountExceeds(10, 9.99) !== true || sheetAmountExceeds(1, null) !== false) {
+    throw new Error("sheetAmountExceeds");
+  }
+
+  async function fetchYouBalance() {
+    try {
+      const res = await fetch("/api/v1/wallet", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) return null;
+      const n = Number(data.you_balance);
+      return Number.isFinite(n) ? n : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function paintSheetBalance(bal) {
+    const wrap = document.getElementById("chatSheetBalWrap");
+    const lab = document.getElementById("chatSheetBal");
+    if (!wrap) return;
+    const money = sheetMode === "redpacket" || sheetMode === "transfer";
+    wrap.hidden = !money;
+    if (!money) return;
+    sheetYouBalance = bal;
+    if (!lab) return;
+    if (bal == null) lab.textContent = "零花余额 · 暂不可用";
+    else lab.textContent = "零花余额 " + moneyText(bal);
+  }
+
   function openSheet(mode) {
     sheetMode = mode;
+    sheetYouBalance = null;
     const sheet = document.getElementById("chatSheet");
     const stick = document.getElementById("chatStickerPanel");
     const plus = document.getElementById("chatPlusPanel");
@@ -1487,6 +1961,8 @@
     const nw = document.getElementById("chatSheetNoteWrap");
     const nameW = document.getElementById("chatSheetNameWrap");
     const detailW = document.getElementById("chatSheetDetailWrap");
+    const balWrap = document.getElementById("chatSheetBalWrap");
+    const balLab = document.getElementById("chatSheetBal");
     const noteLab = document.getElementById("chatSheetNoteLab");
     const amount = document.getElementById("chatSheetAmount");
     const note = document.getElementById("chatSheetNote");
@@ -1498,10 +1974,12 @@
     if (plus) plus.hidden = true;
     if (stickBtn) stickBtn.setAttribute("aria-pressed", "false");
     if (plusBtn) plusBtn.setAttribute("aria-pressed", "false");
-    if (aw) aw.hidden = mode !== "redpacket" && mode !== "transfer";
-    if (nw) nw.hidden = mode !== "redpacket" && mode !== "transfer";
+    const isMoney = mode === "redpacket" || mode === "transfer";
+    if (aw) aw.hidden = !isMoney;
+    if (nw) nw.hidden = !isMoney;
     if (nameW) nameW.hidden = mode !== "location";
     if (detailW) detailW.hidden = mode !== "location";
+    if (balWrap) balWrap.hidden = !isMoney;
     if (title) {
       title.textContent =
         mode === "redpacket" ? "发红包" : mode === "transfer" ? "转账" : "发送位置";
@@ -1511,14 +1989,21 @@
     if (note) note.value = mode === "redpacket" ? "恭喜发财" : "";
     if (name) name.value = "";
     if (detail) detail.value = "";
+    if (isMoney && balLab) balLab.textContent = "零花余额 …";
     sheet.hidden = false;
     requestAnimationFrame(scrollThreadEnd);
+    if (isMoney) {
+      fetchYouBalance().then((bal) => {
+        if (sheetMode === mode) paintSheetBalance(bal);
+      });
+    }
   }
 
   function closeSheet() {
     const sheet = document.getElementById("chatSheet");
     if (sheet) sheet.hidden = true;
     sheetMode = "";
+    sheetYouBalance = null;
   }
 
   async function confirmSheet() {
@@ -1532,6 +2017,10 @@
       ).trim();
       if (!(amount > 0)) {
         setChatErr("请填写金额");
+        return;
+      }
+      if (sheetAmountExceeds(amount, sheetYouBalance)) {
+        setChatErr("余额不足");
         return;
       }
       closeSheet();
@@ -1595,10 +2084,6 @@
       openCallPicker();
       return;
     }
-    if (item.id === "history") {
-      openHist();
-      return;
-    }
     if (item.id === "file") {
       const inp = document.getElementById("chatFileInput");
       if (inp) {
@@ -1608,36 +2093,78 @@
       return;
     }
     if (item.id === "music") {
-      const inp = document.getElementById("chatMusicInput");
-      if (inp) {
-        inp.value = "";
-        inp.click();
-      }
+      shareListenOrPickMusic();
       return;
+    }
+  }
+
+  const FILE_TEXT_EXT_RE =
+    /\.(txt|md|markdown|json|js|ts|tsx|jsx|mjs|cjs|css|html|htm|xml|yml|yaml|toml|ini|csv|py|rb|go|rs|java|kt|c|cc|cpp|h|hpp|cs|swift|sh|bat|ps1|sql|log|conf|cfg)$/i;
+  const FILE_TEXT_MAX = 8 * 1024;
+
+  function isReadableTextFile(file) {
+    const name = String((file && file.name) || "");
+    return FILE_TEXT_EXT_RE.test(name);
+  }
+
+  function readFileTextExcerpt(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        let t = String(reader.result || "").replace(/\u0000/g, "");
+        if (t.length > FILE_TEXT_MAX) t = t.slice(0, FILE_TEXT_MAX);
+        resolve(t);
+      };
+      reader.onerror = () => reject(new Error("读取文件失败"));
+      reader.readAsText(file);
+    });
+  }
+
+  async function shareListenOrPickMusic() {
+    try {
+      const res = await fetch("/api/v1/listen/presence", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.active && data.track && data.track.title) {
+        await postChatPayload({
+          kind: "music",
+          name: String(data.track.title).trim().slice(0, 80),
+          artist: String(data.track.artist || "").trim().slice(0, 80),
+          fromPresence: true,
+        });
+        return;
+      }
+    } catch (_) {}
+    const inp = document.getElementById("chatMusicInput");
+    if (inp) {
+      inp.value = "";
+      inp.click();
     }
   }
 
   async function sendPickedFile(file, kind) {
     if (sending || !file) return;
     setChatErr("");
+    if (kind === "file" && !isReadableTextFile(file)) {
+      shellToast("暂只读文本");
+    }
     setComposerBusy(true);
     try {
-      const res = await fetch("/api/v1/chat/media", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": file.type || "application/octet-stream" },
-        body: file,
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.url) throw new Error(data.message || "上传失败");
-      setComposerBusy(false);
-      await postChatPayload({
+      const payload = {
         kind: kind === "music" ? "music" : "file",
-        body: data.url,
         name: file.name || "",
-      });
+        size: Number(file.size) || 0,
+        ext: fileExtLabel(file.name || ""),
+      };
+      if (kind === "file" && isReadableTextFile(file)) {
+        payload.text = await readFileTextExcerpt(file);
+      }
+      setComposerBusy(false);
+      await postChatPayload(payload);
     } catch (e) {
-      setChatErr((e && e.message) || "上传失败");
+      setChatErr((e && e.message) || "发送失败");
       setComposerBusy(false);
     }
   }
@@ -1757,15 +2284,12 @@
   }
   function refreshPeerLabels() {
     const name = displayPeerName();
-    const note = readNote("daily");
     ["chatSessName", "chatContactName", "chatProfileName", "chatClearPeerName", "chatPeerPageTitle"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.textContent = name;
     });
     const peer = document.getElementById("chatPeerName");
     if (peer && !peer.classList.contains("is-typing")) peer.textContent = name;
-    const noteRow = document.querySelector('#chatOvPeer [data-peer-act="note"] .val');
-    if (noteRow) noteRow.textContent = note || "未设置";
     paintSessBadges();
   }
   function paintSessBadges() {
@@ -1787,13 +2311,14 @@
   function closeThreadLayer() {
     const layer = document.getElementById("chatThreadLayer");
     if (!layer) return;
+    closeRedpacketView();
+    closePicViewer();
     layer.classList.remove("active");
     layer.hidden = true;
     closeHist({ skipReturn: true });
     setPanels(null);
     setTyping(false);
     exitMultiMode();
-    clearPendingQuote();
     persistDraft();
     refreshSessionList();
   }
@@ -1887,6 +2412,18 @@
       return 0;
     }
   }
+  function unreadBadgeLabel(count, marked) {
+    const n = Math.max(0, Math.floor(Number(count) || 0));
+    if (n > 99) return "99+";
+    if (n > 0) return String(n);
+    return marked ? "1" : "";
+  }
+  (function checkUnreadBadge() {
+    if (unreadBadgeLabel(0, true) !== "1") throw new Error("mark");
+    if (unreadBadgeLabel(3, true) !== "3") throw new Error("keep");
+    if (unreadBadgeLabel(0, false) !== "") throw new Error("none");
+    if (unreadBadgeLabel(100, true) !== "99+") throw new Error("cap");
+  })();
   function paintShellUnread(count) {
     const n = chatListMuted() ? 0 : Math.max(0, Math.floor(Number(count) || 0));
     const marks = readUnreadMarks();
@@ -1897,9 +2434,8 @@
     if (badge) {
       if (show) {
         badge.hidden = false;
-        badge.textContent = n > 0 ? (n > 99 ? "99+" : String(n)) : "";
-        if (n <= 0 && marked) badge.textContent = "";
-        badge.classList.toggle("is-dot", n <= 0 && marked);
+        badge.textContent = unreadBadgeLabel(n, marked);
+        badge.classList.remove("is-dot");
       } else {
         badge.hidden = true;
         badge.classList.remove("is-dot");
@@ -1931,15 +2467,13 @@
   }
   function paintSessPreview(preview, fallback) {
     if (!preview) return;
-    const body = String(lsGet(LS.draft, "") || "").trim();
-    const quoteTxt =
-      pendingQuote && String(pendingQuote.text || "").trim()
-        ? String(pendingQuote.text).trim()
-        : "";
+    const rec = readDraftRecord();
+    const body = String(rec.body || "").trim();
+    const quoteTxt = rec.quote ? String(rec.quote.text || "").trim() : "";
     if (body || quoteTxt) {
-      const snip = body || "引用 " + quoteTxt;
+      const snip = body || "\u5f15\u7528 " + quoteTxt;
       preview.innerHTML =
-        '<span class="is-draft">[草稿]</span> ' + escapeHtml(snip.slice(0, 80));
+        '<span class="is-draft">[\u8349\u7a3f]</span> ' + escapeHtml(snip.slice(0, 80));
       return;
     }
     preview.textContent = fallback;
@@ -1980,28 +2514,67 @@
   }
 
   /* ========== Draft / quote / new-msg chip ========== */
+  function quoteForStore(q) {
+    if (!q || !String(q.text || "").trim()) return null;
+    return {
+      id: String(q.id || ""),
+      who: String(q.who || ""),
+      text: String(q.text).trim().slice(0, 120),
+    };
+  }
+  function parseDraftRaw(raw) {
+    const s = String(raw || "");
+    if (!s) return { body: "", quote: null };
+    if (s.charAt(0) === "{") {
+      try {
+        const o = JSON.parse(s);
+        if (o && typeof o === "object" && ("body" in o || "quote" in o)) {
+          return { body: String(o.body || ""), quote: quoteForStore(o.quote) };
+        }
+      } catch (_) {}
+    }
+    return { body: s, quote: null };
+  }
+  function readDraftRecord() {
+    return parseDraftRaw(lsGet(LS.draft, ""));
+  }
+  (function checkDraftRecord() {
+    const leg = parseDraftRaw("hi");
+    const js = parseDraftRaw(
+      JSON.stringify({ body: "a", quote: { id: "1", who: "w", text: "t" } })
+    );
+    const bad = parseDraftRaw("{not json");
+    const blank = parseDraftRaw(JSON.stringify({ body: "", quote: { text: "  " } }));
+    if (leg.body !== "hi" || leg.quote) throw new Error("draft legacy");
+    if (js.body !== "a" || !js.quote || js.quote.text !== "t") throw new Error("draft json");
+    if (bad.body !== "{not json" || bad.quote) throw new Error("draft plain");
+    if (blank.body || blank.quote) throw new Error("draft blank");
+  })();
   function persistDraft() {
     const input = document.getElementById("dailyChatInput");
-    if (!input) return;
-    const v = String(input.value || "");
-    if (v) lsSet(LS.draft, v);
-    else {
+    const body = input ? String(input.value || "") : "";
+    const quote = quoteForStore(pendingQuote);
+    if (!String(body).trim() && !quote) {
       try {
         localStorage.removeItem(LS.draft);
       } catch (_) {}
+      return;
     }
+    lsSet(LS.draft, JSON.stringify({ body: body, quote: quote }));
   }
   function restoreDraft() {
     const input = document.getElementById("dailyChatInput");
-    if (!input) return;
-    const v = lsGet(LS.draft, "");
-    if (v && !input.value) input.value = v;
+    const rec = readDraftRecord();
+    if (input && rec.body && !input.value) input.value = rec.body;
+    pendingQuote = rec.quote;
+    paintQuoteBar();
     syncSendPlus();
   }
   function clearPendingQuote() {
     pendingQuote = null;
     const bar = document.getElementById("chatQuoteBar");
     if (bar) bar.hidden = true;
+    persistDraft();
   }
   function paintQuoteBar() {
     const bar = document.getElementById("chatQuoteBar");
@@ -2021,22 +2594,125 @@
     const peer = displayPeerName();
     pendingQuote = {
       id: msg.id,
-      who: msg.from === "you" ? "你" : peer,
+      who: msg.from === "you" ? "\u4f60" : peer,
       text: String(histPreview(msg) || "").slice(0, 120),
     };
     paintQuoteBar();
+    persistDraft();
   }
   function threadNearBottom() {
     const box = document.getElementById("chatThread");
     if (!box) return true;
     return box.scrollHeight - box.scrollTop - box.clientHeight < 80;
   }
-  function showNewMsgChip(on) {
-    const chip = document.getElementById("chatNewMsg");
-    if (chip) chip.hidden = !on;
+  function setNewMsgChip(n) {
+    const el = document.getElementById("chatNewMsg");
+    if (!el) return;
+    const count = Math.max(0, Math.floor(Number(n) || 0));
+    newMsgPending = count;
+    if (!count) {
+      el.hidden = true;
+      el.replaceChildren();
+      el.setAttribute("aria-label", "\u65b0\u6d88\u606f");
+      return;
+    }
+    el.hidden = false;
+    /* 效果图：双下箭头 + 数字（CSS 画箭头，避免 ∨→VV） */
+    const chev = document.createElement("span");
+    chev.className = "wx-new-msg-chev";
+    chev.setAttribute("aria-hidden", "true");
+    chev.append(document.createElement("i"), document.createElement("i"));
+    const num = document.createElement("span");
+    num.className = "wx-new-msg-n";
+    num.textContent = String(count);
+    el.replaceChildren(chev, num);
+    el.setAttribute("aria-label", count + " \u6761\u65b0\u6d88\u606f");
+  }
+
+  let locViewCopy = "";
+  function openLocView(name, detail) {
+    const view = document.getElementById("chatLocView");
+    const nameEl = document.getElementById("chatLocName");
+    const detailEl = document.getElementById("chatLocDetail");
+    if (!view) return;
+    const n = String(name || "").trim() || "位置";
+    const d = String(detail || "").trim();
+    locViewCopy = d ? n + "\n" + d : n;
+    if (nameEl) nameEl.textContent = n;
+    if (detailEl) {
+      detailEl.textContent = d;
+      detailEl.hidden = !d;
+    }
+    view.hidden = false;
+  }
+  function closeLocView() {
+    const view = document.getElementById("chatLocView");
+    if (view) view.hidden = true;
+    locViewCopy = "";
   }
 
   /* ========== Pic viewer ========== */
+  /** H1.83：相邻连续 image 合成一组；rows=[{id,kind,url}] */
+  function adjacentImageRun(rows, msgId) {
+    const list = Array.isArray(rows) ? rows : [];
+    const want = String(msgId || "");
+    const empty = { urls: [], idx: 0 };
+    if (!want || !list.length) return empty;
+    const i = list.findIndex((r) => r && String(r.id) === want);
+    if (i < 0) return empty;
+    const urlAt = (j) => {
+      const r = list[j];
+      if (!r || r.kind !== "image") return "";
+      return String(r.url || "").trim();
+    };
+    if (!urlAt(i)) return empty;
+    let lo = i;
+    while (lo > 0 && urlAt(lo - 1)) lo--;
+    let hi = i;
+    while (hi + 1 < list.length && urlAt(hi + 1)) hi++;
+    const urls = [];
+    let idx = 0;
+    for (let j = lo; j <= hi; j++) {
+      if (j === i) idx = urls.length;
+      urls.push(urlAt(j));
+    }
+    return { urls, idx };
+  }
+  /* ponytail: H1.83 连图分组自检 */
+  (function () {
+    const rows = [
+      { id: "a", kind: "text", url: "" },
+      { id: "1", kind: "image", url: "/u1" },
+      { id: "2", kind: "image", url: "/u2" },
+      { id: "b", kind: "text", url: "" },
+      { id: "3", kind: "image", url: "/u3" },
+    ];
+    const g = adjacentImageRun(rows, "2");
+    if (g.urls.length !== 2 || g.idx !== 1 || g.urls[0] !== "/u1") throw new Error("run mid");
+    const one = adjacentImageRun(rows, "3");
+    if (one.urls.length !== 1 || one.idx !== 0) throw new Error("run single");
+  })();
+
+  function collectAdjacentChatImages(msgId) {
+    const box = document.getElementById("chatThread");
+    if (!box) return { urls: [], idx: 0 };
+    const rows = Array.from(box.querySelectorAll(".wx-row[data-msg-id]")).map((row) => {
+      const img = row.querySelector("img.chat-pic");
+      return {
+        id: row.dataset.msgId,
+        kind: row.dataset.kind || "",
+        url: (img && (img.currentSrc || img.src)) || "",
+      };
+    });
+    return adjacentImageRun(rows, msgId);
+  }
+
+  function syncPicNav() {
+    const prev = document.getElementById("chatPicPrev");
+    const next = document.getElementById("chatPicNext");
+    if (prev) prev.hidden = picUrls.length < 2 || picIdx <= 0;
+    if (next) next.hidden = picUrls.length < 2 || picIdx >= picUrls.length - 1;
+  }
   function openPicViewer(urls, idx) {
     picUrls = Array.isArray(urls) ? urls.filter(Boolean) : [];
     picIdx = Math.max(0, Math.min(Number(idx) || 0, picUrls.length - 1));
@@ -2045,10 +2721,7 @@
     if (!view || !img || !picUrls.length) return;
     img.src = picUrls[picIdx];
     view.hidden = false;
-    const prev = document.getElementById("chatPicPrev");
-    const next = document.getElementById("chatPicNext");
-    if (prev) prev.hidden = picUrls.length < 2;
-    if (next) next.hidden = picUrls.length < 2;
+    syncPicNav();
   }
   function closePicViewer() {
     const view = document.getElementById("chatPicView");
@@ -2056,9 +2729,12 @@
   }
   function stepPic(dir) {
     if (picUrls.length < 2) return;
-    picIdx = (picIdx + dir + picUrls.length) % picUrls.length;
+    const next = picIdx + (Number(dir) || 0);
+    if (next < 0 || next >= picUrls.length) return;
+    picIdx = next;
     const img = document.getElementById("chatPicViewImg");
     if (img) img.src = picUrls[picIdx];
+    syncPicNav();
   }
 
   /* ========== Ctx / multi ========== */
@@ -2076,9 +2752,30 @@
     const regen = document.getElementById("chatCtxRegen");
     const recall = document.getElementById("chatCtxRecall");
     const react = document.getElementById("chatCtxReact");
-    if (regen) regen.hidden = !(payload.from === "bot" && payload.kind === "text");
-    if (recall) recall.hidden = !(payload.from === "you");
-    if (react) react.hidden = false;
+    if (regen) {
+      const box = document.getElementById("chatThread");
+      const row =
+        box &&
+        payload.refId &&
+        box.querySelector('.wx-row[data-msg-id="' + String(payload.refId).replace(/"/g, "") + '"]');
+      regen.hidden = !canRegenRow(row);
+    }
+    if (recall) {
+      const ts = payload.msg && payload.msg.ts;
+      recall.hidden =
+        payload.from !== "you" ||
+        !!payload.recalled ||
+        recallExpiredUi(ts);
+    }
+    if (react) {
+      const kind = payload.kind || "";
+      react.hidden =
+        !!payload.recalled ||
+        !payload.refId ||
+        kind === "tool" ||
+        kind === "call" ||
+        kind === "pat";
+    }
     el.hidden = false;
     panel.style.left = "0px";
     panel.style.top = "0px";
@@ -2144,7 +2841,9 @@
       bubble.addEventListener("click", (e) => {
         if (multiMode) return;
         e.preventDefault();
-        openPicViewer([msg.body], 0);
+        const run = collectAdjacentChatImages(msg.id);
+        if (run.urls.length) openPicViewer(run.urls, run.idx);
+        else openPicViewer([msg.body], 0);
       });
     }
     bindLongPress(bubble, (x, y) => {
@@ -2158,13 +2857,14 @@
         text: text.slice(0, 400),
         kind: msg.kind || "text",
         from: msg.from,
+        recalled: !!msg.recalled,
         msg: msg,
       });
     });
   }
   async function copyCtxText(text) {
     const t = String(text || "");
-    if (!t) return;
+    if (!t) return false;
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(t);
@@ -2177,24 +2877,100 @@
         ta.remove();
       }
       shellToast("已复制");
+      return true;
     } catch (_) {
       shellToast("复制失败");
+      return false;
     }
   }
+  function canTranslateKind(kind) {
+    return !/^(image|sticker|redpacket|transfer|file|music|location|voice|call|pat|tool|recall)$/.test(
+      String(kind || "")
+    );
+  }
+  function nextTranslateState(open, hasText) {
+    if (open) return "hide";
+    if (hasText) return "show";
+    return "fetch";
+  }
+  (function checkTranslateToggle() {
+    if (canTranslateKind("text") !== true) throw new Error("text");
+    if (canTranslateKind("image") !== false) throw new Error("image");
+    if (canTranslateKind("redpacket") !== false) throw new Error("money");
+    if (nextTranslateState(true, true) !== "hide") throw new Error("hide");
+    if (nextTranslateState(false, true) !== "show") throw new Error("show");
+    if (nextTranslateState(false, false) !== "fetch") throw new Error("fetch");
+  })();
+  function translateHost(refId) {
+    const id = String(refId || "");
+    if (!id) return null;
+    const row = document.querySelector('.wx-row[data-msg-id="' + CSS.escape(id) + '"]');
+    if (!row) return null;
+    const bubble = rowBubble(row);
+    if (!bubble) return null;
+    let col = row.querySelector(":scope > .wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      bubble.replaceWith(col);
+      col.append(bubble);
+    }
+    return col;
+  }
   async function translateCtxUi(p) {
-    if (!p || !p.text) return;
+    if (!p || !String(p.text || "").trim()) return;
+    if (p.recalled || !canTranslateKind(p.kind)) {
+      shellToast("\u8fd9\u7c7b\u6d88\u606f\u6682\u4e0d\u7ffb\u8bd1");
+      return;
+    }
+    const col = translateHost(p.refId);
+    if (!col) {
+      shellToast("\u7ffb\u8bd1\u5931\u8d25");
+      return;
+    }
+    let panel = col.querySelector(".wx-tr-panel");
+    const open = !!(panel && !panel.hidden);
+    const cached = panel ? String(panel.dataset.tr || "") : "";
+    const step = nextTranslateState(open, !!cached);
+    if (step === "hide") {
+      panel.hidden = true;
+      return;
+    }
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "wx-tr-panel";
+      panel.hidden = true;
+      col.append(panel);
+    }
+    if (step === "show") {
+      panel.textContent = cached;
+      panel.hidden = false;
+      return;
+    }
+    if (panel.dataset.busy === "1") return;
+    panel.dataset.busy = "1";
+    panel.hidden = false;
+    panel.textContent = "\u7ffb\u8bd1\u4e2d\u2026";
     try {
       const res = await fetch("/api/v1/chat/translate", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: p.text }),
+        body: JSON.stringify({ text: String(p.text || "").slice(0, 800) }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "翻译失败");
-      shellToast(data.text || data.translation || "稍后");
+      if (!res.ok) throw new Error(data.message || "\u7ffb\u8bd1\u5931\u8d25");
+      const translation = String(data.translation || "").trim();
+      if (!translation) throw new Error("\u7ffb\u8bd1\u5931\u8d25");
+      panel.dataset.tr = translation;
+      panel.textContent = translation;
+      panel.hidden = false;
     } catch (err) {
-      shellToast((err && err.message) || "翻译失败");
+      panel.hidden = true;
+      panel.textContent = "";
+      shellToast((err && err.message) || "\u7ffb\u8bd1\u5931\u8d25");
+    } finally {
+      delete panel.dataset.busy;
     }
   }
   async function addFavoriteFromUi(p) {
@@ -2217,21 +2993,298 @@
       shellToast((err && err.message) || "收藏失败");
     }
   }
-  async function recallChatMessageUi(id) {
+  function recallExpiredUi(ts, now) {
+    const t = Number(ts) || 0;
+    const n = now != null ? Number(now) : Date.now();
+    if (!t) return true;
+    return n - t > RECALL_MAX_AGE_MS;
+  }
+  (function checkRecallAge() {
+    if (!recallExpiredUi(Date.now() - RECALL_MAX_AGE_MS - 1)) throw new Error("old");
+    if (recallExpiredUi(Date.now() - 1000)) throw new Error("fresh");
+  })();
+  function withTimeout(promise, ms, fallback) {
+    return new Promise((resolve) => {
+      let done = false;
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        resolve(fallback);
+      }, Math.max(0, Number(ms) || 0));
+      Promise.resolve(promise).then(
+        (v) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(v);
+        },
+        () => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(fallback);
+        }
+      );
+    });
+  }
+  function recallRoundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+  function recallWrapLines(ctx, text, maxWidth) {
+    const chars = Array.from(String(text || ""));
+    const lines = [];
+    let line = "";
+    for (const ch of chars) {
+      const next = line + ch;
+      if (line && ctx.measureText(next).width > maxWidth) {
+        lines.push(line);
+        line = ch;
+      } else line = next;
+    }
+    if (line) lines.push(line);
+    return lines.length ? lines : [""];
+  }
+  function loadRecallImage(src) {
+    return new Promise((resolve) => {
+      const url = String(src || "").trim();
+      if (!url) {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  }
+  async function fetchRecallImage(src) {
+    const url = String(src || "").trim();
+    if (!url) return null;
+    if (url.indexOf("data:") === 0) return loadRecallImage(url);
+    try {
+      const res = await fetch(url, { credentials: "same-origin", cache: "force-cache" });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      const obj = URL.createObjectURL(blob);
+      const img = await loadRecallImage(obj);
+      URL.revokeObjectURL(obj);
+      return img;
+    } catch (_) {
+      return null;
+    }
+  }
+  function canvasToPngBlob(canvas) {
+    return new Promise((resolve) => {
+      try {
+        canvas.toBlob((blob) => resolve(blob || null), "image/png");
+      } catch (_) {
+        resolve(null);
+      }
+    });
+  }
+  async function uploadRecallShot(blob) {
+    if (!blob || !blob.size) return "";
+    try {
+      const res = await fetch("/api/v1/chat/media", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "image/png" },
+        body: blob,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) return "";
+      return String(data.url);
+    } catch (_) {
+      return "";
+    }
+  }
+  async function captureRecallShot(id) {
+    const sid = String(id || "");
+    const box = document.getElementById("chatThread");
+    if (!sid || !box) return "";
+    const row = box.querySelector('.wx-row[data-msg-id="' + CSS.escape(sid) + '"]');
+    if (!row || !row.classList.contains("me")) return "";
+    const bubble = row.querySelector(".bubble");
+    if (!bubble) return "";
+    const avEl = row.querySelector(".av img");
+    const textEl = bubble.querySelector(".wx-bubble-text");
+    const mediaEl = bubble.querySelector("img.sticker, .is-media img");
+    const av = 36;
+    const frameScale = 1.65;
+    const frameExtra = Math.ceil((av * frameScale - av) / 2);
+    const bunnySize = 48;
+    const bunnyOffX = 14;
+    const bunnyOffY = 20;
+    const pad = 14 + Math.max(frameExtra, bunnyOffY);
+    const gap = 10;
+    const maxBubble = 210;
+    const lineH = Math.round(15 * 1.45);
+    const padX = 14;
+    const padY = 10;
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return "";
+    ctx.font = "15px sans-serif";
+    let bubbleW = 80;
+    let bubbleH = 40;
+    let lines = [];
+    let mediaImg = null;
+    const looksMedia =
+      bubble.classList.contains("is-media") ||
+      !!(mediaEl && (mediaEl.classList.contains("sticker") || mediaEl.closest(".is-media")));
+    const customWall = String(lsGet(LS.bgPick, "") || "").trim();
+    const defaultWall = "/assets/chat/skin/wallpaper.jpg";
+    const assetPack = await Promise.all([
+      fetchRecallImage(avEl && (avEl.currentSrc || avEl.src)),
+      fetchRecallImage("/assets/chat/skin/avatar-frame.png"),
+      fetchRecallImage(customWall || defaultWall),
+      customWall ? fetchRecallImage(defaultWall) : Promise.resolve(null),
+      fetchRecallImage("/assets/chat/skin/bubble-deco-them.png"),
+      looksMedia && mediaEl
+        ? fetchRecallImage(mediaEl.currentSrc || mediaEl.src)
+        : Promise.resolve(null),
+    ]);
+    const avImg = assetPack[0];
+    const frameImg = assetPack[1];
+    const wallImg = assetPack[2] || assetPack[3];
+    const bunnyImg = assetPack[4];
+    mediaImg = assetPack[5];
+    if (mediaImg) {
+      const mw = Math.min(maxBubble - padX * 2, mediaImg.naturalWidth || 120);
+      const mh = Math.max(
+        40,
+        Math.round(((mediaImg.naturalHeight || 120) * mw) / (mediaImg.naturalWidth || 120))
+      );
+      bubbleW = mw + padX * 2;
+      bubbleH = mh + padY * 2;
+    } else {
+      const text = String((textEl && textEl.textContent) || bubble.innerText || "").trim() || "...";
+      lines = recallWrapLines(ctx, text, maxBubble - padX * 2);
+      let tw = 0;
+      for (const ln of lines) tw = Math.max(tw, ctx.measureText(ln).width);
+      bubbleW = Math.min(maxBubble, Math.max(48, Math.ceil(tw) + padX * 2));
+      bubbleH = lines.length * lineH + padY * 2;
+    }
+    const W = pad * 2 + av + gap + bubbleW;
+    const H = pad * 2 + Math.max(av + frameExtra, bubbleH + bunnyOffY);
+    const scale = 2;
+    canvas.width = Math.max(1, Math.round(W * scale));
+    canvas.height = Math.max(1, Math.round(H * scale));
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    if (wallImg && wallImg.naturalWidth) {
+      const iw = wallImg.naturalWidth;
+      const ih = wallImg.naturalHeight;
+      const cover = Math.max(W / iw, H / ih);
+      const dw = iw * cover;
+      const dh = ih * cover;
+      ctx.drawImage(wallImg, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.fillRect(0, 0, W, H);
+    } else {
+      ctx.fillStyle = "#e8f2ee";
+      ctx.fillRect(0, 0, W, H);
+    }
+    const ax = pad;
+    const ay = pad;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(ax + av / 2, ay + av / 2, av / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    if (avImg) ctx.drawImage(avImg, ax, ay, av, av);
+    else {
+      ctx.fillStyle = "#f8fcfb";
+      ctx.fillRect(ax, ay, av, av);
+    }
+    ctx.restore();
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(ax + av / 2, ay + av / 2, av / 2, 0, Math.PI * 2);
+    ctx.stroke();
+    if (frameImg && frameImg.naturalWidth) {
+      const fs = av * frameScale;
+      ctx.drawImage(frameImg, ax + (av - fs) / 2, ay + (av - fs) / 2, fs, fs);
+    }
+    const bx = pad + av + gap;
+    const by = pad + Math.max(0, (Math.max(av, bubbleH) - bubbleH) / 2);
+    ctx.fillStyle = "#b5a198";
+    recallRoundRect(ctx, bx, by, bubbleW, bubbleH, 20);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.lineWidth = 1;
+    recallRoundRect(ctx, bx, by, bubbleW, bubbleH, 20);
+    ctx.stroke();
+    if (mediaImg) {
+      ctx.drawImage(mediaImg, bx + padX, by + padY, bubbleW - padX * 2, bubbleH - padY * 2);
+    } else {
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "15px sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      const blockH = lines.length * lineH;
+      let ty = by + (bubbleH - blockH) / 2 + lineH / 2;
+      for (const ln of lines) {
+        ctx.fillText(ln, bx + padX, ty);
+        ty += lineH;
+      }
+    }
+    if (bunnyImg && bunnyImg.naturalWidth) {
+      ctx.drawImage(bunnyImg, bx - bunnyOffX, by - bunnyOffY, bunnySize, bunnySize);
+    }
+    const blob = await canvasToPngBlob(canvas);
+    return uploadRecallShot(blob);
+  }
+  async function recallChatMessageUi(id, ts) {
     const sid = String(id || "").trim();
-    if (!sid) return;
+    if (!sid || recallBusy) return;
+    if (recallExpiredUi(ts)) {
+      shellToast("\u8d85\u8fc72\u5206\u949f\u4e0d\u80fd\u64a4\u56de");
+      return;
+    }
+    const box = document.getElementById("chatThread");
+    setChatErr("");
+    recallBusy = true;
+    let shot = "";
+    try {
+      shot = (await withTimeout(captureRecallShot(sid), 2500, "")) || "";
+    } catch (_) {
+      shot = "";
+    }
     try {
       const res = await fetch("/api/v1/chat/messages/" + encodeURIComponent(sid) + "/recall", {
         method: "POST",
         credentials: "same-origin",
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(shot ? { screenshot: shot } : {}),
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.message || "撤回失败");
-      if (data.message) patchMessageBubble(data.message);
-      else await refreshChatThread();
-      shellToast("已撤回");
+      const ctype = String(res.headers.get("content-type") || "");
+      if (!ctype.includes("event-stream")) {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || data.error || "\u64a4\u56de\u5931\u8d25");
+        if (data.message) patchMessageBubble(data.message);
+        return;
+      }
+      if (!res.ok && !res.body) {
+        throw new Error("\u64a4\u56de\u5931\u8d25");
+      }
+      await readChatSse(res, makeChatStream(box));
+      if (chatViewActive()) await markChatRead();
     } catch (err) {
-      shellToast((err && err.message) || "撤回失败");
+      shellToast((err && err.message) || "\u64a4\u56de\u5931\u8d25");
+    } finally {
+      recallBusy = false;
+      setTyping(false);
     }
   }
   async function deleteChatMessageUi(id) {
@@ -2252,25 +3305,429 @@
       shellToast((err && err.message) || "删除失败");
     }
   }
+  function canRegenRow(row) {
+    if (!row || row.dataset.kind !== "text" || !row.classList.contains("them")) return false;
+    let n = row.nextElementSibling;
+    while (n) {
+      if (n.classList && n.classList.contains("wx-row")) {
+        if (n.classList.contains("me")) return false;
+        if (n.classList.contains("them") && n.dataset.kind === "text") return false;
+      }
+      n = n.nextElementSibling;
+    }
+    return true;
+  }
+
+  function syncVariantBar(col, msg) {
+    if (!col) return;
+    let bar = col.querySelector(".wx-variant-bar");
+    const variants = msg && Array.isArray(msg.variants) ? msg.variants : [];
+    if (variants.length < 2 || !msg || !msg.id) {
+      if (bar) bar.remove();
+      return;
+    }
+    const idx = Number(msg.variantIndex) || 0;
+    const n = variants.length;
+    const cur = Math.max(0, Math.min(idx, n - 1)) + 1;
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "wx-variant-bar";
+      bar.innerHTML =
+        '<button type="button" class="wx-var-prev" aria-label="\u4e0a\u4e00\u7248">\u2039</button>' +
+        '<span class="wx-var-lab"></span>' +
+        '<button type="button" class="wx-var-next" aria-label="\u4e0b\u4e00\u7248">\u203a</button>';
+      col.append(bar);
+      bar.querySelector(".wx-var-prev").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = bar.dataset.msgId;
+        const i = Number(bar.dataset.index) || 0;
+        if (i > 0) switchMessageVariant(id, i - 1);
+      });
+      bar.querySelector(".wx-var-next").addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = bar.dataset.msgId;
+        const i = Number(bar.dataset.index) || 0;
+        const total = Number(bar.dataset.total) || 0;
+        if (i < total - 1) switchMessageVariant(id, i + 1);
+      });
+    }
+    bar.dataset.msgId = String(msg.id);
+    bar.dataset.index = String(Math.max(0, Math.min(idx, n - 1)));
+    bar.dataset.total = String(n);
+    const lab = bar.querySelector(".wx-var-lab");
+    if (lab) lab.textContent = cur + "/" + n;
+    const prev = bar.querySelector(".wx-var-prev");
+    const next = bar.querySelector(".wx-var-next");
+    if (prev) prev.disabled = cur <= 1;
+    if (next) next.disabled = cur >= n;
+  }
+
+  async function switchMessageVariant(id, index) {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/messages/" + encodeURIComponent(id) + "/variant",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ index: index }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "\u5207\u6362\u5931\u8d25");
+      if (data.message) patchMessageBubble(data.message);
+    } catch (err) {
+      shellToast((err && err.message) || "\u5207\u6362\u5931\u8d25");
+    }
+  }
+
   async function regenerateBotMessage(id) {
-    shellToast("重新生成 · 稍后");
-    /* ponytail: full regen stream later; toast keeps UI honest */
+    if (!id || regenBusy || sending) {
+      shellToast(sending || regenBusy ? "\u8bf7\u7a0d\u5019" : "\u65e0\u6cd5\u91cd\u751f");
+      return;
+    }
+    const box = document.getElementById("chatThread");
+    const row = box && box.querySelector('.wx-row[data-msg-id="' + String(id).replace(/"/g, "") + '"]');
+    const bubble = row && row.querySelector(".bubble");
+    if (!bubble || !canRegenRow(row)) {
+      shellToast("\u53ea\u80fd\u91cd\u751f\u6700\u65b0\u4e00\u6761\u5bb6\u673a\u6587\u5b57");
+      return;
+    }
+    regenBusy = true;
+    setComposerBusy(true);
+    setChatErr("");
+    let pendingToolRow = null;
+    const paintFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+    try {
+      const res = await fetch(
+        "/api/v1/chat/messages/" + encodeURIComponent(id) + "/regenerate",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { Accept: "text/event-stream" },
+        }
+      );
+      const ctype = String(res.headers.get("content-type") || "");
+      if (!res.ok && !ctype.includes("event-stream")) {
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (_) {
+          data = {};
+        }
+        throw new Error(data.message || data.error || "\u91cd\u65b0\u751f\u6210\u5931\u8d25");
+      }
+      if (!res.body || !res.body.getReader) throw new Error("\u6d4f\u89c8\u5668\u4e0d\u652f\u6301\u6d41\u5f0f\u8bfb\u53d6");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buf = "";
+      let cleared = false;
+      const handleEvent = async (ev) => {
+        if (!ev || !ev.type) return;
+        if (ev.type === "bot_start") {
+          pendingThink = { sec: 0, text: "" };
+          thinkAttached = false;
+          cleared = false;
+          setTyping(true);
+        } else if (ev.type === "bot_think") {
+          if (ev.text) {
+            pendingThink.text = pendingThink.text
+              ? pendingThink.text + "\n---\n" + ev.text
+              : String(ev.text);
+          }
+          if (Number(ev.seconds) > 0) pendingThink.sec += Number(ev.seconds);
+          ensureBunnyThink(bubble, {
+            think: pendingThink.text,
+            think_sec: pendingThink.sec,
+          });
+        } else if (ev.type === "bot_tool" && ev.name) {
+          pendingToolRow = appendToolChip(ev.name, ev.label);
+        } else if (ev.type === "bot_tool_done") {
+          finishToolChip(pendingToolRow, ev);
+          pendingToolRow = null;
+        } else if (ev.type === "bot_delta" && ev.text) {
+          if (!cleared) {
+            bubbleTextEl(bubble).textContent = "";
+            cleared = true;
+          }
+          const te = bubbleTextEl(bubble);
+          te.textContent = (te.textContent || "") + ev.text;
+          if (nearBottom && box) box.scrollTop = box.scrollHeight;
+        } else if (ev.type === "bot_done" && ev.message) {
+          fillBubble(bubble, ev.message);
+          ensureBunnyThink(bubble, ev.message);
+          const col = row.querySelector(".wx-col");
+          if (col) syncVariantBar(col, ev.message);
+          setTyping(false);
+        } else if (ev.type === "bot_error") {
+          setTyping(false);
+          if (ev.message) shellToast(ev.message);
+        } else if (ev.type === "done") {
+          setTyping(false);
+          if (ev.bot_error) {
+            if (ev.message) {
+              fillBubble(bubble, ev.message);
+              ensureBunnyThink(bubble, ev.message);
+              const col = row.querySelector(".wx-col");
+              if (col) syncVariantBar(col, ev.message);
+            }
+            shellToast(ev.bot_error.message || "\u91cd\u65b0\u751f\u6210\u5931\u8d25");
+          }
+        }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let sep;
+        while ((sep = buf.indexOf("\n\n")) >= 0) {
+          const chunk = buf.slice(0, sep);
+          buf = buf.slice(sep + 2);
+          const lines = chunk.split("\n");
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const raw = line.slice(5).trim();
+            if (!raw || raw[0] === ":") continue;
+            try {
+              await handleEvent(JSON.parse(raw));
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (err) {
+      setTyping(false);
+      shellToast((err && err.message) || "\u91cd\u65b0\u751f\u6210\u5931\u8d25");
+    } finally {
+      regenBusy = false;
+      setComposerBusy(false);
+    }
+  }
+
+  function nextReactions(list, from, emoji) {
+    const cur = (Array.isArray(list) ? list : []).filter((r) => r && r.emoji && r.from);
+    const same = cur.findIndex((r) => r.from === from && r.emoji === emoji);
+    if (same >= 0) return cur.filter((_, i) => i !== same);
+    return cur.filter((r) => r.from !== from).concat([{ from: from, emoji: emoji }]);
+  }
+  (function checkReactions() {
+    const added = nextReactions([], "you", "a");
+    if (added.length !== 1 || added[0].emoji !== "a") throw new Error("add");
+    if (nextReactions(added, "you", "a").length !== 0) throw new Error("toggle");
+    const swapped = nextReactions(added, "you", "b");
+    if (swapped.length !== 1 || swapped[0].emoji !== "b") throw new Error("swap");
+    const kept = nextReactions([{ from: "bot", emoji: "c" }, { from: "you", emoji: "a" }], "you", "b");
+    if (kept.length !== 2 || kept[0].from !== "bot" || kept[1].emoji !== "b") throw new Error("keep");
+  })();
+  function paintQuoteRef(row, msg) {
+    if (!row) return;
+    const bubble = rowBubble(row);
+    if (!bubble) return;
+    let col = row.querySelector(":scope > .wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      bubble.replaceWith(col);
+      col.append(bubble);
+    }
+    let ref = col.querySelector(":scope > .wx-quote-ref");
+    const q = msg && msg.quote;
+    const text = q ? String(q.text || "").trim() : "";
+    if (!text) {
+      if (ref) ref.remove();
+      return;
+    }
+    if (!ref) {
+      ref = document.createElement("button");
+      ref.type = "button";
+      ref.className = "wx-quote-ref";
+      const anchor =
+        col.querySelector(":scope > .wx-voice-line") || bubble;
+      const next = anchor.nextSibling;
+      if (next) col.insertBefore(ref, next);
+      else col.append(ref);
+    }
+    const who = String((q && q.who) || "").trim() || "\u2026";
+    const snip = text.length > 48 ? text.slice(0, 48) + "\u2026" : text;
+    ref.textContent = who + ": " + snip;
+    const qid = q && q.id ? String(q.id) : "";
+    ref.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!qid || !scrollToMessage(qid)) shellToast("\u539f\u6d88\u606f\u5df2\u4e0d\u5728");
+    };
+  }
+  function paintReactions(row, reactions) {
+    if (!row) return;
+    const bubble = rowBubble(row);
+    if (!bubble) return;
+    let col = row.querySelector(":scope > .wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      bubble.replaceWith(col);
+      col.append(bubble);
+    }
+    let bar = col.querySelector(":scope > .wx-reacts");
+    const list = (Array.isArray(reactions) ? reactions : []).filter((r) => r && r.emoji);
+    if (!list.length) {
+      if (bar) bar.remove();
+      return;
+    }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "wx-reacts";
+      col.append(bar);
+    }
+    bar.replaceChildren();
+    for (const r of list) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "wx-react " + (r.from === "you" ? "is-you" : "is-bot");
+      b.textContent = r.emoji;
+      if (r.from === "you") {
+        b.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          postReaction(row.getAttribute("data-msg-id"), r.emoji);
+        });
+      } else {
+        b.disabled = true;
+      }
+      bar.append(b);
+    }
+  }
+  async function postReaction(id, emoji) {
+    const sid = String(id || "");
+    const emo = String(emoji || "").trim();
+    if (!sid || !emo) return;
+    try {
+      const res = await fetch("/api/v1/chat/messages/" + encodeURIComponent(sid) + "/react", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji: emo }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "\u6ca1\u8d34\u4e0a");
+      const box = document.getElementById("chatThread");
+      const row =
+        box && box.querySelector('.wx-row[data-msg-id="' + CSS.escape(sid) + '"]');
+      if (row) paintReactions(row, data.message && data.message.reactions);
+    } catch (err) {
+      shellToast((err && err.message) || "\u6ca1\u8d34\u4e0a");
+    }
+  }
+  async function postVoiceTranscribe(id) {
+    const sid = String(id || "");
+    if (!sid || multiMode) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/messages/" + encodeURIComponent(sid) + "/transcribe",
+        { method: "POST", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        throw new Error((data && data.message) || "转文字失败");
+      }
+      if (data.message) patchMessageBubble(data.message);
+    } catch (err) {
+      shellToast((err && err.message) || "转文字失败");
+    }
+  }
+  /** 转文字/收起挂在气泡外，避免展开时把语音气泡挤歪 */
+  function paintVoiceAsr(row, msg) {
+    if (!row) return;
+    const oldLine = row.querySelector(".wx-voice-line");
+    const oldBox = row.querySelector(".wx-voice-asr-box");
+    if (!msg || msg.kind !== "voice") {
+      if (oldLine) {
+        const b = oldLine.querySelector(".bubble");
+        if (b && oldLine.parentNode) {
+          oldLine.parentNode.insertBefore(b, oldLine);
+          oldLine.remove();
+        }
+      }
+      if (oldBox) oldBox.remove();
+      return;
+    }
+    let bubble = row.querySelector(".bubble.is-voice") || row.querySelector(".bubble");
+    if (!bubble) return;
+    let col = row.querySelector(".wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      bubble.replaceWith(col);
+      col.append(bubble);
+    }
+    let line = col.querySelector(":scope > .wx-voice-line");
+    if (!line) {
+      line = document.createElement("div");
+      line.className = "wx-voice-line";
+      col.insertBefore(line, bubble);
+    }
+    if (bubble.parentElement !== line) line.append(bubble);
+    let asrBtn = line.querySelector(".wx-voice-asr");
+    if (!asrBtn) {
+      asrBtn = document.createElement("button");
+      asrBtn.type = "button";
+      asrBtn.className = "wx-voice-asr";
+      line.append(asrBtn);
+    }
+    const p = msg.payload || {};
+    const showTr = !!(p.transcript && !p.transcriptHidden);
+    asrBtn.textContent = showTr ? "收起" : "转文字";
+    asrBtn.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (multiMode) return;
+      postVoiceTranscribe(msg.id);
+    };
+    let box = col.querySelector(":scope > .wx-voice-asr-box");
+    if (showTr) {
+      if (!box) {
+        box = document.createElement("div");
+        box.className = "wx-voice-asr-box";
+        const after = line.nextSibling;
+        if (after) col.insertBefore(box, after);
+        else col.append(box);
+      }
+      box.classList.toggle("is-stub", !!p.transcriptStub);
+      box.replaceChildren();
+      const lab = document.createElement("div");
+      lab.className = "lab";
+      lab.textContent = "转文字";
+      const body = document.createElement("div");
+      body.textContent = p.transcript;
+      box.append(lab, body);
+      box.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (multiMode) return;
+        postVoiceTranscribe(msg.id);
+      };
+    } else if (box) {
+      box.remove();
+    }
   }
   function openReactSheet(p) {
     const sheet = document.getElementById("chatReactSheet");
     const inp = document.getElementById("chatReactInput");
-    if (!sheet) return;
+    if (!sheet || !p || !p.refId) return;
+    reactMsgId = String(p.refId);
     sheet.hidden = false;
     if (inp) {
       inp.value = "";
       inp.focus();
       inp.onkeydown = (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const emo = String(inp.value || "").trim();
-          sheet.hidden = true;
-          if (emo) shellToast("贴了 " + emo);
+        if (e.key !== "Enter") return;
+        e.preventDefault();
+        const emo = String(inp.value || "").trim();
+        if (!emo) {
+          shellToast("\u8bf7\u9009\u4e00\u4e2a\u8868\u60c5");
+          return;
         }
+        sheet.hidden = true;
+        postReaction(reactMsgId, emo);
       };
     }
   }
@@ -2295,7 +3752,12 @@
       return;
     }
     if (action === "forward") {
-      openFwdSheet([p]);
+      const items = collectForwardables(p.refId ? [p.refId] : []);
+      if (!items.length) {
+        shellToast("这条不能转发");
+        return;
+      }
+      openFwdSheet(items);
       return;
     }
     if (action === "fav") {
@@ -2311,7 +3773,7 @@
       return;
     }
     if (action === "recall") {
-      await recallChatMessageUi(p.refId);
+      await recallChatMessageUi(p.refId, p.msg && p.msg.ts);
       return;
     }
     if (action === "delete") {
@@ -2365,8 +3827,30 @@
     exitMultiMode();
   }
   async function multiCopyUi() {
-    shellToast("已记 · 多选复制稍后");
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    const lines = [];
+    box.querySelectorAll(".wx-row[data-msg-id]").forEach((row) => {
+      const id = row.getAttribute("data-msg-id");
+      if (!multiIds.has(id)) return;
+      const kind = row.dataset.kind || "";
+      if (kind === "image" || kind === "sticker") return;
+      const bubble = row.querySelector(".bubble");
+      if (!bubble || bubble.classList.contains("is-media")) return;
+      const textEl = bubble.querySelector(".wx-bubble-text");
+      const text = String((textEl && textEl.textContent) || bubble.innerText || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (text) lines.push(text);
+    });
+    if (!lines.length) {
+      shellToast("\u6ca1\u6709\u53ef\u590d\u5236\u7684\u6587\u5b57");
+      return;
+    }
+    const ok = await copyCtxText(lines.join("\n"));
+    if (ok) exitMultiMode();
   }
+
   function openFwdSheet(items) {
     const sheet = document.getElementById("chatFwdSheet");
     const peers = document.getElementById("chatFwdPeers");
@@ -2386,6 +3870,80 @@
   function closeFwdSheet() {
     const sheet = document.getElementById("chatFwdSheet");
     if (sheet) sheet.hidden = true;
+  }
+
+
+  function collectForwardables(ids) {
+    const box = document.getElementById("chatThread");
+    const want = ids ? new Set(ids.map((id) => String(id))) : null;
+    const out = [];
+    if (!box) return out;
+    const skip = {
+      image: 1,
+      sticker: 1,
+      redpacket: 1,
+      transfer: 1,
+      file: 1,
+      music: 1,
+    };
+    box.querySelectorAll(".wx-row[data-msg-id]").forEach((row) => {
+      const id = row.getAttribute("data-msg-id");
+      if (want && !want.has(id)) return;
+      const kind = row.dataset.kind || "";
+      if (skip[kind]) return;
+      const bubble = row.querySelector(".bubble");
+      if (!bubble || bubble.classList.contains("is-media")) return;
+      const textEl = bubble.querySelector(".wx-bubble-text");
+      const text = String((textEl && textEl.textContent) || bubble.innerText || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!text) return;
+      out.push({
+        who: row.classList.contains("me") ? "\u4f60" : displayPeerName(),
+        text: text,
+      });
+    });
+    return out;
+  }
+  function mergedForwardBody(items) {
+    const title = "\u4f60\u548c" + displayPeerName() + "\u7684\u804a\u5929\u8bb0\u5f55";
+    const lines = items.map((it) => it.who + ": " + it.text);
+    return title + "\n" + lines.join("\n");
+  }
+  async function postSilentMessage(body) {
+    const res = await fetch("/api/v1/chat/messages", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "text", body: body, noreply: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "\u8f6c\u53d1\u5931\u8d25");
+    if (data.message) appendChatMessage(data.message);
+  }
+  async function sendForward(mode) {
+    const sheet = document.getElementById("chatFwdSheet");
+    const items = (sheet && sheet._fwdItems) || [];
+    if (!items.length) {
+      shellToast("\u6ca1\u6709\u53ef\u8f6c\u53d1\u7684\u6587\u5b57");
+      return;
+    }
+    closeFwdSheet();
+    exitMultiMode();
+    try {
+      if (mode === "merge") {
+        await postChatPayload({ kind: "text", body: mergedForwardBody(items) });
+        return;
+      }
+      for (let i = 0; i < items.length - 1; i++) await postSilentMessage(items[i].text);
+      await postChatPayload({
+        kind: "text",
+        body: items[items.length - 1].text,
+        batch: items.map((it) => it.text),
+      });
+    } catch (err) {
+      shellToast((err && err.message) || "\u8f6c\u53d1\u5931\u8d25");
+    }
   }
 
   /* ========== Moments / fav / compose ========== */
@@ -2725,6 +4283,7 @@
     const label = data && data.label ? String(data.label) : "";
     if (prefLab) prefLab.textContent = label || "—";
     if (!cap) return;
+    cap.classList.remove("is-cold", "is-sour", "is-up");
     if (!label) {
       cap.hidden = true;
       cap.textContent = "";
@@ -2732,6 +4291,9 @@
     }
     cap.hidden = false;
     cap.textContent = label;
+    if (label === "冷战") cap.classList.add("is-cold");
+    else if (label === "酸了" || label === "吃醋") cap.classList.add("is-sour");
+    else if (label === "开心" || label === "兴奋") cap.classList.add("is-up");
   }
   async function refreshMoodUi() {
     try {
@@ -2760,9 +4322,34 @@
         if (slow) slow.classList.toggle("on", data.slow_reply !== false);
       }
     } catch (_) {}
-    const bgLab = document.getElementById("chatPrefBgLab");
-    if (bgLab) bgLab.textContent = lsGet(LS.bgPick, "") ? "已选相册图" : "从相册选择";
+    paintChatBgLabs();
     await refreshMoodUi();
+  }
+  function hasCustomChatBg() {
+    return !!String(lsGet(LS.bgPick, "") || "").trim();
+  }
+  function paintChatBgLabs() {
+    const custom = hasCustomChatBg();
+    const bgLab = document.getElementById("chatPrefBgLab");
+    if (bgLab) bgLab.textContent = custom ? "已选相册图" : "从相册选择";
+    const clearLab = document.getElementById("chatPrefBgClearLab");
+    if (clearLab) clearLab.textContent = custom ? "可恢复" : "已是默认";
+    const peerBg = document.getElementById("chatPeerBgVal");
+    if (peerBg) peerBg.textContent = custom ? "已选相册图" : "默认";
+    const peerClear = document.getElementById("btnChatPeerBgClear");
+    if (peerClear) peerClear.hidden = !custom;
+    const prefClear = document.getElementById("btnChatBgClear");
+    if (prefClear) prefClear.hidden = !custom;
+  }
+  function clearChatBg() {
+    if (!hasCustomChatBg()) {
+      shellToast("已是默认背景");
+      return;
+    }
+    lsSet(LS.bgPick, "");
+    applyChatBg();
+    paintChatBgLabs();
+    shellToast("已恢复默认背景");
   }
   async function patchChatPrefs(patch) {
     try {
@@ -2833,12 +4420,14 @@
   async function openProfilePage(returnTo) {
     const el = document.getElementById("chatOvProfile");
     const cardTa = document.getElementById("chatPersonaCardInput");
+    const noteInp = document.getElementById("chatNoteInput");
     const nameEl = document.getElementById("chatProfileName");
     const av = document.getElementById("chatProfileAv");
     if (!el) return;
     chatSubReturn = returnTo || null;
     if (nameEl) nameEl.textContent = displayPeerName();
     if (av) av.src = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    if (noteInp) noteInp.value = readNote("daily");
     if (cardTa) cardTa.value = "";
     paintProfileInheritUi(true);
     try {
@@ -2865,6 +4454,7 @@
   async function saveProfilePage() {
     const cardTa = document.getElementById("chatPersonaCardInput");
     const useCb = document.getElementById("chatPersonaUseHut");
+    const noteInp = document.getElementById("chatNoteInput");
     if (!cardTa) return;
     const persona_card = String(cardTa.value || "").slice(0, 12000);
     const inherit = !useCb || useCb.checked;
@@ -2884,6 +4474,8 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "保存失败");
+      writeNote("daily", String((noteInp && noteInp.value) || ""));
+      refreshPeerLabels();
       shellToast("已保存");
       backFromProfile();
     } catch (err) {
@@ -2909,6 +4501,7 @@
     const muteVal = document.getElementById("chatPeerMuteVal");
     if (pinVal) pinVal.textContent = readPins().includes("daily") ? "开" : "关";
     if (muteVal) muteVal.textContent = readMutes().includes("daily") ? "开" : "关";
+    paintChatBgLabs();
     refreshPeerLabels();
   }
   function openPeerPage() {
@@ -2945,22 +4538,16 @@
       openHist();
       return;
     }
-    if (act === "note") {
-      const cur = readNote("daily");
-      const next = window.prompt("备注名（空=清除）", cur || "");
-      if (next == null) return;
-      writeNote("daily", next);
-      refreshPeerLabels();
-      paintPeerPageLabels();
-      shellToast(next.trim() ? "已设备注" : "已清除备注");
-      return;
-    }
     if (act === "bg") {
       const inp = document.getElementById("chatBgInput");
       if (inp) {
         inp.value = "";
         inp.click();
       }
+      return;
+    }
+    if (act === "bg-clear") {
+      clearChatBg();
       return;
     }
     if (act === "pin") {
@@ -3296,6 +4883,39 @@
     const stateEl = document.getElementById("chatCallState");
     if (stateEl) stateEl.textContent = "通话中…";
   }
+  function voiceBubbleSec(p) {
+    const src = p || {};
+    const ms = Number(src.durationMs);
+    if (Number.isFinite(ms) && ms > 0) return Math.max(1, Math.round(ms / 1000));
+    const sec = Number(src.duration != null ? src.duration : src.sec);
+    if (Number.isFinite(sec) && sec > 0) return Math.max(1, Math.round(sec));
+    return 1;
+  }
+  function voiceHoldMs(started, now) {
+    if (!started) return 1000;
+    const ms = Math.floor(Number(now) - Number(started));
+    if (!Number.isFinite(ms) || ms < 1000) return 1000;
+    if (ms > 120000) return 120000;
+    return ms;
+  }
+  function voicePlaySrc(payload, body) {
+    const p = payload || {};
+    const raw = String(p.url || body || "").trim();
+    if (/^(https?:|blob:|\/)/i.test(raw)) return raw;
+    return "";
+  }
+  (function checkVoiceHold() {
+    if (voiceBubbleSec({ durationMs: 2400 }) !== 2) throw new Error("ms");
+    if (voiceBubbleSec({ durationMs: 400 }) !== 1) throw new Error("short ms");
+    if (voiceBubbleSec({ duration: 5 }) !== 5) throw new Error("legacy sec");
+    if (voiceBubbleSec({ durationMs: 0, sec: 3 }) !== 3) throw new Error("zero ms");
+    if (voiceBubbleSec({}) !== 1) throw new Error("empty");
+    if (voiceHoldMs(1000, 3400) !== 2400) throw new Error("hold");
+    if (voiceHoldMs(0, 999999) !== 1000) throw new Error("no start");
+    if (voiceHoldMs(1, 130000) !== 120000) throw new Error("cap");
+    if (voicePlaySrc({}, "/api/v1/chat/media/a") !== "/api/v1/chat/media/a") throw new Error("body");
+    if (voicePlaySrc({}, "memo") !== "") throw new Error("plain");
+  })();
   function pickRecorderMime() {
     const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
     for (const m of cands) {
@@ -3314,6 +4934,7 @@
     }
     voiceChunks = [];
     voiceRec = null;
+    voiceHoldStarted = 0;
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
         return;
@@ -3325,11 +4946,14 @@
         if (e.data && e.data.size) voiceChunks.push(e.data);
       };
       voiceRec.start();
+      voiceHoldStarted = Date.now();
     } catch (_) {
       voiceRec = null;
     }
   }
   async function endVoiceHold() {
+    const durationMs = voiceHoldMs(voiceHoldStarted, Date.now());
+    voiceHoldStarted = 0;
     const hold = document.getElementById("btnChatHold");
     if (hold) {
       hold.classList.remove("is-pressing");
@@ -3369,7 +4993,11 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.url) throw new Error(data.message || "上传失败");
       setComposerBusy(false);
-      await postChatPayload({ kind: "voice", body: data.url, duration: 2 });
+      await postChatPayload({
+        kind: "voice",
+        body: data.url,
+        durationMs: durationMs,
+      });
     } catch (err) {
       setComposerBusy(false);
       shellToast((err && err.message) || "语音发送失败");
@@ -3638,6 +5266,8 @@
         }
       });
     }
+    const btnBgClear = document.getElementById("btnChatBgClear");
+    if (btnBgClear) btnBgClear.addEventListener("click", () => clearChatBg());
     const bgInp = document.getElementById("chatBgInput");
     if (bgInp) {
       bgInp.addEventListener("change", () => {
@@ -3647,6 +5277,7 @@
         reader.onload = () => {
           lsSet(LS.bgPick, String(reader.result || ""));
           applyChatBg();
+          paintChatBgLabs();
           loadChatPrefsUi();
           shellToast("已设聊天背景");
         };
@@ -3720,7 +5351,7 @@
         const marks = readUnreadMarks();
         marks.daily = true;
         writeUnreadMarks(marks);
-        paintShellUnread(0);
+        refreshUnreadUi();
         closeSessMenu();
         shellToast("已标为未读");
       });
@@ -3753,14 +5384,10 @@
     if (fwdScrim) fwdScrim.addEventListener("click", closeFwdSheet);
     const fwdCancel = document.getElementById("btnChatFwdCancel");
     if (fwdCancel) fwdCancel.addEventListener("click", closeFwdSheet);
-    const fwdOk = document.getElementById("btnChatFwdOk");
-    if (fwdOk) {
-      fwdOk.addEventListener("click", () => {
-        closeFwdSheet();
-        shellToast("已转发（单 peer 示意）");
-        exitMultiMode();
-      });
-    }
+    const fwdEach = document.getElementById("btnChatFwdEach");
+    if (fwdEach) fwdEach.addEventListener("click", () => sendForward("each"));
+    const fwdMerge = document.getElementById("btnChatFwdMerge");
+    if (fwdMerge) fwdMerge.addEventListener("click", () => sendForward("merge"));
     const picView = document.getElementById("chatPicView");
     if (picView) {
       picView.addEventListener("click", (e) => {
@@ -3777,6 +5404,47 @@
       e.stopPropagation();
       stepPic(1);
     });
+    /* H1.84：大图开着时 ←/→ 翻页、Esc 关闭；关着不抢输入 */
+    document.addEventListener("keydown", (e) => {
+      const view = document.getElementById("chatPicView");
+      if (!view || view.hidden) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePicViewer();
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        stepPic(-1);
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        stepPic(1);
+      }
+    });
+    const rpScrim = document.getElementById("chatRpScrim");
+    if (rpScrim) rpScrim.addEventListener("click", () => closeRedpacketView());
+    const rpOpen = document.getElementById("chatRpOpen");
+    if (rpOpen) rpOpen.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openRedpacketClaim();
+    });
+    const rpDone = document.getElementById("chatRpDone");
+    if (rpDone) rpDone.addEventListener("click", () => closeRedpacketView());
+    const locScrim = document.getElementById("chatLocScrim");
+    if (locScrim) locScrim.addEventListener("click", closeLocView);
+    const locClose = document.getElementById("chatLocClose");
+    if (locClose) locClose.addEventListener("click", closeLocView);
+    const locCopy = document.getElementById("chatLocCopy");
+    if (locCopy) {
+      locCopy.addEventListener("click", async () => {
+        if (!locViewCopy) return;
+        const ok = await copyCtxText(locViewCopy);
+        if (ok) shellToast("已复制");
+      });
+    }
   }
 
   function bind() {
@@ -3784,7 +5452,26 @@
     bound = true;
     bindShell();
     const back = document.getElementById("btnChatBack");
-    if (back) back.addEventListener("click", () => closeThreadLayer());
+    if (back) {
+      back.addEventListener("click", () => {
+        const rp = document.getElementById("chatRpView");
+        if (rp && !rp.hidden) {
+          closeRedpacketView();
+          return;
+        }
+        const loc = document.getElementById("chatLocView");
+        if (loc && !loc.hidden) {
+          closeLocView();
+          return;
+        }
+        const pic = document.getElementById("chatPicView");
+        if (pic && !pic.hidden) {
+          closePicViewer();
+          return;
+        }
+        closeThreadLayer();
+      });
+    }
     const more = document.getElementById("btnChatPeerMore");
     if (more) more.addEventListener("click", () => openPeerPage());
     const quoteClear = document.getElementById("btnChatQuoteClear");
@@ -3793,7 +5480,7 @@
     if (newMsg) {
       newMsg.addEventListener("click", () => {
         scrollToLatest();
-        showNewMsgChip(false);
+        setNewMsgChip(0);
       });
     }
     const thread = document.getElementById("chatThread");
@@ -3802,7 +5489,7 @@
         "scroll",
         () => {
           nearBottom = threadNearBottom();
-          if (nearBottom) showNewMsgChip(false);
+          if (nearBottom) setNewMsgChip(0);
         },
         { passive: true }
       );
@@ -3875,6 +5562,10 @@
         }
         toggleStickerPanel();
       });
+    }
+    const voiceBtn = document.getElementById("btnChatVoice");
+    if (voiceBtn) {
+      voiceBtn.addEventListener("click", () => setVoiceMode(!voiceMode));
     }
     const plus = document.getElementById("btnChatPlus");
     if (plus) plus.addEventListener("click", () => togglePlusPanel());
@@ -3951,8 +5642,8 @@
     const img = document.getElementById("chatImageInput");
     if (img) {
       img.addEventListener("change", () => {
-        const f = img.files && img.files[0];
-        if (f) sendPickedImage(f);
+        if (img.files && img.files.length) sendPickedImages(img.files);
+        img.value = "";
       });
     }
     const cam = document.getElementById("chatCameraInput");
@@ -3960,6 +5651,7 @@
       cam.addEventListener("change", () => {
         const f = cam.files && cam.files[0];
         if (f) sendPickedImage(f);
+        cam.value = "";
       });
     }
     const fileInp = document.getElementById("chatFileInput");
@@ -3987,6 +5679,17 @@
     if (cancel) cancel.addEventListener("click", closeSheet);
     const ok = document.getElementById("chatSheetOk");
     if (ok) ok.addEventListener("click", () => confirmSheet());
+    const balGo = document.getElementById("chatSheetBalGo");
+    if (balGo) {
+      balGo.addEventListener("click", () => {
+        closeSheet();
+        try {
+          deps.showView("wallet");
+        } catch (_) {
+          shellToast("打不开资产");
+        }
+      });
+    }
     const multiDel = document.getElementById("chatMultiDel");
     if (multiDel) multiDel.addEventListener("click", () => multiDeleteUi());
     const multiCopy = document.getElementById("chatMultiCopy");
@@ -3994,7 +5697,12 @@
     const multiFwd = document.getElementById("chatMultiFwd");
     if (multiFwd) {
       multiFwd.addEventListener("click", () => {
-        openFwdSheet(Array.from(multiIds).map((id) => ({ refId: id, text: id })));
+        const items = collectForwardables(Array.from(multiIds));
+        if (!items.length) {
+          shellToast("\u6ca1\u6709\u53ef\u8f6c\u53d1\u7684\u6587\u5b57");
+          return;
+        }
+        openFwdSheet(items);
       });
     }
     syncSendPlus();

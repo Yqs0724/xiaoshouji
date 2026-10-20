@@ -151,7 +151,9 @@
         chip.textContent = ownerLabel(ev.owner);
         const t = document.createElement("span");
         t.className = "t";
-        t.textContent = ev.title;
+        t.textContent = ev.time
+          ? String(ev.time) + " · " + ev.title
+          : ev.title;
         li.append(chip, t);
         list.append(li);
       }
@@ -200,7 +202,9 @@
         chip.textContent = ownerLabel(ev.owner);
         const t = document.createElement("span");
         t.className = "t";
-        t.textContent = ev.title;
+        t.textContent = ev.time
+          ? String(ev.time) + " · " + ev.title
+          : ev.title;
         const edit = document.createElement("button");
         edit.type = "button";
         edit.textContent = "编辑";
@@ -982,7 +986,13 @@
       setCalMsg("标题不能为空", "bad");
       return;
     }
-    if (title === ev.title) return;
+    const timeRaw = window.prompt(
+      "时刻（HH:MM，空=全日）",
+      ev.time || ""
+    );
+    if (timeRaw == null) return;
+    const time = String(timeRaw).trim();
+    if (title === ev.title && time === String(ev.time || "")) return;
     setCalMsg("保存中…");
     try {
       const res = await fetch(
@@ -991,7 +1001,7 @@
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "same-origin",
-          body: JSON.stringify({ title }),
+          body: JSON.stringify({ title, time }),
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -1007,18 +1017,22 @@
 
   async function addCalEvent() {
     const input = document.getElementById("calNewTitle");
+    const timeEl = document.getElementById("calNewTime");
     const title = input ? String(input.value || "").trim() : "";
+    const time = timeEl ? String(timeEl.value || "").trim() : "";
     if (!title) {
       setCalMsg("先写一点安排再添加", "bad");
       return;
     }
     setCalMsg("保存中…");
     try {
+      const body = { title: title, date: calSelected };
+      if (time) body.time = time;
       const res = await fetch("/api/v1/cal/events", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ title: title, date: calSelected }),
+        body: JSON.stringify(body),
       });
       let data = {};
       try {
@@ -1036,6 +1050,7 @@
         throw new Error(data.message || data.error || "添加失败");
       }
       if (input) input.value = "";
+      if (timeEl) timeEl.value = "";
       setCalMsg("已添加", "ok");
       await refreshAgenda();
       await refreshHub();
@@ -1142,6 +1157,7 @@
     mount: mount,
     refreshView: refreshCalView,
     onShow: onShow,
+    openDay: openDay,
     fetchEvents: fetchCalEvents,
     fetchNotes: async function fetchNotes(params) {
       const date = params && params.date;

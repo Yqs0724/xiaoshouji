@@ -1,6 +1,6 @@
 {
-  "you_balance": 85.85,
-  "bot_balance": 1914.15,
+  "you_balance": 250.45,
+  "bot_balance": 1749.55,
   "ledger": [
     {
       "id": "2c2ee370-42a4-4dcf-a606-eadc9579959b",
@@ -91,6 +91,116 @@
       "amount": 520,
       "note": "转账",
       "msg_id": "3a3facab-944d-475a-a2eb-844987282324"
+    },
+    {
+      "id": "f0986259-c611-410e-b694-4a541f5608d3",
+      "ts": 1792414086648,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 52,
+      "note": "开心收着",
+      "msg_id": "d8a368af-2622-45f8-8aff-e3187f84ad5e"
+    },
+    {
+      "id": "c58a03ef-421e-419e-99ed-53fec17cc088",
+      "ts": 1792466266489,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 66,
+      "note": "一点心意",
+      "msg_id": "9a01735b-1a2f-4d81-b6c5-0db0bd24d6b6"
+    },
+    {
+      "id": "45c2d384-fe37-41a0-b82f-875ad13ef033",
+      "ts": 1792466527466,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 5.2,
+      "note": "恭喜发财",
+      "msg_id": "a102d577-9ac2-4006-adac-dc978071a4e8"
+    },
+    {
+      "id": "b3991236-7e21-49b5-8021-ce9fc84dd250",
+      "ts": 1792466593033,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 18.8,
+      "note": "赏你的",
+      "msg_id": "3f8472ef-4332-4f01-808c-8d7841cfead9"
+    },
+    {
+      "id": "dfcf1633-cc09-4360-8cf7-2d986b1bda06",
+      "ts": 1792471855803,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 18.8,
+      "note": "拿去花",
+      "msg_id": "248ad71d-7ace-4d62-be85-6ebf630ee089"
+    },
+    {
+      "id": "13ea36dd-963e-4c17-a99f-4e4191feb169",
+      "ts": 1792471878696,
+      "kind": "redpacket",
+      "from": "you",
+      "to": "bot",
+      "amount": 1,
+      "note": "恭喜发财",
+      "msg_id": "e65cac51-9e02-4f47-aa33-c3c0624cf4da"
+    },
+    {
+      "id": "bb690078-9c15-45e0-beba-c1389aac749c",
+      "ts": 1792471888224,
+      "kind": "transfer",
+      "from": "you",
+      "to": "bot",
+      "amount": 1,
+      "note": "转账",
+      "msg_id": "8bdd67f0-d9b2-459e-b88c-eb6c97a50a5a"
+    },
+    {
+      "id": "41309e04-6775-4515-acb2-6bdfb02913d9",
+      "ts": 1792472606730,
+      "kind": "redpacket",
+      "from": "you",
+      "to": "bot",
+      "amount": 1,
+      "note": "恭喜发财1",
+      "msg_id": "9c14235f-bbc1-4a83-845b-756577225191"
+    },
+    {
+      "id": "92f226ef-caf8-49f1-ae47-329e3a40ca51",
+      "ts": 1792472616168,
+      "kind": "transfer",
+      "from": "you",
+      "to": "bot",
+      "amount": 1,
+      "note": "转账",
+      "msg_id": "e9c805cb-333b-43f7-8bdc-5657ef6ee3e3"
+    },
+    {
+      "id": "ea1fa9d1-0708-4805-88e9-15113f29a383",
+      "ts": 1792475391163,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 8.8,
+      "note": "开心收着",
+      "msg_id": "6d2762ee-3b89-4fba-90f2-2cdcee08977c"
+    },
+    {
+      "id": "83d4be1b-b192-4f75-bbc5-bb549d26a59e",
+      "ts": 1792476847129,
+      "kind": "transfer",
+      "from": "you",
+      "to": "bot",
+      "amount": 1,
+      "note": "转账",
+      "msg_id": "bd811d65-b5bc-49ec-9894-752e0ec676cb"
     }
   ]
 }

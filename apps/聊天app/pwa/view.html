@@ -128,6 +128,19 @@
             <div class="sub" id="chatProfileSub">沿用小屋人设</div>
           </div>
         </div>
+        <label class="chat-persona-lab" for="chatNoteInput">备注</label>
+        <input
+          type="text"
+          id="chatNoteInput"
+          class="chat-note-input"
+          maxlength="32"
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="本机显示名，空着即清除"
+          aria-label="备注名"
+        />
+        <p class="chat-hint-line">只改列表和顶栏怎么叫，不改对方身份。</p>
         <label class="chat-persona-row" for="chatPersonaUseHut">
           <input id="chatPersonaUseHut" type="checkbox" checked />
           <span>沿用小屋人设</span>
@@ -174,7 +187,8 @@
         <div class="chat-scope-peers" id="chatFwdPeers"></div>
         <div class="chat-scope-actions">
           <button type="button" id="btnChatFwdCancel">取消</button>
-          <button type="button" class="primary" id="btnChatFwdOk">发送</button>
+          <button type="button" id="btnChatFwdEach">逐条转发</button>
+          <button type="button" class="primary" id="btnChatFwdMerge">合并转发</button>
         </div>
       </div>
     </div>
@@ -235,6 +249,10 @@
         <button type="button" class="chat-pref-row" id="btnChatBg">
           <span class="lab">聊天背景</span>
           <span class="val" id="chatPrefBgLab">从相册选择</span>
+        </button>
+        <button type="button" class="chat-pref-row" id="btnChatBgClear">
+          <span class="lab">恢复默认背景</span>
+          <span class="val" id="chatPrefBgClearLab">—</span>
         </button>
         <input id="chatBgInput" type="file" accept="image/*" hidden />
         <button type="button" class="chat-pref-row" id="btnChatWorldPrefs">
@@ -299,6 +317,23 @@
       <button type="button" class="chat-pic-nav is-next" id="chatPicNext" hidden aria-label="下一张">›</button>
     </div>
 
+    <div class="chat-rp-view" id="chatRpView" hidden>
+      <button type="button" class="chat-rp-scrim" id="chatRpScrim" aria-label="关闭红包"></button>
+      <div class="chat-rp-stage" id="chatRpStage">
+        <div class="chat-rp-cover" id="chatRpCover">
+          <img class="chat-rp-gif" id="chatRpGif" alt="" />
+          <button type="button" class="chat-rp-open" id="chatRpOpen" aria-label="开红包">開</button>
+        </div>
+        <div class="chat-rp-result" id="chatRpResult" hidden>
+          <div class="chat-rp-status" id="chatRpStatus" hidden></div>
+          <div class="chat-rp-from" id="chatRpFrom"></div>
+          <div class="chat-rp-amt" id="chatRpAmt"></div>
+          <div class="chat-rp-note" id="chatRpNote"></div>
+          <button type="button" class="chat-rp-done" id="chatRpDone">好的</button>
+        </div>
+      </div>
+    </div>
+
     <div class="chat-sess-menu" id="chatSessMenu" hidden>
       <button type="button" class="chat-sess-menu-scrim" id="chatSessMenuScrim" aria-label="关闭"></button>
       <div class="chat-sess-menu-panel" id="chatSessMenuPanel" role="menu">
@@ -328,16 +363,15 @@
           <span class="chev">›</span>
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="hist">
-          <span class="lab">查找聊天内容</span>
+          <span class="lab">聊天记录</span>
           <span class="chev">›</span>
-        </button>
-        <button type="button" class="chat-pref-row" data-peer-act="note">
-          <span class="lab">备注</span>
-          <span class="val">稍后</span>
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="bg">
           <span class="lab">聊天背景</span>
-          <span class="chev">›</span>
+          <span class="val" id="chatPeerBgVal">默认</span>
+        </button>
+        <button type="button" class="chat-pref-row" data-peer-act="bg-clear" id="btnChatPeerBgClear">
+          <span class="lab">恢复默认背景</span>
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="pin" id="btnChatPeerPin">
           <span class="lab">置顶</span>
@@ -406,7 +440,6 @@
         <button type="button" class="more" id="btnChatPeerMore" title="更多" aria-label="更多">···</button>
       </header>
       <div class="wx-thread" id="chatThread" aria-live="polite"></div>
-      <button type="button" class="wx-new-msg" id="chatNewMsg" hidden>新消息</button>
       <div class="wx-err" id="chatErr" hidden></div>
       <div class="wx-quote-bar" id="chatQuoteBar" hidden>
         <div class="wx-quote-bar-main">
@@ -416,12 +449,18 @@
         <button type="button" class="wx-quote-bar-x" id="btnChatQuoteClear" aria-label="取消引用">×</button>
       </div>
       <form class="wx-composer" id="chatForm">
+        <button type="button" class="wx-new-msg" id="chatNewMsg" hidden aria-label="新消息"></button>
+        <button type="button" class="wx-icon-btn" id="btnChatPlus" title="更多" aria-label="更多" aria-pressed="false">+</button>
+        <button type="button" class="wx-icon-btn wx-icon-voice" id="btnChatVoice" title="语音" aria-label="语音" aria-pressed="false">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z"/></svg>
+        </button>
         <input id="dailyChatInput" type="text" maxlength="800" placeholder="" autocomplete="off" />
         <button type="button" class="wx-hold" id="btnChatHold" hidden>按住 说话</button>
-        <button type="button" class="wx-icon-btn" id="btnChatSticker" title="表情" aria-label="表情" aria-pressed="false">表情</button>
-        <button type="button" class="wx-icon-btn" id="btnChatPlus" title="更多" aria-label="更多" aria-pressed="false">+</button>
-        <button type="submit" class="wx-send" id="btnChatSend" hidden>发送</button>
-        <input id="chatImageInput" type="file" accept="image/*" hidden />
+        <button type="button" class="wx-icon-btn wx-icon-sticker" id="btnChatSticker" title="表情" aria-label="表情" aria-pressed="false">✦</button>
+        <button type="submit" class="wx-send" id="btnChatSend" hidden title="发送" aria-label="发送">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M3.4 20.6 21 12 3.4 3.4l.1 6.8L14 12 3.5 13.8z"/></svg>
+        </button>
+        <input id="chatImageInput" type="file" accept="image/*" multiple hidden />
         <input id="chatFileInput" type="file" hidden />
         <input id="chatMusicInput" type="file" accept="audio/*" hidden />
         <input id="chatCameraInput" type="file" accept="image/*" capture="environment" hidden />
@@ -462,9 +501,25 @@
             <span>补充</span>
             <input id="chatSheetDetail" type="text" maxlength="80" />
           </label>
+          <div class="wx-sheet-bal" id="chatSheetBalWrap" hidden>
+            <span id="chatSheetBal">零花余额</span>
+            <button type="button" class="wx-sheet-bal-link" id="chatSheetBalGo">去资产</button>
+          </div>
           <div class="wx-sheet-actions">
             <button type="button" id="chatSheetCancel">取消</button>
             <button type="button" class="primary" id="chatSheetOk">发送</button>
+          </div>
+        </div>
+      </div>
+      <div class="wx-modal" id="chatLocView" hidden>
+        <button type="button" class="chat-loc-scrim" id="chatLocScrim" aria-label="关闭"></button>
+        <div class="wx-sheet-card chat-loc-card-view">
+          <div class="wx-sheet-title">位置</div>
+          <div class="chat-loc-name" id="chatLocName"></div>
+          <div class="chat-loc-detail" id="chatLocDetail" hidden></div>
+          <div class="wx-sheet-actions">
+            <button type="button" id="chatLocCopy">复制</button>
+            <button type="button" class="primary" id="chatLocClose">关闭</button>
           </div>
         </div>
       </div>

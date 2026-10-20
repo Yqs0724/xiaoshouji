@@ -380,6 +380,22 @@ async function openCowatchPlay(title) {
   }
 }
 
+async function openPlayById(titleId) {
+  const tid = String(titleId || "").trim();
+  if (!tid) {
+    deps.showView("cowatch");
+    return;
+  }
+  try {
+    const titles = await fetchWatchTitles();
+    const hit = titles.find((t) => t && t.id === tid);
+    if (hit) await openCowatchPlay(hit);
+    else deps.showView("cowatch");
+  } catch (_) {
+    deps.showView("cowatch");
+  }
+}
+
 async function fetchWatchTitles() {
   const res = await fetch("/api/v1/watch/titles", { credentials: "same-origin" });
   const data = await res.json().catch(() => ({}));
@@ -553,5 +569,6 @@ function bind() {
     mount: mount,
     refreshList: refreshCowatchList,
     leavePlay: leaveCowatchPlay,
+    openPlayById: openPlayById,
   };
 })(typeof window !== "undefined" ? window : globalThis);

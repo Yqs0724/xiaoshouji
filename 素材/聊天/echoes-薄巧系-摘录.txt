@@ -1,0 +1,500 @@
+echoes│薄巧系by淅沥沥
+严禁二传/严禁仅下载/可以二改
+复制到全局内页css中使用
+使用前请自行将docx文档转换成txt格式下载
+以下复制
+/* ==========================================
+薄荷巧克力 (Mint Chocolate) 主题美化 终极版
+(全量覆盖：壁纸、气泡、头像框、红包、顶部手绘图标等)
+========================================== */
+/* ==========================================
+1. 定义薄巧核心主题色与全局背景
+========================================== */
+:root {
+--mint-green: #E1F6F1;      /* 初雪柔和薄荷绿 */
+--mint-glass: rgba(225, 246, 241, 0.85); /* 玻璃态薄荷 */
+--choco-brown: #b5a198;     /* 柔和的浅可可拿铁 */
+--choco-dark: #6e584f;      /* 深奶咖色，用于文字、图标 */
+--text-on-choco: #ffffff;   /* 可可底色上的纯白文字 */
+--text-on-mint: #43544c;    /* 薄荷底色上的深色文字 */
+--card-bg: #f8fcfb;         /* 卡片奶白底色 */
+}
+/* 全局背景：替换为指定壁纸 */
+.echoes-app,
+.echoes-chat-page,
+.echoes-app-chat {
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/7878d1d32884482e3031740cba4d92c0.jpg') !important;
+background-size: cover !important;
+background-position: center !important;
+background-attachment: fixed !important;
+background-repeat: no-repeat !important;
+}
+/* 遮罩优化 */
+.echoes-app-overlay {
+background: rgba(255, 255, 255, 0.25) !important;
+}
+/* 所有内页（除了聊天）增加一点磨砂奶白底，保证文字清晰 */
+.echoes-page:not(.echoes-chat-page) {
+background: rgba(255, 255, 255, 0.6) !important;
+backdrop-filter: blur(8px) !important;
+}
+/* ==========================================
+2. 左侧气泡：对方
+========================================== */
+.echoes-bubble-other {
+background-color: var(--choco-brown) !important;
+color: var(--text-on-choco) !important;
+border-radius: 20px !important;
+padding: 14px 14px 8px 14px !important;
+box-shadow: 0 2px 8px rgba(181, 161, 152, 0.2) !important;
+border: 1px solid rgba(255, 255, 255, 0.3) !important;
+overflow: visible !important;
+position: relative !important;
+}
+.echoes-bubble-other .echoes-msg-text {
+color: var(--text-on-choco) !important;
+font-size: 0.95em !important;
+}
+.echoes-bubble-other::before {
+content: '';
+position: absolute;
+top: -20px;
+left: -14px;
+width: 48px;
+height: 48px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/e96f9c855ba562c103d856208aca1a38.png');
+background-size: cover;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+z-index: 10;
+border-radius: 8px;
+filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+/* ==========================================
+3. 右侧气泡：用户
+========================================== */
+.echoes-bubble-user {
+background-color: var(--mint-green) !important;
+color: var(--text-on-mint) !important;
+border-radius: 20px !important;
+padding: 14px 14px 8px 14px !important;
+box-shadow: 0 2px 8px rgba(225, 246, 241, 0.8) !important;
+overflow: visible !important;
+position: relative !important;
+}
+.echoes-bubble-user .echoes-msg-text {
+color: var(--text-on-mint) !important;
+font-weight: 500 !important;
+font-size: 0.95em !important;
+}
+.echoes-bubble-user::after {
+content: '';
+position: absolute;
+top: -20px;
+right: -14px;
+width: 48px;
+height: 48px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/9cbac22f09da604676b57870b401ac4f.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+z-index: 10;
+filter: drop-shadow(0 1px 2px rgba(0,0,0,0.05));
+}
+/* ==========================================
+4. 聊天顶部与底部输入栏
+========================================== */
+.echoes-chat-header, .echoes-page-header {
+background: var(--mint-glass) !important;
+backdrop-filter: blur(10px) !important;
+border-bottom: 2px solid var(--choco-brown) !important;
+color: var(--choco-dark) !important;
+position: relative !important;
+padding-bottom: 20px !important;
+}
+.echoes-chat-header::after {
+content: "Thin choco≤❄️·+";
+position: absolute;
+bottom: 6px;
+left: 50%;
+transform: translateX(-50%);
+font-size: 11px !important;
+color: var(--choco-dark) !important;
+opacity: 0.7;
+letter-spacing: 1px;
+white-space: nowrap;
+pointer-events: none;
+}
+.echoes-input-area {
+background: var(--mint-green) !important;
+border-top: 2px solid var(--choco-brown) !important;
+padding-top: 8px !important;
+padding-bottom: 8px !important;
+position: relative !important;
+}
+.echoes-input-area::before {
+content: '';
+position: absolute;
+bottom: calc(100% - 15px);
+left: 0;
+width: 100%;
+height: 60px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/1bea1a3be48a835cfb35016320425c75.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center bottom;
+pointer-events: none;
+z-index: 10;
+}
+.echoes-input-area button,
+.echoes-input-area svg,
+.echoes-input-area i {
+color: var(--choco-dark) !important;
+fill: var(--choco-dark) !important;
+}
+.echoes-input-area input,
+.echoes-input-area textarea,
+.echoes-input-area [contenteditable="true"] {
+background: var(--choco-brown) !important;
+color: var(--text-on-choco) !important;
+border-radius: 20px !important;
+padding: 8px 14px !important;
+border: 1px solid rgba(255,255,255,0.3) !important;
+box-shadow: none !important;
+}
+.echoes-input-area input::placeholder,
+.echoes-input-area textarea::placeholder,
+.echoes-input-area [contenteditable="true"]:empty::before {
+color: rgba(255, 255, 255, 0.7) !important;
+}
+/* ==========================================
+5. 系统消息 / 旁白
+========================================== */
+.echoes-narrator,
+.echoes-msg-date .echoes-bubble {
+background-color: var(--mint-green) !important;
+color: var(--choco-dark) !important;
+border: 2px solid var(--choco-brown) !important;
+backdrop-filter: none !important;
+border-radius: 14px !important;
+padding: 10px 60px !important;
+font-size: 0.9em !important;
+position: relative !important;
+min-height: 55px !important;
+}
+.echoes-narrator::before,
+.echoes-msg-date .echoes-bubble::before {
+content: '';
+position: absolute;
+top: 50%;
+transform: translateY(-50%);
+left: 6px;
+width: 45px;
+height: 45px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/6eec6769ebb635c7243829c203346fb4.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+}
+.echoes-narrator::after,
+.echoes-msg-date .echoes-bubble::after {
+content: '';
+position: absolute;
+top: 50%;
+transform: translateY(-50%);
+right: 6px;
+width: 45px;
+height: 45px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/6eec6769ebb635c7243829c203346fb4.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+}
+/* ==========================================
+6. 红包/转账卡片
+========================================== */
+.echoes-bubble-user:has(.echoes-transfer-card),
+.echoes-bubble-other:has(.echoes-transfer-card),
+.echoes-bubble-user:has(.echoes-gift-card),
+.echoes-bubble-other:has(.echoes-gift-card) {
+background: transparent !important;
+border: none !important;
+box-shadow: none !important;
+padding: 0 !important;
+}
+.echoes-bubble-user:has(.echoes-transfer-card)::after,
+.echoes-bubble-other:has(.echoes-transfer-card)::before,
+.echoes-bubble-user:has(.echoes-gift-card)::after,
+.echoes-bubble-other:has(.echoes-gift-card)::before {
+display: none !important;
+}
+.echoes-transfer-card,
+.echoes-gift-card {
+background: var(--mint-green) !important;
+border: 3px solid var(--choco-brown) !important;
+border-radius: 30px !important;
+padding: 16px 20px !important;
+padding-right: 105px !important;
+box-shadow: 0 4px 10px rgba(181, 161, 152, 0.3) !important;
+position: relative !important;
+overflow: visible !important;
+width: 100% !important;
+min-height: 90px !important;
+}
+.echoes-transfer-card *,
+.echoes-gift-card * {
+white-space: nowrap !important;
+word-break: keep-all !important;
+color: var(--choco-dark) !important;
+}
+.echoes-transfer-card span,
+.echoes-transfer-card div,
+.echoes-gift-card span,
+.echoes-gift-card div {
+width: fit-content !important;
+height: auto !important;
+}
+.echoes-transfer-card::after,
+.echoes-gift-card::after {
+content: '';
+position: absolute;
+top: 50%;
+transform: translateY(-50%);
+right: 8px;
+width: 85px;
+height: 85px;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/35039dd7e3779345e67681b3f650a6a6.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+z-index: 2;
+}
+.echoes-transfer-card svg,
+.echoes-transfer-card i,
+.echoes-gift-card svg,
+.echoes-gift-card i {
+fill: var(--choco-brown) !important;
+color: var(--choco-brown) !important;
+}
+.echoes-transfer-card .echoes-divider,
+.echoes-gift-card .echoes-divider {
+border-color: rgba(181, 161, 152, 0.3) !important;
+}
+/* ==========================================
+7. 头像框 (专属包裹)
+========================================== */
+.echoes-avatar {
+position: relative !important;
+overflow: visible !important;
+}
+.echoes-avatar-img,
+.echoes-avatar-fallback {
+border-radius: 50% !important;
+overflow: hidden !important;
+border: 1px solid rgba(255,255,255,0.5) !important;
+}
+.echoes-avatar::after {
+content: '';
+position: absolute;
+top: 50%;
+left: 50%;
+transform: translate(-50%, -50%);
+width: 165%;
+height: 165%;
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/2b1c3fe60d5d8c11094725bc91f57336.png');
+background-size: contain;
+background-repeat: no-repeat;
+background-position: center;
+pointer-events: none;
+z-index: 10;
+}
+/* ==========================================
+8. 全局导航栏 (Dock & 悬浮按钮)
+========================================== */
+.echoes-bottom-dock {
+background: var(--mint-glass) !important;
+backdrop-filter: blur(12px) !important;
+border-top: 2px solid var(--choco-brown) !important;
+box-shadow: 0 -4px 15px rgba(181, 161, 152, 0.2) !important;
+}
+.echoes-bottom-dock svg,
+.echoes-bottom-dock i,
+.echoes-bottom-dock span {
+color: var(--choco-dark) !important;
+fill: var(--choco-dark) !important;
+}
+.echoes-floating-home-body {
+background: var(--choco-brown) !important;
+border: 3px solid var(--mint-green) !important;
+box-shadow: 0 4px 12px rgba(110, 88, 79, 0.3) !important;
+}
+.echoes-floating-home-icon {
+fill: var(--mint-green) !important;
+color: var(--mint-green) !important;
+}
+.echoes-status-bar {
+color: var(--choco-dark) !important;
+}
+.echoes-status-bar svg, .echoes-status-bar-icons path {
+fill: var(--choco-dark) !important;
+}
+/* ==========================================
+9. 全局卡片 (商城/设置/朋友圈/资产等所有列表项)
+========================================== */
+.echoes-character-card,
+.echoes-forum-post-card,
+.echoes-diary-card,
+.echoes-reflection-card,
+.echoes-profiling-card,
+.echoes-shop-item-card,
+.echoes-wallet-balance-card,
+.echoes-worldbook-entry-card,
+.echoes-baixiang-card,
+.echoes-wallet-transaction-item,
+[class^="echoes-settings-menu-"] {
+background: var(--card-bg) !important;
+border: 2px solid var(--choco-brown) !important;
+border-radius: 20px !important;
+box-shadow: 0 4px 12px rgba(181, 161, 152, 0.15) !important;
+color: var(--choco-dark) !important;
+margin-bottom: 12px !important;
+}
+.echoes-character-card *,
+.echoes-shop-item-card *,
+[class^="echoes-settings-menu-"] * {
+color: var(--choco-dark) !important;
+}
+/* ==========================================
+10. 全局按钮、开关与输入框
+========================================== */
+.echoes-shop-buy-btn,
+.echoes-btn-save-config,
+.echoes-btn-test-connection,
+.echoes-btn-apply-css,
+.echoes-video-accept-btn,
+.echoes-phone-accept-btn,
+.echoes-chat-create-group-btn {
+background: var(--choco-brown) !important;
+color: var(--text-on-choco) !important;
+border-radius: 24px !important;
+border: 2px solid var(--mint-green) !important;
+box-shadow: 0 2px 8px rgba(110, 88, 79, 0.2) !important;
+font-weight: bold !important;
+}
+[class^="echoes-toggle-"] {
+background: var(--mint-green) !important;
+border: 2px solid var(--choco-brown) !important;
+}
+.echoes-toggle-indicator {
+background: var(--choco-brown) !important;
+}
+.echoes-input-api-endpoint,
+.echoes-input-api-key,
+.echoes-input-model-name,
+.echoes-textarea-chat-css,
+.echoes-textarea-global-css {
+background: #ffffff !important;
+border: 2px solid var(--choco-brown) !important;
+border-radius: 16px !important;
+color: var(--choco-dark) !important;
+}
+/* ==========================================
+11. 弹窗、提示框 (Modal & Toast)
+========================================== */
+.echoes-modal-container,
+.echoes-photo-dialog,
+.echoes-file-dialog {
+background: var(--card-bg) !important;
+border: 4px solid var(--mint-green) !important;
+border-radius: 28px !important;
+box-shadow: 0 10px 30px rgba(110, 88, 79, 0.25) !important;
+}
+.echoes-modal-header {
+color: var(--choco-dark) !important;
+border-bottom: 2px dashed var(--choco-brown) !important;
+}
+.echoes-toast-card {
+background: var(--choco-brown) !important;
+color: var(--text-on-choco) !important;
+border: 2px solid var(--mint-green) !important;
+border-radius: 24px !important;
+box-shadow: 0 4px 15px rgba(181, 161, 152, 0.4) !important;
+}
+/* ==========================================
+12. 音乐播放器 & 桌宠 & 加载页
+========================================== */
+.echoes-music-progress-bar {
+background: var(--choco-brown) !important;
+}
+.echoes-music-progress-bar::-webkit-slider-thumb {
+background: var(--mint-green) !important;
+border: 2px solid var(--choco-brown) !important;
+}
+.echoes-pet-bubble {
+background: var(--mint-green) !important;
+color: var(--choco-dark) !important;
+border: 2px solid var(--choco-brown) !important;
+border-radius: 16px !important;
+font-weight: bold !important;
+}
+.echoes-loading-progress-bar {
+background: var(--choco-brown) !important;
+}
+/* ==========================================
+13. ✨ 顶部导航栏图标替换 (定制手绘版 + 强力隐藏返回文字) ✨
+========================================== */
+/* 强制隐藏原本的SVG图标和内层文字标签（span等） */
+.echoes-chat-back-btn svg,
+.echoes-chat-conv-back-btn svg,
+.echoes-chat-recap-btn svg,
+.echoes-chat-regenerate-btn svg,
+.echoes-chat-settings-btn svg,
+.echoes-chat-back-btn span,
+.echoes-chat-conv-back-btn span,
+.echoes-chat-recap-btn span,
+.echoes-chat-regenerate-btn span,
+.echoes-chat-settings-btn span {
+display: none !important;
+}
+/* 统一设置这些按钮为干净的图片容器，强行抹除任何直接的文本 */
+.echoes-chat-back-btn,
+.echoes-chat-conv-back-btn,
+.echoes-chat-recap-btn,
+.echoes-chat-regenerate-btn,
+.echoes-chat-settings-btn {
+font-size: 0 !important; /* 彻底消灭文本 */
+color: transparent !important;
+background-color: transparent !important;
+background-size: contain !important;
+background-repeat: no-repeat !important;
+background-position: center !important;
+width: 32px !important;
+height: 32px !important;
+border: none !important;
+box-shadow: none !important;
+padding: 0 !important;
+margin: 0 4px !important;
+min-width: 32px !important; /* 强制压缩，防止按钮被文字撑宽 */
+}
+/* 1. 返回按钮 (兼顾列表返回和对话内返回) */
+.echoes-chat-back-btn,
+.echoes-chat-conv-back-btn {
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/d5213078b9bd41924622379156b8a186.png') !important;
+}
+/* 2. 复述按钮 */
+.echoes-chat-recap-btn {
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/af841d451ccd493e997c0467ac7977ab.png') !important;
+}
+/* 3. 重说 (重新生成) 按钮 */
+.echoes-chat-regenerate-btn {
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/4ae4fe7b42c092710b9ba21f8af837c3.png') !important;
+}
+/* 4. 三个点 (设置/更多) 按钮 */
+.echoes-chat-settings-btn {
+background-image: url('https://s1.imagehub.cc/images/2026/07/28/c9a546be6eeffa1a5a3c3fb34b46c059.png') !important;
+}

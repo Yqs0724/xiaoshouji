@@ -655,6 +655,31 @@
       gap: 8px;
       flex-shrink: 0;
     }
+    /* S7.1 方案 A：纯字，贴时间右侧；同色、无呼吸 */
+    #phoneStatus .phone-status-hint {
+      position: relative;
+      z-index: 1;
+      flex-shrink: 0;
+      margin: 0 0 0 8px;
+      padding: 0;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      line-height: var(--phone-status-h);
+      min-height: var(--phone-status-h);
+      white-space: nowrap;
+      color: inherit;
+      background: none;
+      border: 0;
+      box-shadow: none;
+      pointer-events: auto;
+    }
+    #phoneStatus .phone-status-hint[hidden] { display: none !important; }
+    #phoneStatus .phone-status-time,
+    #phoneStatus .lock-status {
+      position: relative;
+      z-index: 2;
+    }
     .home-wid {
       background: rgba(255, 252, 247, .94);
       border-radius: 16px;
@@ -763,6 +788,27 @@
       object-fit: contain;
       flex-shrink: 0;
     }
+    /* S8.1 日历到点弱提示 */
+    .home-cal-remind {
+      align-self: center;
+      max-width: 92%;
+      margin: 0;
+      padding: 5px 12px;
+      border: 1px solid rgba(92, 64, 51, .18);
+      border-radius: 999px;
+      background: rgba(255, 252, 247, .88);
+      color: #5c4033;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .home-cal-remind[hidden] { display: none !important; }
     .home-avatars {
       display: flex;
       justify-content: center;
@@ -827,6 +873,7 @@
       flex-shrink: 0;
       margin-bottom: 6px;
       font-family: inherit;
+      transition: opacity .35s ease;
     }
     .home-capsule[hidden] { display: none !important; }
     .home-pager {
@@ -2815,7 +2862,7 @@
   </style>
   <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css" />
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx120" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx172" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
   <link rel="stylesheet" href="/app-ui/资产app/pwa/wallet.css" />
@@ -2841,6 +2888,7 @@
   </div>
   <header id="phoneStatus" class="is-off" aria-hidden="true">
     <div class="phone-status-time" id="phoneStatusTime">--:--</div>
+    <p class="phone-status-hint" id="phoneStatusHint" hidden role="status"></p>
     <div class="lock-status" id="phoneStatusLead">
       <span class="lock-sig" id="phoneSignal">
         <i></i><i></i><i></i><i></i>
@@ -2897,6 +2945,7 @@
           <ul id="homeTodayList"></ul>
         </div>
       </div>
+      <button type="button" class="home-cal-remind" id="homeCalRemind" hidden></button>
       <div class="home-avatars" id="homeAvatars">
         <button type="button" class="home-av" id="avYou" aria-label="你">
           <div class="face">
@@ -3746,7 +3795,7 @@
 
   <script src="/assets-colisten/colisten.js"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx121"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx172"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
@@ -4121,12 +4170,32 @@
       return "网关正常 · " + w + " · " + l;
     }
 
+    /** S7.1：顶栏灵动岛；网关+LLM 都好→已连接，任一断→未连接 */
+    function updateHomeShellHint(state) {
+      const el = document.getElementById("phoneStatusHint");
+      if (!el) return;
+      const down = !!(state && state.gatewayDown);
+      const llmMiss = !!(state && state.llmMissing);
+      const ok = !down && !llmMiss;
+      el.textContent = ok ? "已连接" : "未连接";
+      const bits = [];
+      bits.push(down ? "网关不可达" : "网关正常");
+      bits.push(llmMiss ? "LLM 未配" : "LLM 已配");
+      el.title = bits.join(" · ");
+      el.hidden = false;
+    }
+
     async function checkHealth() {
       try {
         const res = await fetch("/api/v1/health", { cache: "no-store" });
         if (!res.ok) throw new Error("http " + res.status);
         const data = await res.json();
-        applyHealth(!!data.ok && data.gateway === "up", healthDetail(data));
+        const up = !!data.ok && data.gateway === "up";
+        applyHealth(up, healthDetail(data));
+        updateHomeShellHint({
+          gatewayDown: !up,
+          llmMissing: data.llm !== "configured",
+        });
         if (window.ColistenApp) ColistenApp.applyHealth(data.apple_music);
         if (typeof data.door_locked === "boolean") {
           doorLocked = data.door_locked;
@@ -4135,6 +4204,7 @@
         }
       } catch (_) {
         applyHealth(false, "网关不可达");
+        updateHomeShellHint({ gatewayDown: true });
       }
     }
 
@@ -4472,10 +4542,25 @@
       return Math.round((today - start) / 86400000);
     }
 
+    /** 相识日 → 相遇第 n 天（含当日=1）；无/未来 → null */
+    function meetDayCount(iso) {
+      const delta = pinDayDelta(iso);
+      if (delta == null || delta < 0) return null;
+      return delta + 1;
+    }
+
+    function meetAnnivFromCache() {
+      return (
+        (annivsCached || []).find((a) => a && a.title === "相识日") || null
+      );
+    }
+
     function updateHomeMeetSub() {
       const el = document.getElementById("homeMeetSub");
       if (!el) return;
-      el.textContent = "今日便签";
+      const meet = meetAnnivFromCache();
+      const n = meet ? meetDayCount(meet.date) : null;
+      el.textContent = n != null ? "相遇第 " + n + " 天 · 今日便签" : "今日便签";
     }
 
     function updateHomePinDay(pin) {
@@ -4520,7 +4605,17 @@
       if (pinAnnivIdCached && !annivsCached.some((a) => a.id === pinAnnivIdCached)) {
         pinAnnivIdCached = "";
       }
+      updateHomeMeetSub();
       updateHomePinDay(pinnedAnnivFromCache());
+    }
+
+    /* ponytail: meetDayCount 含当日=1；未来日不计数 */
+    {
+      const y = new Date().getFullYear();
+      const m = String(new Date().getMonth() + 1).padStart(2, "0");
+      const d = String(new Date().getDate()).padStart(2, "0");
+      console.assert(meetDayCount(y + "-" + m + "-" + d) === 1);
+      console.assert(meetDayCount("2099-01-01") == null);
     }
 
     const APP_REG_CATALOG = [
@@ -5910,6 +6005,102 @@
       return m + "月" + d + "日";
     }
 
+    const CAL_REMIND_WIN_MIN = 15;
+    let calRemindTimer = null;
+    let calRemindNotified = Object.create(null);
+
+    function eventStartMs(ev) {
+      if (!ev || !ev.date || !ev.time) return null;
+      const parts = String(ev.date).split("-").map(Number);
+      const tm = String(ev.time).split(":").map(Number);
+      if (parts.length !== 3 || tm.length < 2) return null;
+      const d = new Date(parts[0], parts[1] - 1, parts[2], tm[0], tm[1], 0, 0);
+      if (Number.isNaN(d.getTime())) return null;
+      return d.getTime();
+    }
+
+    function pickSoonCalEvent(events, nowMs) {
+      let best = null;
+      let bestDelta = Infinity;
+      for (const ev of events || []) {
+        if (!ev || !ev.title || !ev.time) continue;
+        const start = eventStartMs(ev);
+        if (start == null) continue;
+        const mins = (start - nowMs) / 60000;
+        if (mins < 0 || mins > CAL_REMIND_WIN_MIN) continue;
+        if (mins < bestDelta) {
+          bestDelta = mins;
+          best = { ev, mins };
+        }
+      }
+      return best;
+    }
+
+    function calRemindLabel(hit) {
+      const title = String(hit.ev.title || "").trim();
+      const n = Math.max(0, Math.ceil(hit.mins));
+      if (n <= 0) return "就是现在 · " + title;
+      return "还有 " + n + " 分钟 · " + title;
+    }
+
+    function maybeNotifyCalRemind(hit) {
+      try {
+        if (
+          typeof Notification === "undefined" ||
+          Notification.permission !== "granted"
+        ) {
+          return;
+        }
+        const key = hit.ev.id + "@" + hit.ev.date + "T" + hit.ev.time;
+        if (calRemindNotified[key]) return;
+        calRemindNotified[key] = true;
+        new Notification("日程提醒", { body: calRemindLabel(hit), tag: key });
+      } catch (_) {
+        /* 通知失败不挡壳内提示 */
+      }
+    }
+
+    function paintHomeCalRemind(hit) {
+      const el = document.getElementById("homeCalRemind");
+      if (!el) return;
+      if (!hit) {
+        el.hidden = true;
+        el.textContent = "";
+        delete el.dataset.date;
+        return;
+      }
+      el.textContent = calRemindLabel(hit);
+      el.dataset.date = hit.ev.date || "";
+      el.hidden = false;
+      maybeNotifyCalRemind(hit);
+    }
+
+    async function refreshCalRemind() {
+      if (!window.CalApp) {
+        paintHomeCalRemind(null);
+        return null;
+      }
+      try {
+        const now = new Date();
+        const today = CalApp.localDateISO(now);
+        const events = await CalApp.fetchEvents({ date: today });
+        const hit = pickSoonCalEvent(events, now.getTime());
+        paintHomeCalRemind(hit);
+        return hit;
+      } catch (_) {
+        paintHomeCalRemind(null);
+        return null;
+      }
+    }
+
+    function startCalRemindTick() {
+      if (calRemindTimer) return;
+      calRemindTimer = setInterval(() => {
+        refreshCalRemind();
+        refreshLockAgenda();
+      }, 30000);
+    }
+
     async function refreshLockAgenda() {
       const el = document.getElementById("lockAgenda");
       if (!el) return;
@@ -5919,14 +6110,25 @@
         return;
       }
       try {
-        const today = CalApp.localDateISO(new Date());
-        const end = new Date();
+        const now = new Date();
+        const today = CalApp.localDateISO(now);
+        const end = new Date(now);
         end.setDate(end.getDate() + 14);
         const events = await CalApp.fetchEvents({
           from: today,
           to: CalApp.localDateISO(end),
         });
-        /* 取窗口内最近一日的第一条（全日无钟点） */
+        const soon = pickSoonCalEvent(
+          (events || []).filter((e) => e && e.date === today),
+          now.getTime()
+        );
+        if (soon) {
+          el.textContent = calRemindLabel(soon);
+          el.hidden = false;
+          maybeNotifyCalRemind(soon);
+          return;
+        }
+        /* 取窗口内最近一日的第一条 */
         const next = (events || [])
           .filter((e) => e && e.title && e.date)
           .sort((a, b) =>
@@ -5934,7 +6136,8 @@
               ? -1
               : a.date > b.date
                 ? 1
-                : (a.created_at || 0) - (b.created_at || 0)
+                : String(a.time || "").localeCompare(String(b.time || "")) ||
+                  (a.created_at || 0) - (b.created_at || 0)
           )[0];
         if (!next) {
           el.hidden = true;
@@ -5942,7 +6145,10 @@
           return;
         }
         el.textContent =
-          formatLockAgendaDay(next.date, today) + " · " + String(next.title).trim();
+          formatLockAgendaDay(next.date, today) +
+          (next.time ? " " + next.time : "") +
+          " · " +
+          String(next.title).trim();
         el.hidden = false;
       } catch (_) {
         el.hidden = true;
@@ -6513,6 +6719,7 @@
       updateHomeMeetSub();
       applyAppRegistry(appHiddenCached);
       refreshHomeToday();
+      checkHealth();
     }
 
     function enterCabin() {
@@ -6561,36 +6768,119 @@
       }
     }
 
-    async function refreshListenPresence() {
+    /* S2″：多路进行中轮播（共听 / 共看…） */
+    let homePresenceItems = [];
+    let homePresenceIdx = 0;
+    let homePresenceTimer = null;
+    const HOME_PRESENCE_MS = 5000;
+
+    function stopHomePresenceCycle() {
+      if (homePresenceTimer) {
+        clearInterval(homePresenceTimer);
+        homePresenceTimer = null;
+      }
+    }
+
+    function clearHomePresenceUi() {
+      stopHomePresenceCycle();
+      homePresenceItems = [];
+      homePresenceIdx = 0;
       const cap = document.getElementById("btnHomeCapsule");
       const chip = document.getElementById("profileDoingChip");
+      if (cap) {
+        cap.hidden = true;
+        cap.textContent = "进行中";
+        delete cap.dataset.go;
+        delete cap.dataset.titleId;
+      }
+      if (chip) chip.textContent = "暂无";
+      setHomeListenDeco(false);
+    }
+
+    function paintHomePresenceFrame() {
+      const cap = document.getElementById("btnHomeCapsule");
+      const chip = document.getElementById("profileDoingChip");
+      const items = homePresenceItems;
+      if (!items.length) {
+        clearHomePresenceUi();
+        return;
+      }
+      if (homePresenceIdx >= items.length) homePresenceIdx = 0;
+      const cur = items[homePresenceIdx];
+      if (cap) {
+        cap.hidden = false;
+        cap.textContent = cur.label;
+        cap.dataset.go = cur.go;
+        if (cur.titleId) cap.dataset.titleId = cur.titleId;
+        else delete cap.dataset.titleId;
+      }
+      if (chip) {
+        chip.textContent =
+          items.length === 1
+            ? cur.label
+            : items.map((x) => x.short || x.label).join(" · ");
+      }
+      setHomeListenDeco(items.some((x) => x.go === "colisten"));
+    }
+
+    function startHomePresenceCycle() {
+      stopHomePresenceCycle();
+      paintHomePresenceFrame();
+      if (homePresenceItems.length > 1) {
+        homePresenceTimer = setInterval(() => {
+          homePresenceIdx = (homePresenceIdx + 1) % homePresenceItems.length;
+          paintHomePresenceFrame();
+        }, HOME_PRESENCE_MS);
+      }
+    }
+
+    async function refreshListenPresence() {
       try {
-        const res = await fetch("/api/v1/listen/presence", { cache: "no-store" });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error("presence");
-        const active = !!data.active;
-        const label = String(data.label || "").trim() || "共听中";
-        if (cap) {
-          if (active) {
-            cap.hidden = false;
-            cap.textContent = label;
-            cap.dataset.go = "colisten";
-          } else {
-            cap.hidden = true;
-            cap.textContent = "进行中";
-            delete cap.dataset.go;
+        const [listenRes, watchRes] = await Promise.all([
+          fetch("/api/v1/listen/presence", { cache: "no-store" }),
+          fetch("/api/v1/watch/presence", { cache: "no-store" }),
+        ]);
+        const listen = await listenRes.json().catch(() => ({}));
+        const watch = await watchRes.json().catch(() => ({}));
+        const next = [];
+        if (listenRes.ok && listen.active) {
+          const label = String(listen.label || "").trim() || "共听中";
+          next.push({ go: "colisten", label, short: "共听中" });
+        }
+        if (watchRes.ok && watch.active) {
+          const label = String(watch.label || "").trim() || "共看中";
+          next.push({
+            go: "cowatch",
+            label,
+            short: "共看中",
+            titleId: String(watch.titleId || ""),
+          });
+        }
+        if (!next.length) {
+          clearHomePresenceUi();
+          return;
+        }
+        const same =
+          next.length === homePresenceItems.length &&
+          next.every(
+            (x, i) =>
+              homePresenceItems[i] &&
+              homePresenceItems[i].go === x.go &&
+              homePresenceItems[i].titleId === x.titleId &&
+              homePresenceItems[i].label === x.label
+          );
+        if (same && homePresenceItems.length) {
+          paintHomePresenceFrame();
+          if (homePresenceItems.length > 1 && !homePresenceTimer) {
+            startHomePresenceCycle();
           }
+          return;
         }
-        if (chip) chip.textContent = active ? label : "暂无";
-        setHomeListenDeco(active);
+        homePresenceItems = next;
+        homePresenceIdx = 0;
+        startHomePresenceCycle();
       } catch (_) {
-        if (cap) {
-          cap.hidden = true;
-          cap.textContent = "进行中";
-          delete cap.dataset.go;
-        }
-        if (chip) chip.textContent = "暂无";
-        setHomeListenDeco(false);
+        clearHomePresenceUi();
       }
     }
 
@@ -6664,6 +6954,7 @@
       const ul = document.getElementById("homeTodayList");
       refreshListenPresence();
       refreshChatUnread();
+      refreshCalRemind();
       if (!ul || !window.CalApp) return;
       ul.replaceChildren();
       try {
@@ -6675,7 +6966,8 @@
         const lines = [];
         for (const ev of events || []) {
           const t = String(ev && ev.title || "").trim();
-          if (t) lines.push(t);
+          if (!t) continue;
+          lines.push(ev.time ? String(ev.time) + " · " + t : t);
         }
         for (const n of notes || []) {
           const t = String(n && n.body || "")
@@ -8909,7 +9201,29 @@
     const btnHomeCapsule = document.getElementById("btnHomeCapsule");
     if (btnHomeCapsule) {
       btnHomeCapsule.addEventListener("click", () => {
-        if (btnHomeCapsule.dataset.go === "colisten") showView("colisten");
+        const go = btnHomeCapsule.dataset.go;
+        if (go === "colisten") showView("colisten");
+        else if (go === "cowatch") {
+          const tid = String(btnHomeCapsule.dataset.titleId || "").trim();
+          if (
+            tid &&
+            window.CowatchApp &&
+            typeof CowatchApp.openPlayById === "function"
+          ) {
+            CowatchApp.openPlayById(tid);
+          } else showView("cowatch");
+        }
+      });
+    }
+    const btnHomeCalRemind = document.getElementById("homeCalRemind");
+    if (btnHomeCalRemind) {
+      btnHomeCalRemind.addEventListener("click", () => {
+        if (window.CalApp && typeof CalApp.openDay === "function") {
+          const iso =
+            btnHomeCalRemind.dataset.date ||
+            CalApp.localDateISO(new Date());
+          CalApp.openDay(iso);
+        } else showView("cal");
       });
     }
     document.getElementById("btnAppStubBack").addEventListener("click", () => showView("home"));
@@ -11380,6 +11694,8 @@
       loadModels();
       loadBooks();
       startClockTick();
+      startCalRemindTick();
+      refreshCalRemind();
     });
     updateLockClock();
     updateLockNetStatus();

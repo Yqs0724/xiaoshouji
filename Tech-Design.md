@@ -3,7 +3,8 @@
 > 2026-10-01 · 阶段 E。怎么实现。对齐 [`PRD.md`](./PRD.md)。  
 > API / 工具名为**建议名**，可改；**不可**偷加 PRD 没有的产品能力。  
 > 共读网关现状以 `apps/共读app/Tech-Design.md` + 现行代码为准；本文描述**扩展**，不另起第二网关。  
-> **2026-10-11 补丁**：日常聊天工具循环与外接 MCP **客户端**已落地（见下 §3.3 / §5 注）；字段以实现与 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md) 为准。
+> **2026-10-11 补丁**：日常聊天工具循环与外接 MCP **客户端**已落地（见下 §3.3 / §5 注）。  
+> **2026-10-20 补丁**：`kind:sys` 灰字回执（含 list 时补种）；红包竖版 GIF 开箱；转账 `payload.is_receipt`；相册多图 `noreply`+末条 SSE；`maybeBotMoney` 语境触发与 bot 余额不足补发；位置底表；文件 `payload.text` 摘录；音乐 `fromPresence`；`POST …/transcribe` → `{llm_base}/audio/transcriptions`；语音气泡外挂转文字；聊天记录在会话 ···；字段以实现与 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md) 为准。
 
 ---
 
@@ -70,14 +71,21 @@ CycleLog { …经期相关字段 }  // 完整可读，仅本机库
 ChatThread { id, peer }           // 现行单线程 daily；与共看场会话分离
 ChatMessage {
   id, threadId, from, kind, body, ts, read,
-  think?, think_sec?,             // 深思
-  payload?,                       // 红包/转账/位置等
+  // kind: text|sticker|image|voice|call|redpacket|transfer|location|file|music|tool|pat|sys
+  think?, think_sec?,             // 深思（挂家机 text）
+  payload?,                       // 红包/转账/位置等；钱可含 status/receipt/is_receipt
+                                  // voice: durationMs, transcript?, transcriptStub?, voiceStub?
+                                  // file: name, text?；music: name, artist?, fromPresence?
   tools?: [{ name, label, summary, ok }]  // 本轮工具摘要（挂家机 text）
 }
+// sys：居中灰字（领取回执等），落库；不进 LLM prior
+// 发图多张：前 N−1 条 POST noreply:true，末条走 SSE 接话
+// 语音转写：POST …/transcribe → llm.transcribeAudio（复用 llm_base/key；可选 asr_model）
+// 零花：红包/转账 ↔ apps/资产app/gateway/wallet.js；≠ 额度 tokens
 ```
 
-模块：`apps/聊天app/gateway/daily-chat.js` + `chat-tools.js`；外接 MCP 客户端 `apps/共读app/gateway/mcp-remote.js`。  
-设定：`chat_tools_enabled` / `chat_tool_labels` / `mcp_enabled|url|token`（`settings.json`）。
+模块：`apps/聊天app/gateway/daily-chat.js` + `chat-tools.js`；外接 MCP 客户端 `apps/共读app/gateway/mcp-remote.js`；ASR `apps/共读app/gateway/llm.js#transcribeAudio`。  
+设定：`chat_tools_enabled` / `chat_tool_labels` / `mcp_enabled|url|token` / `asr_model`（`settings.json`）。
 
 ### 3.4 共看
 

@@ -35,10 +35,19 @@ const STRUCT_KINDS = new Set([
   "pat",
   "file",
   "music",
+  "sys",
 ]);
 /** H1.30：拍一拍短后缀（无自定义面板） */
 const PAT_SUFFIXES = ["", "的脑袋", "一下"];
 const VOICE_DUR_MAX_MS = 120_000;
+/** 撤回时限：你和家机都只能撤 2 分钟内的消息 */
+const RECALL_MAX_AGE_MS = 2 * 60 * 1000;
+function recallExpired(ts, now) {
+  const t = Number(ts) || 0;
+  const n = now != null ? Number(now) : Date.now();
+  if (!t) return true;
+  return n - t > RECALL_MAX_AGE_MS;
+}
 const CALL_PHASES = new Set([
   "invite",
   "rejected",
@@ -160,7 +169,8 @@ function normalizeKind(raw) {
     raw === "file" ||
     raw === "music" ||
     raw === "tool" ||
-    raw === "pat"
+    raw === "pat" ||
+    raw === "sys"
   ) {
     return raw;
   }
@@ -259,7 +269,7 @@ function normalizeVoicePayload(raw) {
   if (!Number.isFinite(ms) || ms < 0) ms = 0;
   if (ms > VOICE_DUR_MAX_MS) ms = VOICE_DUR_MAX_MS;
   const out = { durationMs: ms };
-  const tr = String(src.transcript || "").trim().slice(0, 400);
+  const tr = String(src.transcript || "").trim().slice(0, 2000);
   if (tr) {
     out.transcript = tr;
     if (src.transcriptStub === true) out.transcriptStub = true;
@@ -356,6 +366,7 @@ function normalizeMoneyPayload(raw, kind) {
   };
   const receipt = String(src.receipt || "").trim().slice(0, 40);
   if (receipt) out.receipt = receipt;
+  if (src.is_receipt === true) out.is_receipt = true;
   return out;
 }
 
@@ -374,6 +385,10 @@ function normalizeLocationPayload(raw) {
   return { name, detail };
 }
 
+const FILE_TEXT_MAX = 8 * 1024;
+const FILE_TEXT_EXT_RE =
+  /\.(txt|md|markdown|json|js|ts|tsx|jsx|mjs|cjs|css|html|htm|xml|yml|yaml|toml|ini|csv|py|rb|go|rs|java|kt|c|cc|cpp|h|hpp|cs|swift|sh|bat|ps1|sql|log|conf|cfg)$/i;
+
 function normalizeFilePayload(raw) {
   const src =
     raw && typeof raw.payload === "object" && raw.payload ? raw.payload : raw || {};
@@ -382,6 +397,10 @@ function normalizeFilePayload(raw) {
     .replace(/[/\\]/g, "")
     .slice(0, 80);
   if (!name) return null;
+  const text = String(src.text != null ? src.text : src.excerpt || "")
+    .replace(/\u0000/g, "")
+    .slice(0, FILE_TEXT_MAX);
+  if (text) return { name, text };
   return { name, fileStub: true };
 }
 
@@ -393,7 +412,14 @@ function normalizeMusicPayload(raw) {
     .replace(/[/\\]/g, "")
     .slice(0, 80);
   if (!name) return null;
-  return { name, musicStub: true };
+  const out = { name };
+  const artist = String(src.artist || "").trim().slice(0, 80);
+  if (artist) out.artist = artist;
+  if (src.musicStub === true || (!artist && src.fromPresence !== true)) {
+    out.musicStub = true;
+  }
+  if (src.fromPresence === true) out.fromPresence = true;
+  return out;
 }
 
 function bodyForKind(kind, payload, fallback) {
@@ -472,7 +498,8 @@ function llmContent(m) {
     if (!snip) return "（" + who + "撤回了一条消息）";
     return "（" + who + "撤回了：「" + snip + "」）" + reactionsLlmSuffix(m);
   }
-  if (m.kind === "tool") return "";
+  if (m.kind === "tool" || m.kind === "sys") return "";
+  if (m.payload && m.payload.is_receipt) return "";
   let core = "";
   if (m.kind === "sticker") {
     const st = getSticker(m.body);
@@ -480,9 +507,13 @@ function llmContent(m) {
   } else if (m.kind === "image") {
     core = "[图片]";
   } else if (m.kind === "voice") {
-    const ms = (m.payload && m.payload.durationMs) || 0;
+    const p = m.payload || {};
+    const ms = p.durationMs || 0;
     core = "[语音 " + voiceSec(ms) + "″]";
-    /* 占位转写不进模型。真识别接上且 transcriptStub 不为 true 时，再把正文拼进来。 */
+    /* 占位转写不进模型；真识别（无 transcriptStub）才拼正文 */
+    if (p.transcript && p.transcriptStub !== true) {
+      core += " " + p.transcript;
+    }
   } else if (m.kind === "call") {
     const p = m.payload || {};
     const tag = p.media === "video" ? "[视频通话]" : "[语音通话]";
@@ -500,11 +531,28 @@ function llmContent(m) {
     core =
       "[位置：" + (p.name || m.body) + (p.detail ? " · " + p.detail : "") + "]";
   } else if (m.kind === "file") {
-    /* H1.39：占位只报有文件，文件名和内容都不进模型 */
-    core = "[文件]";
+    const p = m.payload || {};
+    const text = String(p.text || "").trim();
+    if (text) {
+      core =
+        "[文件 " +
+        (p.name || m.body || "未命名") +
+        "]\n" +
+        text.slice(0, FILE_TEXT_MAX);
+    } else {
+      core = "[文件]";
+    }
   } else if (m.kind === "music") {
-    /* H1.40：占位只报有音乐，文件名和内容都不进模型 */
-    core = "[音乐]";
+    const p = m.payload || {};
+    if (p.fromPresence || (p.name && !p.musicStub)) {
+      core =
+        "[音乐:" +
+        (p.name || m.body || "") +
+        (p.artist ? " · " + p.artist : "") +
+        "]";
+    } else {
+      core = "[音乐]";
+    }
   } else if (m.kind === "pat") {
     core = "（" + String(m.body || "拍一拍") + "）";
   } else {
@@ -591,6 +639,9 @@ function normalizeMsg(raw) {
   } else if (kind === "pat") {
     payload = normalizePatPayload(raw);
     body = patDisplayBody(from, payload).slice(0, BODY_MAX);
+  } else if (kind === "sys") {
+    if (!body) return null;
+    body = body.slice(0, 40);
   } else if (MONEY_KINDS.has(kind)) {
     payload = normalizeMoneyPayload(raw, kind);
     if (!payload) return null;
@@ -796,6 +847,11 @@ function recallMessage(id, opts) {
   if (cur.recalled) {
     return { ok: true, message: cur, already: true, snap: null };
   }
+  if (recallExpired(cur.ts)) {
+    const err = new Error("超过2分钟不能撤回");
+    err.code = "recall_expired";
+    throw err;
+  }
   const snap = {
     body: String(cur.body || ""),
     kind: cur.kind || "text",
@@ -947,13 +1003,19 @@ async function maybeBotSelfRecall(write, botMsg, opts) {
         ? "peek"
         : "";
   if (!force && Math.random() >= botSelfRecallChance()) return;
+  if (recallExpired(botMsg.ts)) return;
 
   const { sleep } = require("./mood");
-  await sleep(force ? 40 : 2000 + Math.floor(Math.random() * 7000));
+  const age = Date.now() - (Number(botMsg.ts) || Date.now());
+  const room = RECALL_MAX_AGE_MS - age;
+  if (!force && room < 500) return;
+  const want = force ? 40 : 2000 + Math.floor(Math.random() * 7000);
+  await sleep(force ? 40 : Math.min(want, Math.max(0, room - 200)));
 
   const msgs = listMessages().messages || [];
   const still = msgs.find((m) => m && m.id === botMsg.id);
   if (!still || still.recalled || still.from !== "bot") return;
+  if (recallExpired(still.ts)) return;
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
     if (!m || m.from !== "bot" || m.recalled) continue;
@@ -1328,7 +1390,56 @@ function addTokensUsed(n) {
   return writeAll({ ...all, tokens_used: (all.tokens_used || 0) + add });
 }
 
+/** H1.81：已领钱有 receipt 但缺同文 sys 灰字时补种（幂等） */
+function backfillMoneySysTips() {
+  const all = readAll();
+  const msgs = Array.isArray(all.messages) ? all.messages : [];
+  if (!msgs.length) return false;
+  const out = [];
+  let changed = false;
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    out.push(m);
+    if (!m || !MONEY_KINDS.has(m.kind)) continue;
+    if (m.payload && m.payload.is_receipt) continue;
+    if (!m.payload || m.payload.status === "sent") continue;
+    const tip = String(m.payload.receipt || "").trim().slice(0, 40);
+    if (!tip) continue;
+    let has = false;
+    for (let j = i + 1; j < msgs.length; j++) {
+      const n = msgs[j];
+      if (!n) continue;
+      if (n.kind === "sys" && String(n.body || "").trim() === tip) {
+        has = true;
+        break;
+      }
+      if (
+        MONEY_KINDS.has(n.kind) &&
+        !(n.payload && n.payload.is_receipt)
+      ) {
+        break;
+      }
+    }
+    if (has) continue;
+    const tipMsg = normalizeMsg({
+      id: randomUUID(),
+      from: "bot",
+      kind: "sys",
+      body: tip,
+      ts: (Number(m.ts) || Date.now()) + 1,
+      read: true,
+    });
+    if (!tipMsg) continue;
+    out.push(tipMsg);
+    changed = true;
+  }
+  if (!changed) return false;
+  writeAll({ ...all, messages: out });
+  return true;
+}
+
 function listMessages() {
+  backfillMoneySysTips();
   const all = readAll();
   return { ok: true, threadId: all.threadId, messages: all.messages };
 }
@@ -1352,8 +1463,10 @@ function messageSearchText(m) {
   if (m.recalled) return "";
   /* H1.30：拍一拍不进搜索 */
   if (m.kind === "pat") return "";
+  if (m.kind === "sys") return String(m.body || "");
   const p = m.payload || {};
   const parts = [m.body, p.note, p.name, p.detail];
+  if (p.is_receipt) parts.push("已收款", "转账回执");
   if (m.quote) parts.push(m.quote.who, m.quote.text, "引用");
   if (m.forward) parts.push(m.forward.who, "转发");
   if (m.kind === "redpacket") parts.push("红包", "微信红包");
@@ -1373,8 +1486,8 @@ function messageSearchText(m) {
     );
   }
   if (m.kind === "location") parts.push("位置");
-  if (m.kind === "file") parts.push("文件", p.name);
-  if (m.kind === "music") parts.push("音乐", p.name);
+  if (m.kind === "file") parts.push("文件", p.name, p.text);
+  if (m.kind === "music") parts.push("音乐", p.name, p.artist);
   if (m.kind === "tool") {
     parts.push("工具", p.name, p.label, p.summary);
   }
@@ -1505,8 +1618,8 @@ function createBotMoney(kind, amount, note) {
   );
   if (!payload) return null;
   const msgId = randomUUID();
-  try {
-    const { walletTransfer } = require("../../资产app/gateway/wallet");
+  const { walletTransfer, readWallet, writeWallet } = require("../../资产app/gateway/wallet");
+  const pay = () =>
     walletTransfer({
       from: "bot",
       to: "you",
@@ -1515,9 +1628,20 @@ function createBotMoney(kind, amount, note) {
       note: payload.note,
       msg_id: msgId,
     });
+  try {
+    pay();
   } catch (e) {
-    if (e && e.code === "wallet_insufficient") return null;
-    throw e;
+    if (!(e && e.code === "wallet_insufficient")) throw e;
+    /* 气氛红包：零花不够时给家机补一笔再发，避免口头说发了却没卡片 */
+    const w = readWallet();
+    w.bot_balance = Math.max(Number(w.bot_balance) || 0, 1000);
+    writeWallet(w);
+    try {
+      pay();
+    } catch (e2) {
+      if (e2 && e2.code === "wallet_insufficient") return null;
+      throw e2;
+    }
   }
   const msg = normalizeMsg({
     id: msgId,
@@ -1538,11 +1662,19 @@ function createBotMoney(kind, amount, note) {
 /** 家机偶尔主动红包/转账：有语境优先，否则很低概率 */
 function maybeBotMoney(you, botText) {
   if (you && MONEY_KINDS.has(you.kind)) return null;
-  const blob = (llmContent(you) + " " + String(botText || "")).toLowerCase();
+  const userBlob = llmContent(you);
+  const blob = (userBlob + " " + String(botText || "")).toLowerCase();
   let kind = null;
-  if (/红包/.test(blob)) kind = "redpacket";
-  else if (/转账|打钱|给你钱|报销|午饭|奶茶钱|买杯/.test(blob)) kind = "transfer";
-  else if (Math.random() < 0.07) kind = Math.random() < 0.55 ? "redpacket" : "transfer";
+  const askRp =
+    /红包|利是|塞红包|再发一|发一个|赏你|给点钱|一块钱|1\s*块|一块/.test(blob) ||
+    (/发/.test(userBlob) && /(?:块|元|￥|¥)\s*$|(?:\d+(?:\.\d+)?)\s*(?:块|元)/.test(userBlob));
+  if (/转账|打钱|给你钱|报销|午饭|奶茶钱|买杯/.test(blob) && !/红包|利是/.test(blob)) {
+    kind = "transfer";
+  } else if (/红包|利是|塞红包/.test(blob) || askRp) {
+    kind = "redpacket";
+  } else if (Math.random() < 0.07) {
+    kind = Math.random() < 0.55 ? "redpacket" : "transfer";
+  }
   if (!kind) return null;
   const amounts =
     kind === "redpacket"
@@ -1552,7 +1684,12 @@ function maybeBotMoney(you, botText) {
     kind === "redpacket"
       ? ["恭喜发财", "赏你的", "开心收着"]
       : ["一点心意", "午饭钱", "拿去花"];
-  const amount = amounts[Math.floor(Math.random() * amounts.length)];
+  let amount = amounts[Math.floor(Math.random() * amounts.length)];
+  const am = String(userBlob).match(/(\d+(?:\.\d+)?)\s*(?:块|元|￥|¥)?/);
+  if (am) {
+    const n = Number(am[1]);
+    if (n > 0 && n <= 200) amount = Math.round(n * 100) / 100;
+  }
   const note = notes[Math.floor(Math.random() * notes.length)];
   return createBotMoney(kind, amount, note);
 }
@@ -1691,36 +1828,96 @@ async function finishChatCallStream(id, patch, emit) {
   return { ok: true, message: msg, bot_message: null, messages };
 }
 
+function mediaIdFromChatBody(body) {
+  const s = String(body || "").trim();
+  if (!s.startsWith(MEDIA_URL_PREFIX)) return "";
+  const id = s.slice(MEDIA_URL_PREFIX.length);
+  return MEDIA_ID_RE.test(id) ? id : "";
+}
+
+function contentTypeFromMediaId(id) {
+  const ext = String(id || "")
+    .split(".")
+    .pop()
+    .toLowerCase();
+  if (ext === "webm") return "audio/webm";
+  if (ext === "ogg") return "audio/ogg";
+  if (ext === "mp3") return "audio/mpeg";
+  if (ext === "m4a" || ext === "aac" || ext === "mp4") return "audio/mp4";
+  if (ext === "wav") return "audio/wav";
+  return "application/octet-stream";
+}
+
+function applyVoiceTranscriptStub(cur) {
+  const payload = Object.assign({}, cur.payload || { durationMs: 0 });
+  payload.transcript = VOICE_TRANSCRIPT_STUB;
+  payload.transcriptStub = true;
+  delete payload.transcriptHidden;
+  return Object.assign({}, cur, { payload });
+}
+
 /**
- * H1.33：语音转文字占位。无转写则写入示意句；再点只折叠/展开，不删正文。
- * 以后家机真识别：直接写 payload.transcript，不要设 transcriptStub。
+ * 语音转文字：无 transcript 时真识别（voiceStub / 无音频 → 示意 stub）；
+ * 已有 transcript 时只折叠/展开，不删正文。
+ * opts.transcribe 仅自检 mock，跳过外网。
  */
-function toggleVoiceTranscript(id) {
+async function toggleVoiceTranscript(id, opts) {
   const sid = String(id || "").trim();
   if (!sid) {
     const err = new Error("消息不存在");
     err.code = "not_found";
     throw err;
   }
-  return updateMessageById(sid, (cur) => {
-    if (!cur || cur.recalled || cur.kind !== "voice") {
-      const err = new Error("这条不是语音");
-      err.code = "bad_voice";
-      throw err;
+  const all = readAll();
+  const cur = all.messages.find((m) => m && m.id === sid);
+  if (!cur || cur.recalled || cur.kind !== "voice") {
+    const err = new Error(cur ? "这条不是语音" : "消息不存在");
+    err.code = cur ? "bad_voice" : "not_found";
+    throw err;
+  }
+  const payload = Object.assign({}, cur.payload || { durationMs: 0 });
+  if (payload.transcript) {
+    return updateMessageById(sid, (m) => {
+      const p = Object.assign({}, m.payload || { durationMs: 0 });
+      if (p.transcriptHidden) delete p.transcriptHidden;
+      else p.transcriptHidden = true;
+      return Object.assign({}, m, { payload: p });
+    });
+  }
+  if (payload.voiceStub === true) {
+    return updateMessageById(sid, applyVoiceTranscriptStub);
+  }
+  const mediaId = mediaIdFromChatBody(cur.body);
+  const filePath = mediaId ? resolveChatMediaPath(mediaId) : null;
+  if (!filePath) {
+    return updateMessageById(sid, applyVoiceTranscriptStub);
+  }
+  const buf = fs.readFileSync(filePath);
+  const transcribe =
+    opts && typeof opts.transcribe === "function"
+      ? opts.transcribe
+      : require("../../共读app/gateway/llm").transcribeAudio;
+  const result = await transcribe({
+    buf,
+    contentType: contentTypeFromMediaId(mediaId),
+    filename: mediaId,
+  });
+  const text = String((result && result.text) || "").trim().slice(0, 2000);
+  if (!text) {
+    const err = new Error("未识别出文字");
+    err.code = "asr_empty";
+    throw err;
+  }
+  return updateMessageById(sid, (m) => {
+    const p = Object.assign({}, m.payload || { durationMs: 0 });
+    if (p.transcript) {
+      delete p.transcriptHidden;
+      return Object.assign({}, m, { payload: p });
     }
-    const payload = Object.assign({}, cur.payload || { durationMs: 0 });
-    if (!payload.transcript) {
-      payload.transcript = VOICE_TRANSCRIPT_STUB;
-      payload.transcriptStub = true;
-      delete payload.transcriptHidden;
-    } else if (payload.transcriptHidden) {
-      delete payload.transcriptHidden;
-    } else {
-      payload.transcriptHidden = true;
-    }
-    const next = Object.assign({}, cur);
-    next.payload = payload;
-    return next;
+    p.transcript = text;
+    delete p.transcriptStub;
+    delete p.transcriptHidden;
+    return Object.assign({}, m, { payload: p });
   });
 }
 
@@ -1889,6 +2086,28 @@ function markMoneyReceived(msgId, receiptText) {
   return found;
 }
 
+/** 灰字回执落库，退出聊天再进还在 */
+function appendSysTip(text) {
+  const tip = String(text || "").trim().slice(0, 40);
+  if (!tip) return null;
+  return appendMessage("bot", tip, "sys", { read: true });
+}
+
+/** 转账已收：再发一条接收方气泡（微信式回执卡） */
+function appendTransferReceipt(from, amount) {
+  const amt = roundMoney(amount);
+  if (!(amt > 0)) return null;
+  return appendMessage(from, "已收款 ¥" + amt.toFixed(2), "transfer", {
+    payload: {
+      amount: amt,
+      note: "已收款",
+      status: "received",
+      is_receipt: true,
+    },
+    read: true,
+  });
+}
+
 /** 你发给家机：对方自动领；家机发给你：须点卡片领取（见 claimIncomingMoney） */
 async function emitMoneyClaim(msg, write) {
   if (!msg || !MONEY_KINDS.has(msg.kind) || msg.from !== "you") return;
@@ -1898,11 +2117,20 @@ async function emitMoneyClaim(msg, write) {
   const claimed = markMoneyReceived(msg.id, tip);
   if (!claimed) return;
   await write({ type: "money_claim", message: claimed });
-  await write({
-    type: "money_tip",
-    text: tip,
-    ts: Date.now(),
-  });
+  const tipMsg = appendSysTip(tip);
+  if (tipMsg) {
+    await write({
+      type: "money_tip",
+      message: tipMsg,
+      text: tip,
+      ts: tipMsg.ts,
+    });
+  }
+  if (msg.kind === "transfer") {
+    const amt = claimed.payload && claimed.payload.amount;
+    const receipt = appendTransferReceipt("bot", amt);
+    if (receipt) await write({ type: "bot_money", message: receipt });
+  }
 }
 
 /** 点击领取家机发来的红包/转账 */
@@ -1927,6 +2155,8 @@ function claimIncomingMoney(msgId) {
       already: true,
       message: m,
       tip,
+      tip_message: null,
+      receipt_message: null,
     };
   }
   const tip = m.kind === "redpacket" ? "你已领取红包" : "你已收款";
@@ -1936,7 +2166,19 @@ function claimIncomingMoney(msgId) {
     err.code = "bad_money_claim";
     throw err;
   }
-  return { ok: true, already: false, message: claimed, tip: tip };
+  const tipMsg = appendSysTip(tip);
+  let receiptMsg = null;
+  if (m.kind === "transfer") {
+    receiptMsg = appendTransferReceipt("you", claimed.payload.amount);
+  }
+  return {
+    ok: true,
+    already: false,
+    message: claimed,
+    tip: tip,
+    tip_message: tipMsg,
+    receipt_message: receiptMsg,
+  };
 }
 
 /** 短应答：嗯/好/收到…；过长一律不算 */
@@ -2150,6 +2392,17 @@ async function runBotReplyStream(write, you, opts) {
  * H1.17′：随机 1–12s 后再回；不顶掉上路。等完若有更新的你侧短讯则本条 deferred。
  * emit: you → … → done（deferred:true 时本条不回，由更新那条带上下文）
  */
+function forwardBatchNote(batch) {
+  const lines = Array.isArray(batch)
+    ? batch.map((s) => String(s || "").trim()).filter(Boolean).slice(0, 20)
+    : [];
+  if (lines.length < 2) return "";
+  return (
+    "（系统：下面这几条是同一次转发，按顺序一起到的。请综合着回一次，把里面的点都照顾到，不要只接最后一句。）\n" +
+    lines.map((t, i) => i + 1 + ". " + t.slice(0, 400)).join("\n")
+  );
+}
+
 async function createMessageWithReplyStream(patch, emit) {
   const write = async (obj) => {
     if (typeof emit !== "function") return;
@@ -2157,6 +2410,7 @@ async function createMessageWithReplyStream(patch, emit) {
   };
   const youRes = createMessage(patch);
   const you = youRes.message;
+  const batchNote = forwardBatchNote(patch && patch.batch);
   await write({
     type: "you",
     ok: true,
@@ -2172,7 +2426,10 @@ async function createMessageWithReplyStream(patch, emit) {
 
   if (!messageWaitsForCoalesce(you)) {
     return exclusiveBotReply(() =>
-      runBotReplyStream(write, you, { skipObserve: true })
+      runBotReplyStream(write, you, {
+        skipObserve: true,
+        extraUser: batchNote || undefined,
+      })
     );
   }
 
@@ -2197,7 +2454,11 @@ async function createMessageWithReplyStream(patch, emit) {
     };
   }
   return exclusiveBotReply(() =>
-    runBotReplyStream(write, you, { skipObserve: true, coalesced: true })
+    runBotReplyStream(write, you, {
+      skipObserve: true,
+      coalesced: true,
+      extraUser: batchNote || undefined,
+    })
   );
 }
 
@@ -2208,10 +2469,19 @@ async function recallMessageWithReplyStream(id, emit, opts) {
     await Promise.resolve(emit(obj));
   };
   const recalled = recallMessage(id);
-  const sight = decideRecallSight(
+  let sight = decideRecallSight(
     recalled.snap,
     opts && opts.forceSight ? String(opts.forceSight) : ""
   );
+  /* 客户端带来真截图 → 走调侃发图，别随机成 miss/silent 白拍了 */
+  const shotReady = resolveRecallScreenshotUrl({ mode: "roast" }, opts);
+  if (shotReady && !recalled.already) {
+    sight = {
+      mode: "roast",
+      body: String((recalled.snap && recalled.snap.body) || ""),
+      kind: String((recalled.snap && recalled.snap.kind) || "text"),
+    };
+  }
   await write({
     type: "you_recall",
     ok: true,
@@ -2382,7 +2652,8 @@ function buildChatPrior(hist, youOrNull, excludeId) {
     if (!m) continue;
     if (skip && m.id === skip) continue;
     if (youId && m.id === youId) continue;
-    if (m.kind === "tool") continue;
+    if (m.kind === "tool" || m.kind === "sys") continue;
+    if (m.payload && m.payload.is_receipt) continue;
     const ts = Number(m.ts) || 0;
     if (lastTs != null) pushHistoryGap(prior, lastTs, ts);
     if (m.from === "bot") {
@@ -2401,6 +2672,17 @@ function buildChatPrior(hist, youOrNull, excludeId) {
   }
   return prior;
 }
+
+function thinkExtraFromParts(joined, sec, tools) {
+  const thinkExtra = {};
+  const text = String(joined || "").trim();
+  if (text) thinkExtra.think = text.slice(0, 12000);
+  if (sec > 0) thinkExtra.think_sec = Math.round(sec * 10) / 10;
+  if (tools && tools.length) thinkExtra.tools = tools;
+  return thinkExtra;
+}
+console.assert(!thinkExtraFromParts("", 1.2).think && thinkExtraFromParts("", 1.2).think_sec === 1.2);
+console.assert(thinkExtraFromParts("x", 0).think === "x" && !thinkExtraFromParts("x", 0).think_sec);
 
 /**
  * 流式跑一轮家机文字（含工具）。emit bot_delta / bot_think / bot_tool*。
@@ -2542,16 +2824,8 @@ async function streamBotReply(write, priorIn, opts) {
     err.code = "llm_empty";
     throw err;
   }
-  const thinkJoined = thinkParts.filter(Boolean).join("\n---\n").slice(0, 12000);
-  const thinkExtra = {};
-  if (thinkJoined) thinkExtra.think = thinkJoined;
-  else if (thinkSecTotal > 0) {
-    thinkExtra.think = "（本轮已深度思考，模型未返回思考正文）";
-  }
-  if (thinkSecTotal > 0) {
-    thinkExtra.think_sec = Math.round(thinkSecTotal * 10) / 10;
-  }
-  if (toolMetas.length) thinkExtra.tools = toolMetas;
+  const thinkJoined = thinkParts.filter(Boolean).join("\n---\n");
+  const thinkExtra = thinkExtraFromParts(thinkJoined, thinkSecTotal, toolMetas);
   return { text, thinkExtra, used };
 }
 
@@ -2634,6 +2908,7 @@ async function createMessageWithReply(patch) {
 }
 
 if (require.main === module) {
+  (async () => {
   const stamp = "selfcheck-" + Date.now();
   const created = createMessage({ body: stamp });
   console.assert(created.message && created.message.body === stamp);
@@ -2694,18 +2969,27 @@ if (require.main === module) {
   console.assert(voiceMsg.message.kind === "voice");
   console.assert(voiceMsg.message.payload.durationMs === 3200);
   console.assert(llmContent(voiceMsg.message) === "[语音 3″]");
-  const asr = toggleVoiceTranscript(voiceMsg.message.id);
-  console.assert(asr.payload.transcriptStub === true);
-  console.assert(llmContent(asr) === "[语音 3″]");
-  console.assert(
-    searchMessages({ q: "示意转写" }).messages.some((m) => m.id === asr.id)
-  );
-  const folded = toggleVoiceTranscript(asr.id);
-  console.assert(folded.payload.transcriptHidden === true);
-  console.assert(folded.payload.transcript);
-  console.assert(wantsBotVoice({ from: "you", kind: "text", body: "发一条语音" }));
+  /* voiceStub → 示意 stub，不打外网 */
   const stubVoice = appendStubBotVoice(2);
   console.assert(stubVoice.kind === "voice" && stubVoice.payload.voiceStub === true);
+  const asrStub = await toggleVoiceTranscript(stubVoice.id);
+  console.assert(asrStub.payload.transcriptStub === true);
+  console.assert(llmContent(asrStub) === "[语音 2″]");
+  console.assert(
+    searchMessages({ q: "示意转写" }).messages.some((m) => m.id === asrStub.id)
+  );
+  /* 假音频：mock transcribe，断言真识别无 stub 且进模型 */
+  const asr = await toggleVoiceTranscript(voiceMsg.message.id, {
+    transcribe: async () => ({ text: "真转写一句" }),
+  });
+  console.assert(asr.payload.transcript === "真转写一句");
+  console.assert(asr.payload.transcriptStub !== true);
+  console.assert(llmContent(asr) === "[语音 3″] 真转写一句");
+  const folded = await toggleVoiceTranscript(asr.id);
+  console.assert(folded.payload.transcriptHidden === true);
+  console.assert(folded.payload.transcript === "真转写一句");
+  console.assert(llmContent(folded) === "[语音 3″] 真转写一句");
+  console.assert(wantsBotVoice({ from: "you", kind: "text", body: "发一条语音" }));
   const loc = createMessage({ kind: "location", name: "楼下咖啡馆", detail: "靠窗" });
   console.assert(loc.message.kind === "location" && loc.message.payload.name === "楼下咖啡馆");
   const fileMsg = createMessage({ kind: "file", name: "笔记.txt" });
@@ -2807,11 +3091,46 @@ if (require.main === module) {
   console.assert(rp2.message.payload.status === "sent");
   const claimed = markMoneyReceived(rp2.message.id);
   console.assert(claimed && claimed.payload.status === "received");
+  const tipSys = appendSysTip("对方已收款");
+  console.assert(tipSys && tipSys.kind === "sys" && tipSys.body === "对方已收款");
+  const rcptSelf = appendTransferReceipt("bot", 1.01);
+  console.assert(
+    rcptSelf &&
+      rcptSelf.payload &&
+      rcptSelf.payload.is_receipt === true &&
+      rcptSelf.payload.status === "received"
+  );
+  /* H1.81：有 receipt、无 sys → 补种；再跑不重复 */
+  const bfTip = "补种灰字-" + stamp;
+  const bf = createMessage({ kind: "redpacket", amount: 0.5, note: "补种自检" });
+  const bfClaimed = markMoneyReceived(bf.message.id, bfTip);
+  console.assert(bfClaimed && bfClaimed.payload.receipt === bfTip);
+  writeAll({
+    messages: readAll().messages.filter(
+      (m) => !(m && m.kind === "sys" && m.body === bfTip)
+    ),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+  if (backfillMoneySysTips() !== true) throw new Error("backfill should insert");
+  const afterBf = readAll().messages.filter(
+    (m) => m && m.kind === "sys" && m.body === bfTip
+  );
+  if (afterBf.length !== 1) throw new Error("backfill tip count");
+  if (backfillMoneySysTips() !== false) throw new Error("backfill should be idempotent");
   const botPay = createBotMoney("redpacket", 3.5, "自检红包");
   console.assert(botPay && botPay.from === "bot" && botPay.kind === "redpacket");
   writeAll({
     messages: readAll().messages.filter(
-      (m) => m.id !== rp2.message.id && (!botPay || m.id !== botPay.id)
+      (m) =>
+        m.id !== rp2.message.id &&
+        m.id !== tipSys.id &&
+        m.id !== rcptSelf.id &&
+        m.id !== bf.message.id &&
+        !(m && m.kind === "sys" && m.body === bfTip) &&
+        (!botPay || m.id !== botPay.id)
     ),
     tokens_used: readAll().tokens_used,
     budget_tokens: readAll().budget_tokens,
@@ -2850,6 +3169,8 @@ if (require.main === module) {
   console.assert(vDel.message.body === "版本乙");
   console.assert(!vDel.message.variants);
   console.assert(listMessages().messages.some((m) => m.id === vBot.id));
+  console.assert(recallExpired(Date.now() - RECALL_MAX_AGE_MS - 1000) === true);
+  console.assert(recallExpired(Date.now() - 1000) === false);
   const recalled = recallMessage(vYou.message.id);
   console.assert(recalled.ok && recalled.message && recalled.message.recalled);
   console.assert(recalled.message.recall_body);
@@ -3015,6 +3336,10 @@ if (require.main === module) {
   writeAll(beforeClear);
 
   console.log("daily-chat ok");
+  })().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }
 
 module.exports = {
@@ -3029,6 +3354,8 @@ module.exports = {
   setMessageVariant,
   deleteMessage,
   recallMessage,
+  recallExpired,
+  RECALL_MAX_AGE_MS,
   toggleMessageReaction,
   toggleVoiceTranscript,
   appendStubBotVoice,
