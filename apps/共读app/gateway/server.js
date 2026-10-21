@@ -147,6 +147,7 @@ const {
   respondProposal,
   createSpit: createListenSpit,
   createSpitWithReplyStream: createListenSpitStream,
+  shareTrackMoment: shareListenTrackMoment,
   endActivePass: endListenPass,
   getListenPresence,
   engageListen,
@@ -1105,6 +1106,28 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "listen_failed",
         message: e.message || "进入共听失败",
+      });
+    }
+    return;
+  }
+
+  /* 切歌/开播：家机主动丢一句听感或歌词 */
+  if (req.method === "POST" && urlPath === "/api/v1/listen/track-share") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const song = body.song || body.track || null;
+      const out = await shareListenTrackMoment({ song });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "listen_failed",
+        message: e.message || "主动分享失败",
       });
     }
     return;

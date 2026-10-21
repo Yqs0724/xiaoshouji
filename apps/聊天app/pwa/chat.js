@@ -50,9 +50,11 @@
   let nearBottom = true;
   let newMsgPending = 0;
   let suppressNewCount = false;
+  let activePeerId = "daily";
+  let peersCache = null;
+  let menuSessId = "daily";
 
   const LS = {
-    draft: "ariadne.chat.draft.daily",
     pins: "ariadne.chat.pins",
     mute: "ariadne.chat.mute",
     unreadMark: "ariadne.chat.unread.mark",
@@ -60,13 +62,18 @@
     bgPick: "ariadne.chat.bg.pick",
     sound: "ariadne.chat.sound",
     clearRead: "ariadne.chat.clearRead",
+    activePeer: "ariadne.chat.activePeer",
   };
+  function draftKey(peerId) {
+    return "ariadne.chat.draft." + String(peerId || activePeerId || "daily");
+  }
   const NOTE_KEY = LS.peerNotes;
   const PIN_KEY = LS.pins;
   const MUTE_KEY = LS.mute;
   const UNREAD_MARK_KEY = LS.unreadMark;
 
   const PLUS_ITEMS = [
+    { id: "request_song", lab: "点歌", tile: "点歌", ok: true },
     { id: "album", lab: "相册", tile: "相册", ok: true },
     { id: "camera", lab: "拍摄", tile: "拍摄", ok: true },
     { id: "location", lab: "位置", tile: "位置", ok: true },
@@ -142,6 +149,46 @@
     box.append(t);
   }
 
+  /** 删消息后清掉后面没有气泡的时间戳（否则要重进会话才没） */
+  function pruneOrphanTimeChips(box) {
+    const root = box || document.getElementById("chatThread");
+    if (!root) return;
+    let el = root.firstElementChild;
+    while (el) {
+      const next = el.nextElementSibling;
+      if (el.classList && el.classList.contains("wx-time")) {
+        const fol = next;
+        if (!fol || !fol.classList.contains("wx-row")) {
+          el.remove();
+          el = next;
+          continue;
+        }
+      }
+      el = next;
+    }
+  }
+
+  function humanizeChatNetErr(raw) {
+    const m = String(raw || "").trim();
+    const low = m.toLowerCase();
+    if (
+      !m ||
+      low === "failed to fetch" ||
+      low === "network error" ||
+      low === "load failed" ||
+      low.includes("networkerror") ||
+      low.includes("network error")
+    ) {
+      return "连不上家机 · 确认电脑网关已开、手机同网后点这里清掉";
+    }
+    return m.slice(0, 160);
+  }
+  /* ponytail: 网络错文案自检 */
+  (function () {
+    if (!/家机/.test(humanizeChatNetErr("network error"))) throw new Error("netErr");
+    if (humanizeChatNetErr("余额不足") !== "余额不足") throw new Error("netErrKeep");
+  })();
+
   function setChatErr(text) {
     const el = document.getElementById("chatErr");
     if (!el) return;
@@ -151,11 +198,57 @@
       return;
     }
     el.hidden = false;
-    el.textContent = text;
+    el.textContent = humanizeChatNetErr(text);
   }
 
+  function peerQuery(extra) {
+    const q = new URLSearchParams(extra || {});
+    q.set("peer", activePeerId || "daily");
+    return q.toString();
+  }
+  function withPeerBody(payload) {
+    const out = Object.assign({}, payload || {});
+    out.peer = activePeerId || "daily";
+    return out;
+  }
+  function setActivePeer(id) {
+    const next = String(id || "daily").trim() || "daily";
+    if (next === activePeerId) return;
+    persistDraft();
+    activePeerId = next;
+    try {
+      localStorage.setItem(LS.activePeer, next);
+    } catch (_) {}
+    pendingQuote = null;
+    nearBottom = true;
+    newMsgPending = 0;
+    setNewMsgChip(0);
+  }
+  function peerDisplayName(peerId) {
+    const id = String(peerId || activePeerId || "daily");
+    const note = readNote(id);
+    if (note) return note;
+    const hit = (peersCache || []).find((p) => p && p.id === id);
+    if (hit && hit.name) return hit.name;
+    if (id === "daily") return deps.getPeerName() || "家机";
+    return id;
+  }
+  async function fetchPeers() {
+    const res = await fetch("/api/v1/chat/peers", { credentials: "same-origin" });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) throw new Error(data.message || data.error || "会话列表失败");
+    peersCache = Array.isArray(data.peers) ? data.peers : [];
+    return peersCache;
+  }
   async function fetchChatMessages() {
-    const res = await fetch("/api/v1/chat/messages", { credentials: "same-origin" });
+    const res = await fetch("/api/v1/chat/messages?" + peerQuery(), {
+      credentials: "same-origin",
+    });
     let data = {};
     try {
       data = await res.json();
@@ -198,16 +291,19 @@
   }
 
   async function markChatRead() {
+    const pid = activePeerId || "daily";
     try {
       await fetch("/api/v1/chat/read", {
         method: "POST",
         credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ peer: pid }),
       });
     } catch (_) {}
     try {
       const marks = readUnreadMarks();
-      if (marks.daily) {
-        delete marks.daily;
+      if (marks[pid]) {
+        delete marks[pid];
         writeUnreadMarks(marks);
       }
     } catch (_) {}
@@ -524,17 +620,28 @@
       return;
     }
     if (kind === "call") {
-      bubble.classList.add("is-card");
+      bubble.classList.add("is-call");
       const p = msg.payload || {};
-      const card = document.createElement("div");
-      card.className = "wx-call-card-mini";
-      const media = p.media === "video" ? "视频" : "语音";
-      const phase = p.phase || "ended";
-      let lab = media + "通话";
-      if (phase === "missed") lab = "未接" + media + "通话";
-      else if (Number(p.durationSec) > 0) lab = media + "通话 " + formatCallClockUi(p.durationSec);
-      card.textContent = lab;
-      bubble.append(card);
+      const line = document.createElement("div");
+      line.className = "wx-call-line";
+      const ico = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      ico.setAttribute("class", "wx-call-ico");
+      ico.setAttribute("viewBox", "0 0 24 24");
+      ico.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("fill", "currentColor");
+      path.setAttribute(
+        "d",
+        p.media === "video"
+          ? "M17 10.5V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3.5l4 4v-11l-4 4z"
+          : "M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1.1-.2 1.2.4 2.5.6 3.8.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.6.6 3.8.1.4 0 .8-.3 1.1L6.6 10.8z"
+      );
+      ico.append(path);
+      const txt = document.createElement("span");
+      txt.className = "wx-call-txt";
+      txt.textContent = callBubbleLabel(msg);
+      line.append(ico, txt);
+      bubble.append(line);
       finish();
       return;
     }
@@ -556,12 +663,55 @@
       meta.className = "meta";
       meta.textContent =
         kind === "music"
-          ? p.fromPresence
-            ? "共听 · 进行中"
-            : "音频"
+          ? p.lyric_share
+            ? ["歌词", String(p.artist || "").trim() || "共听"]
+                .filter(Boolean)
+                .join(" · ")
+            : p.fromPresence
+              ? "共听 · 进行中"
+              : p.stream_path || p.provider === "netease"
+                ? [String(p.artist || "").trim() || "网易云", "整曲"].filter(Boolean).join(" · ")
+                : p.apple_url || p.preview_url
+                  ? [
+                      String(p.artist || "").trim() || "Apple",
+                      p.preview_url ? "试听30s" : "",
+                      p.apple_url ? "外链" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : p.recommended
+                    ? String(p.artist || "").trim() || "点歌"
+                    : String(p.artist || "").trim() || "音频"
           : fileMetaLine(p, name) || "文件";
       mid.append(title, meta);
       card.append(ico, mid);
+      if (
+        kind === "music" &&
+        (p.stream_path || p.preview_url || p.apple_url || p.provider === "netease" || p.lyric_share)
+      ) {
+        card.style.cursor = "pointer";
+        card.addEventListener("click", (ev) => {
+          if (ev.target && ev.target.closest && ev.target.closest("a,button")) return;
+          if (p.lyric_share) {
+            try {
+              if (
+                global.ColistenApp &&
+                typeof global.ColistenApp.enterPlayer === "function"
+              ) {
+                global.ColistenApp.enterPlayer();
+              } else if (typeof global.showView === "function") {
+                global.showView("colisten");
+              } else {
+                openMusicCard(p);
+              }
+            } catch (_) {
+              openMusicCard(p);
+            }
+            return;
+          }
+          openMusicCard(p);
+        });
+      }
       bubble.append(card);
       finish();
       return;
@@ -693,7 +843,13 @@
     if (msg.id) row.dataset.msgId = msg.id;
     if (msg.kind) row.dataset.kind = msg.kind;
     const av = document.createElement("div");
-    av.className = "av";
+    const homePeer = (activePeerId || "daily") === "daily";
+    /* 完整框：自己始终有；对方仅家机 */
+    av.className =
+      "av" +
+      (msg.from === "you" || (msg.from === "bot" && homePeer)
+        ? " av-frame-full"
+        : "");
     const avImg = document.createElement("img");
     avImg.alt = "";
     avImg.src = msg.from === "you" ? youAv : botAv;
@@ -954,7 +1110,7 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: id }),
+        body: JSON.stringify(withPeerBody({ id: id })),
       });
       let data = {};
       try {
@@ -1326,7 +1482,9 @@
 
   async function loadHistActiveDays() {
     try {
-      const res = await fetch("/api/v1/chat/messages", { credentials: "same-origin" });
+      const res = await fetch("/api/v1/chat/messages?" + peerQuery(), {
+        credentials: "same-origin",
+      });
       const data = await res.json().catch(() => ({}));
       const msgs = Array.isArray(data.messages) ? data.messages : [];
       const set = new Set();
@@ -1470,12 +1628,12 @@
     if (ret === "peer") openPeerPage();
   }
 
+  /** 串行发出去的消息；不等待家机回完也可继续输入/连发 */
+  let sendChain = Promise.resolve();
+
   function setComposerBusy(busy) {
     sending = !!busy;
-    ["btnChatSend", "btnChatPlus", "btnChatSticker", "dailyChatInput"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.disabled = sending;
-    });
+    /* ponytail: 不禁用输入框/发送；sending 仅给再生等旁路读状态 */
   }
 
   function recallStreamAction(type) {
@@ -1540,6 +1698,9 @@
       } else if (ev.type === "bot_tool" && ev.name) {
         pendingToolRow = appendToolChip(ev.name, ev.label);
         await paintFrame();
+      } else if (ev.type === "cam_check_wait") {
+        onCamCheckWait(ev);
+        await paintFrame();
       } else if (ev.type === "bot_tool_done") {
         const row = finishToolChip(pendingToolRow, ev);
         if (row && ev.message && ev.message.id) row.dataset.msgId = ev.message.id;
@@ -1597,6 +1758,9 @@
       } else if (ev.type === "bot_sticker" && ev.message) {
         appendChatMessage(ev.message);
         await paintFrame();
+      } else if (ev.type === "bot_music" && ev.message) {
+        appendChatMessage(ev.message);
+        await paintFrame();
       } else if (ev.type === "bot_image" && ev.message) {
         appendChatMessage(ev.message);
         await paintFrame();
@@ -1618,6 +1782,8 @@
         if (ev.code === "wallet_insufficient") setChatErr("余额不足");
       } else if (ev.type === "done") {
         setTyping(false);
+        if (ev.mood) paintMoodCap(ev.mood);
+        else void refreshMoodUi();
         if (ev.bot_error) {
           const tip =
             ev.bot_error.code === "budget_exhausted"
@@ -1666,49 +1832,54 @@
   }
 
   async function postChatPayload(payload) {
-    const box = document.getElementById("chatThread");
-    setChatErr("");
-    setComposerBusy(true);
-    setPanels(null);
-    try {
-      const res = await fetch("/api/v1/chat/messages", {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "text/event-stream",
-        },
-        body: JSON.stringify(payload),
-      });
-      const ctype = String(res.headers.get("content-type") || "");
-      if (!res.ok && !ctype.includes("event-stream")) {
-        let data = {};
-        try {
-          data = await res.json();
-        } catch (_) {
-          data = {};
+    const run = async () => {
+      const box = document.getElementById("chatThread");
+      setChatErr("");
+      setComposerBusy(true);
+      setPanels(null);
+      try {
+        const res = await fetch("/api/v1/chat/messages", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "text/event-stream",
+          },
+          body: JSON.stringify(withPeerBody(payload)),
+        });
+        const ctype = String(res.headers.get("content-type") || "");
+        if (!res.ok && !ctype.includes("event-stream")) {
+          let data = {};
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = {};
+          }
+          if (res.status === 404) throw new Error("聊天接口未就绪：请重启 npm start 后再试");
+          if (data.error === "wallet_insufficient") throw new Error("余额不足");
+          throw new Error(data.message || data.error || "发送失败");
         }
-        if (res.status === 404) throw new Error("聊天接口未就绪：请重启 npm start 后再试");
-        if (data.error === "wallet_insufficient") throw new Error("余额不足");
-        throw new Error(data.message || data.error || "发送失败");
+        await readChatSse(res, makeChatStream(box));
+        if (chatViewActive()) await markChatRead();
+        else notifyUnread();
+        refreshSessionList();
+      } catch (e) {
+        setTyping(false);
+        setChatErr((e && e.message) || "发送失败");
+      } finally {
+        setTyping(false);
+        setComposerBusy(false);
+        syncSendPlus();
+        const input = document.getElementById("dailyChatInput");
+        if (input) input.focus();
       }
-      await readChatSse(res, makeChatStream(box));
-      if (chatViewActive()) await markChatRead();
-      else notifyUnread();
-    } catch (e) {
-      setTyping(false);
-      setChatErr((e && e.message) || "发送失败");
-    } finally {
-      setTyping(false);
-      setComposerBusy(false);
-      syncSendPlus();
-      const input = document.getElementById("dailyChatInput");
-      if (input) input.focus();
-    }
+    };
+    const next = sendChain.then(run, run);
+    sendChain = next.catch(() => {});
+    await next;
   }
 
   async function sendChatMessage() {
-    if (sending) return;
     const input = document.getElementById("dailyChatInput");
     const body = input ? String(input.value || "").trim() : "";
     if (!body) return;
@@ -1723,7 +1894,7 @@
   }
 
   async function sendSticker(id) {
-    if (sending || !id) return;
+    if (!id) return;
     await postChatPayload({ kind: "sticker", body: id });
   }
 
@@ -1763,7 +1934,9 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "image", body: url, noreply: true }),
+      body: JSON.stringify(
+        withPeerBody({ kind: "image", body: url, noreply: true })
+      ),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || data.error || "发送失败");
@@ -1771,7 +1944,6 @@
   }
 
   async function sendPickedImages(fileList) {
-    if (sending) return;
     const { files, truncated } = clampAlbumFiles(fileList);
     if (!files.length) return;
     if (truncated) shellToast("一次最多 9 张");
@@ -2092,6 +2264,10 @@
       }
       return;
     }
+    if (item.id === "request_song") {
+      beginChatRequestSong();
+      return;
+    }
     if (item.id === "music") {
       shareListenOrPickMusic();
       return;
@@ -2120,6 +2296,206 @@
     });
   }
 
+  function chatMusicAudio() {
+    if (global.CovePlayer) return global.CovePlayer.getAudio();
+    if (!global.__ariadneChatAudioFallback) {
+      global.__ariadneChatAudioFallback = new Audio();
+    }
+    return global.__ariadneChatAudioFallback;
+  }
+
+  function engageListenQuiet() {
+    fetch("/api/v1/listen/engage", {
+      method: "POST",
+      credentials: "same-origin",
+    }).catch(() => {});
+  }
+
+  function postMusicSessionEvent(event_type, song, actor) {
+    const body = {
+      event_type,
+      actor: actor || "user",
+      song: song
+        ? {
+            provider:
+              song.provider ||
+              (song.stream_path ? "netease" : "apple"),
+            id: song.id,
+            name: song.name,
+            artist: song.artist,
+            cover: song.cover,
+            stream_path: song.stream_path,
+            apple_url: song.apple_url,
+            preview_url: song.preview_url,
+          }
+        : undefined,
+    };
+    fetch("/api/v1/music/session/event", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    })
+      .then(() => {
+        if (event_type === "play" || event_type === "resume") {
+          engageListenQuiet();
+        }
+      })
+      .catch(() => {});
+  }
+
+  function explainChatMusicError(code, fallback) {
+    const c = String(code || "").trim();
+    const map = {
+      MUSIC_NO_AUDIO: "没有可播音源（会员/版权/需扫码登录）",
+      MUSIC_TRIAL_ONLY: "只有试听片段，整曲需会员或重新扫码",
+      MUSIC_NOT_FOUND: "歌曲不存在或已下架",
+      netease_unreachable: "连不上网易云 API（本机 :3000）",
+      netease_timeout: "网易云 API 超时",
+      proxy_failed: "音源代理失败",
+      upstream_audio: "上游音源不可用",
+    };
+    if (map[c]) return map[c];
+    const msg = String(fallback || "").trim();
+    return msg ? msg.slice(0, 120) : "播放失败";
+  }
+
+  async function probeMusicStream(path) {
+    try {
+      const res = await fetch(path, {
+        method: "GET",
+        credentials: "same-origin",
+        headers: { Range: "bytes=0-1" },
+        cache: "no-store",
+      });
+      if (res.ok || res.status === 206) return null;
+      const ct = String(res.headers.get("content-type") || "");
+      if (ct.includes("json")) {
+        const data = await res.json().catch(() => ({}));
+        return explainChatMusicError(data.error, data.message);
+      }
+      return "音源不可用（HTTP " + res.status + "）";
+    } catch (_) {
+      return "网络失败，连不上音源";
+    }
+  }
+
+  function playAudioSrc(src, p, toastPlaying) {
+    try {
+      const track = p
+        ? {
+            provider: p.provider || (p.stream_path ? "netease" : "apple"),
+            id: p.id,
+            name: p.name,
+            artist: p.artist,
+            cover: p.cover,
+            stream_path: p.stream_path,
+            apple_url: p.apple_url,
+            preview_url: p.preview_url,
+          }
+        : null;
+      if (global.CovePlayer) {
+        global.CovePlayer.play(src, {
+          track: track,
+          owner: "chat",
+          volume:
+            typeof global.__ariadneMusicVol === "number"
+              ? global.__ariadneMusicVol
+              : 0.8,
+        })
+          .then((out) => {
+            if (out && out.toggled) {
+              postMusicSessionEvent("pause", p, "user");
+              shellToast("已暂停");
+              return;
+            }
+            postMusicSessionEvent("play", p, "user");
+            if (track && track.id != null) {
+              fetch("/api/v1/music/queue", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "enqueue", song: track }),
+              }).catch(() => {});
+            }
+            shellToast(toastPlaying || "播放中");
+          })
+          .catch(() => {
+            shellToast("播放被拦截，点一下页面后再试");
+          });
+        return;
+      }
+      const a = chatMusicAudio();
+      try {
+        const vol =
+          typeof global.__ariadneMusicVol === "number"
+            ? global.__ariadneMusicVol
+            : 0.8;
+        a.volume = Math.max(0, Math.min(1, vol));
+      } catch (_) {}
+      const abs = new URL(src, window.location.origin).href;
+      if ((a.src === abs || a.getAttribute("src") === src) && !a.paused) {
+        a.pause();
+        postMusicSessionEvent("pause", p, "user");
+        shellToast("已暂停");
+        return;
+      }
+      a.pause();
+      a.onerror = () => {
+        probeMusicStream(src).then((msg) => {
+          shellToast(msg || "播放失败");
+        });
+      };
+      a.src = src;
+      a.play()
+        .then(() => {
+          postMusicSessionEvent("play", p, "user");
+          if (track && track.id != null) {
+            fetch("/api/v1/music/queue", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "enqueue", song: track }),
+            }).catch(() => {});
+          }
+          shellToast(toastPlaying || "播放中");
+        })
+        .catch(() => {
+          shellToast("播放被拦截，点一下页面后再试");
+        });
+    } catch (_) {
+      shellToast("播放失败");
+    }
+  }
+
+  async function openMusicCard(p) {
+    const stream = String((p && p.stream_path) || "").trim();
+    if (stream || (p && p.provider === "netease" && p.id)) {
+      const path =
+        stream || "/api/v1/music/stream/netease/" + String(p.id);
+      const fail = await probeMusicStream(path);
+      if (fail) {
+        shellToast(fail);
+        return;
+      }
+      playAudioSrc(path, p, "网易云播放中");
+      return;
+    }
+    const preview = String((p && p.preview_url) || "").trim();
+    const link = String((p && p.apple_url) || "").trim();
+    if (preview) {
+      playAudioSrc(preview, p, "试听中 · 约30秒");
+      return;
+    }
+    if (link) {
+      window.open(link, "_blank", "noopener,noreferrer");
+      postMusicSessionEvent("ready", p, "user");
+      shellToast("已打开 Apple Music");
+      return;
+    }
+    shellToast("这张卡没有可播链接");
+  }
+
   async function shareListenOrPickMusic() {
     try {
       const res = await fetch("/api/v1/listen/presence", {
@@ -2144,8 +2520,121 @@
     }
   }
 
+  function closeChatSongModal() {
+    const m = document.getElementById("chatSongModal");
+    if (m) m.hidden = true;
+  }
+
+  function beginChatRequestSong() {
+    setChatErr("");
+    setPanels(null);
+    dismissKeyboard();
+    const m = document.getElementById("chatSongModal");
+    const input = document.getElementById("chatSongQuery");
+    const list = document.getElementById("chatSongResults");
+    const hint = document.getElementById("chatSongHint");
+    if (list) list.replaceChildren();
+    if (hint) hint.textContent = "搜到后点一首，发成音乐卡";
+    if (m) m.hidden = false;
+    if (input) {
+      input.value = "";
+      setTimeout(() => input.focus(), 30);
+    }
+  }
+
+  function paintChatSongResults(songs) {
+    const list = document.getElementById("chatSongResults");
+    const hint = document.getElementById("chatSongHint");
+    if (!list) return;
+    list.replaceChildren();
+    if (!songs.length) {
+      if (hint) hint.textContent = "没有搜到歌";
+      return;
+    }
+    if (hint) hint.textContent = "点一首发到聊天";
+    for (const s of songs) {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      const title = document.createElement("span");
+      title.className = "chat-song-title";
+      title.textContent = String(s.name || "").trim() || "未命名";
+      const meta = document.createElement("span");
+      meta.className = "chat-song-meta";
+      meta.textContent = [s.artist, s.album].filter(Boolean).join(" · ");
+      btn.append(title, meta);
+      btn.addEventListener("click", () => sendChatNeteaseSong(s));
+      li.append(btn);
+      list.append(li);
+    }
+  }
+
+  async function searchChatNeteaseSongs(query) {
+    const q = String(query || "").trim();
+    if (!q) throw new Error("请输入歌名");
+    const res = await fetch(
+      "/api/v1/music/search?provider=netease&limit=8&q=" + encodeURIComponent(q),
+      { cache: "no-store", credentials: "same-origin" }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || data.error || "搜歌失败");
+    const songs = Array.isArray(data.songs) ? data.songs : [];
+    if (!songs.length) throw new Error("没有搜到歌");
+    return songs;
+  }
+
+  async function sendChatNeteaseSong(track) {
+    if (!track || track.id == null) {
+      shellToast("无效曲目");
+      return;
+    }
+    const id = Math.floor(Number(track.id));
+    const stream =
+      String(track.stream_path || "").trim() ||
+      "/api/v1/music/stream/netease/" + String(id);
+    closeChatSongModal();
+    await postChatPayload({
+      kind: "music",
+      name: String(track.name || "").trim().slice(0, 80) || "未命名",
+      artist: String(track.artist || "").trim().slice(0, 80),
+      album: String(track.album || "").trim().slice(0, 80),
+      provider: "netease",
+      id,
+      stream_path: stream,
+      cover: String(track.cover || "").trim().slice(0, 400),
+      song_key: track.song_key ? String(track.song_key).trim().slice(0, 64) : undefined,
+    });
+    postMusicSessionEvent(
+      "ready",
+      {
+        provider: "netease",
+        id,
+        name: track.name,
+        artist: track.artist,
+      },
+      "user"
+    );
+  }
+
+  async function onChatSongSearchSubmit(e) {
+    if (e) e.preventDefault();
+    const input = document.getElementById("chatSongQuery");
+    const hint = document.getElementById("chatSongHint");
+    const q = input ? String(input.value || "").trim() : "";
+    if (hint) hint.textContent = "搜歌中…";
+    try {
+      const songs = await searchChatNeteaseSongs(q);
+      paintChatSongResults(songs);
+    } catch (err) {
+      paintChatSongResults([]);
+      const msg = (err && err.message) || "点歌失败";
+      if (hint) hint.textContent = humanizeChatNetErr(msg);
+      shellToast(humanizeChatNetErr(msg));
+    }
+  }
+
   async function sendPickedFile(file, kind) {
-    if (sending || !file) return;
+    if (!file) return;
     setChatErr("");
     if (kind === "file" && !isReadableTextFile(file)) {
       shellToast("暂只读文本");
@@ -2240,28 +2729,24 @@
   function writeUnreadMarks(obj) {
     lsSet(UNREAD_MARK_KEY, JSON.stringify(obj || {}));
   }
-  function chatListMuted() {
-    return readMutes().includes("daily");
-  }
   function toggleSessionPin(sessId) {
-    const id = String(sessId || "daily");
+    const id = String(sessId || menuSessId || "daily");
     const pins = readPins();
     const i = pins.indexOf(id);
     if (i >= 0) pins.splice(i, 1);
     else pins.push(id);
     writePins(pins);
-    paintSessBadges();
+    refreshSessionList();
     shellToast(pins.includes(id) ? "已置顶" : "已取消置顶");
   }
   async function toggleSessionMute(sessId) {
-    const id = String(sessId || "daily");
+    const id = String(sessId || menuSessId || "daily");
     const mutes = readMutes();
     const i = mutes.indexOf(id);
     if (i >= 0) mutes.splice(i, 1);
     else mutes.push(id);
     writeMutes(mutes);
-    paintSessBadges();
-    await refreshUnreadUi();
+    await refreshSessionList();
     shellToast(mutes.includes(id) ? "已开启免打扰" : "已关闭免打扰");
   }
   function readNotes() {
@@ -2280,27 +2765,19 @@
     lsSet(NOTE_KEY, JSON.stringify(all));
   }
   function displayPeerName(sessId) {
-    return readNote(sessId || "daily") || deps.getPeerName() || "家机";
+    return peerDisplayName(sessId || activePeerId || "daily");
   }
   function refreshPeerLabels() {
     const name = displayPeerName();
-    ["chatSessName", "chatContactName", "chatProfileName", "chatClearPeerName", "chatPeerPageTitle"].forEach((id) => {
+    ["chatContactName", "chatProfileName", "chatClearPeerName", "chatPeerPageTitle"].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.textContent = name;
     });
     const peer = document.getElementById("chatPeerName");
     if (peer && !peer.classList.contains("is-typing")) peer.textContent = name;
-    paintSessBadges();
   }
   function paintSessBadges() {
-    const row = document.getElementById("btnChatSessHome");
-    const pin = document.getElementById("chatSessPin");
-    const mute = document.getElementById("chatSessMute");
-    const pinned = readPins().includes("daily");
-    const muted = readMutes().includes("daily");
-    if (row) row.classList.toggle("is-pinned", pinned);
-    if (pin) pin.hidden = !pinned;
-    if (mute) mute.hidden = !muted;
+    /* 角标在 refreshSessionList 里按行画 */
   }
 
   /* ========== Shell tabs / thread layer ========== */
@@ -2322,8 +2799,9 @@
     persistDraft();
     refreshSessionList();
   }
-  function openThreadLayer() {
+  function openThreadLayer(peerId) {
     closeShellOverlays();
+    if (peerId) setActivePeer(peerId);
     const layer = document.getElementById("chatThreadLayer");
     if (!layer) return;
     layer.hidden = false;
@@ -2332,6 +2810,7 @@
     applyChatBg();
     restoreDraft();
     refreshChatThread();
+    markChatRead().then(() => refreshUnreadUi());
   }
   function shellToast(msg) {
     const el = document.getElementById("chatShellToast");
@@ -2347,6 +2826,44 @@
     shellToastTimer = setTimeout(() => {
       el.hidden = true;
     }, 1700);
+  }
+
+  /** V2 CAM_CHECK：提示音 + toast；真截屏在服务端缓冲后执行 */
+  function playCamCheckChime() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.1, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.4);
+      o.onended = () => {
+        try {
+          ctx.close();
+        } catch (_) {}
+      };
+    } catch (_) {}
+  }
+
+  function onCamCheckWait(ev) {
+    const sec = Math.max(1, Math.min(10, Math.floor(Number(ev && ev.seconds) || 5)));
+    /* 提示音改由壳 WebSocket monitor_alert 播，避免与 WS 叠两声 */
+    if (
+      !(
+        window.__ariadneMonitorAlertAt &&
+        Date.now() - window.__ariadneMonitorAlertAt < 2000
+      )
+    ) {
+      playCamCheckChime();
+    }
+    shellToast("家机要看一眼屏幕 · " + sec + " 秒");
   }
   function showChatOverlay(id) {
     document.querySelectorAll("#view-chat .chat-overlay").forEach((el) => {
@@ -2399,18 +2916,25 @@
     }
     return pad(d.getMonth() + 1) + "-" + pad(d.getDate());
   }
-  async function fetchUnreadCount() {
+  async function fetchUnreadDetail() {
     try {
       const res = await fetch("/api/v1/chat/unread", {
         credentials: "same-origin",
         cache: "no-store",
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) return 0;
-      return Math.max(0, Math.floor(Number(data.count) || 0));
+      if (!res.ok) return { count: 0, byPeer: {} };
+      return {
+        count: Math.max(0, Math.floor(Number(data.count) || 0)),
+        byPeer: data.byPeer && typeof data.byPeer === "object" ? data.byPeer : {},
+      };
     } catch (_) {
-      return 0;
+      return { count: 0, byPeer: {} };
     }
+  }
+  async function fetchUnreadCount() {
+    const d = await fetchUnreadDetail();
+    return d.count;
   }
   function unreadBadgeLabel(count, marked) {
     const n = Math.max(0, Math.floor(Number(count) || 0));
@@ -2424,28 +2948,23 @@
     if (unreadBadgeLabel(0, false) !== "") throw new Error("none");
     if (unreadBadgeLabel(100, true) !== "99+") throw new Error("cap");
   })();
-  function paintShellUnread(count) {
-    const n = chatListMuted() ? 0 : Math.max(0, Math.floor(Number(count) || 0));
+  function paintShellUnread(count, byPeer) {
     const marks = readUnreadMarks();
-    const marked = !!marks.daily;
-    const show = n > 0 || marked;
-    const badge = document.getElementById("chatSessBadge");
+    const mutes = readMutes();
+    const map = byPeer && typeof byPeer === "object" ? byPeer : {};
+    let show = false;
+    const ids = new Set([...Object.keys(map), ...Object.keys(marks || {})]);
+    ids.forEach((id) => {
+      if (mutes.includes(id)) return;
+      if ((Number(map[id]) || 0) > 0 || marks[id]) show = true;
+    });
+    if (!ids.size && (Number(count) || 0) > 0) show = true;
     const dot = document.getElementById("chatDockDot");
-    if (badge) {
-      if (show) {
-        badge.hidden = false;
-        badge.textContent = unreadBadgeLabel(n, marked);
-        badge.classList.remove("is-dot");
-      } else {
-        badge.hidden = true;
-        badge.classList.remove("is-dot");
-      }
-    }
-    if (dot) dot.hidden = !show || chatListMuted();
+    if (dot) dot.hidden = !show;
   }
   async function refreshUnreadUi() {
-    const n = await fetchUnreadCount();
-    paintShellUnread(n);
+    const d = await fetchUnreadDetail();
+    paintShellUnread(d.count, d.byPeer);
     try {
       deps.onUnreadChange();
     } catch (_) {}
@@ -2478,24 +2997,102 @@
     }
     preview.textContent = fallback;
   }
+  function sortPeersForList(peers) {
+    const pins = readPins();
+    return (peers || []).slice().sort((a, b) => {
+      const ap = pins.includes(a.id) ? 1 : 0;
+      const bp = pins.includes(b.id) ? 1 : 0;
+      if (ap !== bp) return bp - ap;
+      return (Number(b.lastTs) || 0) - (Number(a.lastTs) || 0);
+    });
+  }
   async function refreshSessionList() {
     syncShellAvatars();
-    paintSessBadges();
-    const preview = document.getElementById("chatSessPreview");
-    const timeEl = document.getElementById("chatSessTime");
-    try {
-      const msgs = await fetchChatMessages();
-      if (!msgs.length) {
-        paintSessPreview(preview, "还没有短讯");
-        if (timeEl) timeEl.textContent = "";
-      } else {
-        const last = msgs[msgs.length - 1];
-        paintSessPreview(preview, histPreview(last) || "…");
-        if (timeEl) timeEl.textContent = sessTimeLabel(last.ts || last.created_at);
-      }
-    } catch (_) {
-      if (preview) preview.textContent = "加载失败";
+    const list = document.getElementById("chatSessList");
+    if (!list) {
+      await refreshUnreadUi();
+      return;
     }
+    const bot = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    const pins = readPins();
+    const mutes = readMutes();
+    const marks = readUnreadMarks();
+    let peers = [];
+    try {
+      peers = sortPeersForList(await fetchPeers());
+    } catch (err) {
+      /* 旧网关无 /peers 时降级成单会话，避免整页空白 */
+      try {
+        console.warn("[chat] peers", err && err.message);
+      } catch (_) {}
+      peers = [
+        {
+          id: "daily",
+          name: peerDisplayName("daily"),
+          unread: 0,
+          last: null,
+          lastTs: 0,
+        },
+      ];
+      try {
+        const msgs = await fetchChatMessages();
+        if (msgs.length) {
+          peers[0].last = msgs[msgs.length - 1];
+          peers[0].lastTs = peers[0].last.ts || 0;
+        }
+      } catch (_) {}
+    }
+    list.replaceChildren();
+    peers.forEach((p) => {
+      const id = p.id;
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "chat-sess";
+      row.dataset.sessId = id;
+      if (pins.includes(id)) row.classList.add("is-pinned");
+      const unreadN = Math.max(0, Math.floor(Number(p.unread) || 0));
+      const marked = !!marks[id];
+      const showBadge = unreadN > 0 || marked;
+      const muted = mutes.includes(id);
+      row.innerHTML =
+        '<span class="chat-av-wrap' +
+        (id === "daily" ? " av-frame-full" : "") +
+        '">' +
+        '<img class="face" src="' +
+        escapeHtml(bot) +
+        '" alt="" />' +
+        '<span class="chat-badge"' +
+        (showBadge ? "" : " hidden") +
+        ">" +
+        escapeHtml(unreadBadgeLabel(unreadN, marked)) +
+        "</span></span>" +
+        '<span class="chat-sess-body">' +
+        '<span class="chat-sess-row1">' +
+        '<span class="chat-sess-namewrap">' +
+        '<span class="chat-sess-name">' +
+        escapeHtml(peerDisplayName(id)) +
+        "</span>" +
+        '<span class="chat-sess-pin"' +
+        (pins.includes(id) ? "" : " hidden") +
+        ">置顶</span>" +
+        '<span class="chat-sess-mute"' +
+        (muted ? "" : " hidden") +
+        ">免打扰</span>" +
+        "</span>" +
+        '<span class="chat-sess-time">' +
+        escapeHtml(p.lastTs ? sessTimeLabel(p.lastTs) : "") +
+        "</span></span>" +
+        '<span class="chat-sess-preview"></span></span>';
+      const preview = row.querySelector(".chat-sess-preview");
+      if (preview) {
+        const fallback = p.last ? histPreview(p.last) || "…" : "还没有短讯";
+        if (id === (activePeerId || "daily")) paintSessPreview(preview, fallback);
+        else preview.textContent = fallback;
+      }
+      row.addEventListener("click", () => openThreadLayer(id));
+      bindLongPress(row, () => openSessMenu(id));
+      list.appendChild(row);
+    });
     await refreshUnreadUi();
   }
   function onShowChatShell() {
@@ -2536,7 +3133,12 @@
     return { body: s, quote: null };
   }
   function readDraftRecord() {
-    return parseDraftRaw(lsGet(LS.draft, ""));
+    const key = draftKey();
+    let raw = lsGet(key, "");
+    if (!raw && (activePeerId || "daily") === "daily") {
+      raw = lsGet("ariadne.chat.draft.daily", "");
+    }
+    return parseDraftRaw(raw);
   }
   (function checkDraftRecord() {
     const leg = parseDraftRaw("hi");
@@ -2554,13 +3156,14 @@
     const input = document.getElementById("dailyChatInput");
     const body = input ? String(input.value || "") : "";
     const quote = quoteForStore(pendingQuote);
+    const key = draftKey();
     if (!String(body).trim() && !quote) {
       try {
-        localStorage.removeItem(LS.draft);
+        localStorage.removeItem(key);
       } catch (_) {}
       return;
     }
-    lsSet(LS.draft, JSON.stringify({ body: body, quote: quote }));
+    lsSet(key, JSON.stringify({ body: body, quote: quote }));
   }
   function restoreDraft() {
     const input = document.getElementById("dailyChatInput");
@@ -3266,7 +3869,9 @@
           Accept: "text/event-stream",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(shot ? { screenshot: shot } : {}),
+        body: JSON.stringify(
+          withPeerBody(shot ? { screenshot: shot } : {})
+        ),
       });
       const ctype = String(res.headers.get("content-type") || "");
       if (!ctype.includes("event-stream")) {
@@ -3291,16 +3896,21 @@
     const sid = String(id || "").trim();
     if (!sid) return;
     try {
-      const res = await fetch("/api/v1/chat/messages/" + encodeURIComponent(sid), {
-        method: "DELETE",
-        credentials: "same-origin",
-      });
+      const res = await fetch(
+        "/api/v1/chat/messages/" + encodeURIComponent(sid) + "?" + peerQuery(),
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        }
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "删除失败");
       const box = document.getElementById("chatThread");
       const row = box && box.querySelector('.wx-row[data-msg-id="' + sid + '"]');
-      if (row) row.remove();
-      else await refreshChatThread();
+      if (row) {
+        row.remove();
+        pruneOrphanTimeChips(box);
+      } else await refreshChatThread();
     } catch (err) {
       shellToast((err && err.message) || "删除失败");
     }
@@ -3370,7 +3980,7 @@
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ index: index }),
+          body: JSON.stringify(withPeerBody({ index: index })),
         }
       );
       const data = await res.json().catch(() => ({}));
@@ -3400,7 +4010,10 @@
     const paintFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
     try {
       const res = await fetch(
-        "/api/v1/chat/messages/" + encodeURIComponent(id) + "/regenerate",
+        "/api/v1/chat/messages/" +
+          encodeURIComponent(id) +
+          "/regenerate?" +
+          peerQuery(),
         {
           method: "POST",
           credentials: "same-origin",
@@ -3442,9 +4055,13 @@
           });
         } else if (ev.type === "bot_tool" && ev.name) {
           pendingToolRow = appendToolChip(ev.name, ev.label);
+        } else if (ev.type === "cam_check_wait") {
+          onCamCheckWait(ev);
         } else if (ev.type === "bot_tool_done") {
           finishToolChip(pendingToolRow, ev);
           pendingToolRow = null;
+        } else if (ev.type === "bot_music" && ev.message) {
+          appendChatMessage(ev.message);
         } else if (ev.type === "bot_delta" && ev.text) {
           if (!cleared) {
             bubbleTextEl(bubble).textContent = "";
@@ -3605,7 +4222,7 @@
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ emoji: emo }),
+        body: JSON.stringify(withPeerBody({ emoji: emo })),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "\u6ca1\u8d34\u4e0a");
@@ -3622,7 +4239,10 @@
     if (!sid || multiMode) return;
     try {
       const res = await fetch(
-        "/api/v1/chat/messages/" + encodeURIComponent(sid) + "/transcribe",
+        "/api/v1/chat/messages/" +
+          encodeURIComponent(sid) +
+          "/transcribe?" +
+          peerQuery(),
         { method: "POST", credentials: "same-origin" }
       );
       const data = await res.json().catch(() => ({}));
@@ -3915,7 +4535,9 @@
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: "text", body: body, noreply: true }),
+      body: JSON.stringify(
+        withPeerBody({ kind: "text", body: body, noreply: true })
+      ),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || "\u8f6c\u53d1\u5931\u8d25");
@@ -4281,23 +4903,67 @@
     const cap = document.getElementById("chatMoodCap");
     const prefLab = document.getElementById("chatPrefMoodLab");
     const label = data && data.label ? String(data.label) : "";
-    if (prefLab) prefLab.textContent = label || "—";
+    const core =
+      data && data.moodLabel ? String(data.moodLabel) : label;
+    const latest = data && data.latest ? String(data.latest) : "";
+    const v =
+      data && data.valence != null
+        ? Math.round(Number(data.valence) * 100) / 100
+        : null;
+    const a =
+      data && data.arousal != null
+        ? Math.round(Number(data.arousal) * 100) / 100
+        : null;
+    const vaTip =
+      v != null && a != null ? "V " + v + " · A " + a : "";
+    /* title：分层说明，避免「副标别扭、悬停爱你」被当成互相矛盾 */
+    const tipParts = [];
+    if (label) tipParts.push("现在：" + label);
+    if (core && core !== label) tipParts.push("底色：" + core);
+    if (latest && latest !== label && latest !== core) {
+      tipParts.push("近因：" + latest);
+    }
+    if (vaTip) tipParts.push(vaTip);
+    const tip = tipParts.join(" · ");
+    if (prefLab) {
+      prefLab.textContent = label
+        ? label + (vaTip ? " · " + vaTip : "")
+        : "—";
+    }
     if (!cap) return;
     cap.classList.remove("is-cold", "is-sour", "is-up");
     if (!label) {
       cap.hidden = true;
       cap.textContent = "";
+      cap.removeAttribute("title");
       return;
     }
     cap.hidden = false;
+    /* 副标 = publicLabel（综合/新鲜 ambient）；悬停看分层详情 */
     cap.textContent = label;
-    if (label === "冷战") cap.classList.add("is-cold");
-    else if (label === "酸了" || label === "吃醋") cap.classList.add("is-sour");
-    else if (label === "开心" || label === "兴奋") cap.classList.add("is-up");
+    if (tip) cap.title = tip;
+    else cap.removeAttribute("title");
+    if (core === "冷战" || core === "生气" || label === "冷战" || label === "生气")
+      cap.classList.add("is-cold");
+    else if (
+      core === "酸了" ||
+      core === "吃醋" ||
+      core === "别扭" ||
+      label === "别扭"
+    )
+      cap.classList.add("is-sour");
+    else if (
+      core === "开心" ||
+      core === "兴奋" ||
+      label === "开心" ||
+      label === "兴奋" ||
+      (v != null && v > 0.25)
+    )
+      cap.classList.add("is-up");
   }
   async function refreshMoodUi() {
     try {
-      const res = await fetch("/api/v1/chat/mood", {
+      const res = await fetch("/api/v1/chat/mood?" + peerQuery(), {
         credentials: "same-origin",
         cache: "no-store",
       });
@@ -4388,7 +5054,7 @@
       return;
     }
     try {
-      const res = await fetch("/api/v1/chat/messages", {
+      const res = await fetch("/api/v1/chat/messages?" + peerQuery(), {
         method: "DELETE",
         credentials: "same-origin",
       });
@@ -4427,6 +5093,13 @@
     chatSubReturn = returnTo || null;
     if (nameEl) nameEl.textContent = displayPeerName();
     if (av) av.src = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    const avWrap = document.getElementById("chatProfileAvWrap");
+    if (avWrap) {
+      avWrap.classList.toggle(
+        "av-frame-full",
+        (activePeerId || "daily") === "daily"
+      );
+    }
     if (noteInp) noteInp.value = readNote("daily");
     if (cardTa) cardTa.value = "";
     paintProfileInheritUi(true);
@@ -4499,10 +5172,12 @@
   function paintPeerPageLabels() {
     const pinVal = document.getElementById("chatPeerPinVal");
     const muteVal = document.getElementById("chatPeerMuteVal");
-    if (pinVal) pinVal.textContent = readPins().includes("daily") ? "开" : "关";
-    if (muteVal) muteVal.textContent = readMutes().includes("daily") ? "开" : "关";
+    const pid = activePeerId || "daily";
+    if (pinVal) pinVal.textContent = readPins().includes(pid) ? "开" : "关";
+    if (muteVal) muteVal.textContent = readMutes().includes(pid) ? "开" : "关";
     paintChatBgLabs();
     refreshPeerLabels();
+    paintPeerMemCount();
   }
   function openPeerPage() {
     closeSessMenu();
@@ -4538,6 +5213,18 @@
       openHist();
       return;
     }
+    if (act === "mood-map") {
+      openMoodMapPage("peer");
+      return;
+    }
+    if (act === "memory-add") {
+      addMemoryUi();
+      return;
+    }
+    if (act === "memory-list") {
+      openMemoryPage("peer");
+      return;
+    }
     if (act === "bg") {
       const inp = document.getElementById("chatBgInput");
       if (inp) {
@@ -4551,13 +5238,527 @@
       return;
     }
     if (act === "pin") {
-      toggleSessionPin("daily");
+      toggleSessionPin(activePeerId || "daily");
       paintPeerPageLabels();
       return;
     }
     if (act === "mute") {
-      toggleSessionMute("daily").then(() => paintPeerPageLabels());
+      toggleSessionMute(activePeerId || "daily").then(() => paintPeerPageLabels());
       return;
+    }
+  }
+
+  function moodMapStarPath(cx, cy, r) {
+    const pts = [];
+    for (let i = 0; i < 5; i++) {
+      const a = (-Math.PI / 2) + (i * 2 * Math.PI) / 5;
+      const b = a + Math.PI / 5;
+      pts.push(
+        (cx + Math.cos(a) * r).toFixed(1) +
+          "," +
+          (cy + Math.sin(a) * r).toFixed(1)
+      );
+      pts.push(
+        (cx + Math.cos(b) * r * 0.42).toFixed(1) +
+          "," +
+          (cy + Math.sin(b) * r * 0.42).toFixed(1)
+      );
+    }
+    return pts.join(" ");
+  }
+
+  function paintMoodMap(data) {
+    const hint = document.getElementById("chatMoodMapHint");
+    const svg = document.getElementById("chatMoodMapSvg");
+    const list = document.getElementById("chatMoodMapList");
+    const label = data && data.label ? String(data.label) : "—";
+    const core = data && data.moodLabel ? String(data.moodLabel) : label;
+    const points = Array.isArray(data && data.points) ? data.points : [];
+    if (hint) {
+      hint.textContent =
+        "此刻「" +
+        label +
+        "」" +
+        (core && core !== label ? " · 底色 " + core : "") +
+        " · 小宇宙只读";
+    }
+    if (svg) {
+      const pad = 22;
+      const W = 280;
+      const H = 200;
+      const innerW = W - pad * 2;
+      const innerH = H - pad * 2;
+      const parts = [];
+      parts.push(
+        '<defs>' +
+          '<radialGradient id="mmCandy" cx="35%" cy="30%" r="70%">' +
+          '<stop offset="0%" stop-color="#ffd6c9"/>' +
+          '<stop offset="100%" stop-color="#e8a090"/>' +
+          "</radialGradient>" +
+          '<radialGradient id="mmMint" cx="35%" cy="30%" r="70%">' +
+          '<stop offset="0%" stop-color="#d8f3ea"/>' +
+          '<stop offset="100%" stop-color="#7ec4b0"/>' +
+          "</radialGradient>" +
+          '<filter id="mmSoft" x="-40%" y="-40%" width="180%" height="180%">' +
+          '<feDropShadow dx="0" dy="1.2" stdDeviation="1.4" flood-color="#8b5e4b" flood-opacity="0.18"/>' +
+          "</filter>" +
+          "</defs>"
+      );
+      parts.push(
+        '<ellipse class="mm-glow" cx="' +
+          W / 2 +
+          '" cy="' +
+          H / 2 +
+          '" rx="88" ry="62"/>'
+      );
+      parts.push(
+        '<line class="axis" x1="' +
+          pad +
+          '" y1="' +
+          H / 2 +
+          '" x2="' +
+          (W - pad) +
+          '" y2="' +
+          H / 2 +
+          '"/>'
+      );
+      parts.push(
+        '<line class="axis" x1="' +
+          W / 2 +
+          '" y1="' +
+          pad +
+          '" x2="' +
+          W / 2 +
+          '" y2="' +
+          (H - pad) +
+          '"/>'
+      );
+      parts.push(
+        '<circle class="mm-origin" cx="' +
+          W / 2 +
+          '" cy="' +
+          H / 2 +
+          '" r="2.5"/>'
+      );
+      points.slice(0, 36).forEach((p) => {
+        const v = Number(p.valence);
+        const a = Number(p.arousal);
+        if (!Number.isFinite(v) || !Number.isFinite(a)) return;
+        const cx = pad + ((v + 1) / 2) * innerW;
+        const cy = pad + (1 - a) * innerH;
+        const r = 4.2 + Math.min(3.5, (Number(p.importance) || 3) * 0.32);
+        const op = Math.max(0.35, Math.min(1, Number(p.w) || 0.55));
+        if (p.kind === "ambient") {
+          parts.push(
+            '<polygon class="dot ambient" points="' +
+              moodMapStarPath(cx, cy, r) +
+              '" opacity="' +
+              op.toFixed(2) +
+              '" filter="url(#mmSoft)"/>'
+          );
+        } else {
+          parts.push(
+            '<circle class="dot score" cx="' +
+              cx.toFixed(1) +
+              '" cy="' +
+              cy.toFixed(1) +
+              '" r="' +
+              r.toFixed(1) +
+              '" opacity="' +
+              op.toFixed(2) +
+              '" filter="url(#mmSoft)"/>'
+          );
+        }
+      });
+      if (data && data.valence != null && data.arousal != null) {
+        const cx = pad + ((Number(data.valence) + 1) / 2) * innerW;
+        const cy = pad + (1 - Number(data.arousal)) * innerH;
+        parts.push(
+          '<circle class="now-halo" cx="' +
+            cx.toFixed(1) +
+            '" cy="' +
+            cy.toFixed(1) +
+            '" r="11"/>'
+        );
+        parts.push(
+          '<circle class="now" cx="' +
+            cx.toFixed(1) +
+            '" cy="' +
+            cy.toFixed(1) +
+            '" r="6.5" filter="url(#mmSoft)"/>'
+        );
+        parts.push(
+          '<circle class="now-core" cx="' +
+            cx.toFixed(1) +
+            '" cy="' +
+            cy.toFixed(1) +
+            '" r="2.2"/>'
+        );
+      }
+      svg.innerHTML = parts.join("");
+    }
+    if (list) {
+      if (!points.length) {
+        list.innerHTML =
+          '<p class="chat-mood-map-empty">还没有小星星 · 聊几句再来看</p>';
+      } else {
+        list.innerHTML = points
+          .slice(0, 12)
+          .map((p) => {
+            const lab = String(
+              p.label || (p.kind === "ambient" ? "日常" : "情绪")
+            ).slice(0, 18);
+            const kind = p.kind === "ambient" ? "✦ 饰" : "★ 评";
+            const age =
+              p.ageH != null
+                ? Number(p.ageH) < 1
+                  ? "刚刚"
+                  : Number(p.ageH) + "h前"
+                : "";
+            return (
+              '<div class="chat-mood-map-row' +
+              (p.kind === "ambient" ? " is-ambient" : "") +
+              '">' +
+              '<span class="k">' +
+              kind +
+              '</span><span class="t">' +
+              lab +
+              '</span><span class="m">' +
+              (age || "") +
+              "</span></div>"
+            );
+          })
+          .join("");
+      }
+    }
+  }
+
+  async function openMoodMapPage(returnTo) {
+    chatSubReturn = returnTo || null;
+    const el = document.getElementById("chatOvMoodMap");
+    if (!el) return;
+    if (returnTo === "peer") closePeerPage();
+    try {
+      const res = await fetch("/api/v1/chat/mood?" + peerQuery(), {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      paintMoodMap(data);
+      paintMoodCap(data);
+    } catch (err) {
+      paintMoodMap({ label: "—", points: [] });
+      shellToast((err && err.message) || "读取失败");
+    }
+    showChatOverlay("chatOvMoodMap");
+  }
+
+  function backFromMoodMap() {
+    const ret = chatSubReturn;
+    chatSubReturn = null;
+    const el = document.getElementById("chatOvMoodMap");
+    if (el) {
+      el.classList.remove("active");
+      el.hidden = true;
+    }
+    if (ret === "peer") {
+      openPeerPage();
+      return;
+    }
+    if (ret === "prefs") {
+      loadChatPrefsUi();
+      openShellOverlay("chatOvPrefs");
+      return;
+    }
+    closeShellOverlays();
+  }
+
+  async function addMemoryUi() {
+    const text = window.prompt("记一条（只对本会话生效）", "");
+    if (text == null) return;
+    const content = String(text || "").trim();
+    if (!content) {
+      shellToast("内容为空");
+      return;
+    }
+    const kwRaw = window.prompt("关键词（逗号分隔，可空）", "") || "";
+    try {
+      const res = await fetch("/api/v1/chat/memory", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withPeerBody({
+            content: content,
+            importance: 6,
+            category: "日常",
+            keywords: kwRaw,
+            unresolved: false,
+          })
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "写入失败");
+      shellToast("已记住");
+      paintPeerMemCount();
+      const bank = document.getElementById("chatOvMemory");
+      if (bank && !bank.hidden) loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "写入失败");
+    }
+  }
+
+  function paintMemoryBank(list, total) {
+    const box = document.getElementById("chatMemoryList");
+    const items = Array.isArray(list) ? list : [];
+    void total;
+    if (!box) return;
+    box.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-memory-empty";
+      empty.textContent = "还没有记忆 · 点右上角 + 记一条";
+      box.append(empty);
+      return;
+    }
+    for (const m of items) {
+      const row = document.createElement("div");
+      row.className = "chat-memory-row" + (m.unresolved ? " is-open" : "");
+      row.dataset.id = m.id;
+      const pin = document.createElement("button");
+      pin.type = "button";
+      pin.className = "chat-memory-pin";
+      pin.title = m.unresolved ? "取消待办" : "标为待办";
+      pin.textContent = m.unresolved ? "📌" : "○";
+      pin.addEventListener("click", (e) => {
+        e.preventDefault();
+        toggleMemoryUnresolved(m.id);
+      });
+      const mid = document.createElement("div");
+      mid.className = "chat-memory-mid";
+      const body = document.createElement("div");
+      body.className = "chat-memory-body";
+      body.textContent = String(m.content || "");
+      body.addEventListener("click", () => editMemoryUi(m));
+      const meta = document.createElement("div");
+      meta.className = "chat-memory-meta";
+      const kws = Array.isArray(m.keywords) ? m.keywords : [];
+      meta.textContent =
+        (m.category || "日常") +
+        " · 重要" +
+        (m.importance != null ? m.importance : 5) +
+        (kws.length ? " · " + kws.slice(0, 4).join("、") : "");
+      mid.append(body, meta);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "chat-memory-del";
+      del.setAttribute("aria-label", "删除");
+      del.textContent = "×";
+      del.addEventListener("click", (e) => {
+        e.preventDefault();
+        deleteMemoryUi(m.id);
+      });
+      row.append(pin, mid, del);
+      box.append(row);
+    }
+  }
+
+  async function refreshMemoryDigestHint(totalOpt) {
+    const hint = document.getElementById("chatMemoryHint");
+    if (!hint) return;
+    let pending = null;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/memory/digest-status?" + peerQuery(),
+        { credentials: "same-origin", cache: "no-store" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) pending = Number(data.pending) || 0;
+    } catch (_) {}
+    const totalBit =
+      totalOpt != null ? "本会话 " + totalOpt + " 条" : "本会话记忆";
+    hint.textContent =
+      totalBit +
+      " · 待办优先" +
+      (pending != null ? " · 待总结 " + pending + " 条对话" : "");
+  }
+
+  async function loadMemoryBank() {
+    const qEl = document.getElementById("chatMemoryQ");
+    const q = qEl ? String(qEl.value || "").trim() : "";
+    try {
+      const url =
+        "/api/v1/chat/memory?" +
+        peerQuery() +
+        (q ? "&q=" + encodeURIComponent(q) : "") +
+        "&limit=120";
+      const res = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      const list = Array.isArray(data.memories) ? data.memories : [];
+      const total = data.total != null ? data.total : list.length;
+      paintMemoryBank(list, total);
+      paintPeerMemCount(total);
+      await refreshMemoryDigestHint(total);
+    } catch (err) {
+      paintMemoryBank([]);
+      shellToast((err && err.message) || "读取失败");
+    }
+  }
+
+  async function runMemoryDigest() {
+    const btn = document.getElementById("btnChatMemoryDigest");
+    if (btn) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = "总结中…";
+    }
+    try {
+      const res = await fetch("/api/v1/chat/memory/digest", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({})),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "总结失败");
+      const n = Array.isArray(data.added) ? data.added.length : 0;
+      shellToast(data.message || (n ? "记入 " + n + " 条" : "完成"));
+      await loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "总结失败");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "总结新记忆";
+      }
+    }
+  }
+
+  async function openMemoryPage(returnTo) {
+    chatSubReturn = returnTo || null;
+    const el = document.getElementById("chatOvMemory");
+    if (!el) return;
+    if (returnTo === "peer") closePeerPage();
+    const qEl = document.getElementById("chatMemoryQ");
+    if (qEl) qEl.value = "";
+    await loadMemoryBank();
+    showChatOverlay("chatOvMemory");
+  }
+
+  function backFromMemory() {
+    const ret = chatSubReturn;
+    chatSubReturn = null;
+    const el = document.getElementById("chatOvMemory");
+    if (el) {
+      el.classList.remove("active");
+      el.hidden = true;
+    }
+    if (ret === "peer") {
+      openPeerPage();
+      return;
+    }
+    closeShellOverlays();
+  }
+
+  async function editMemoryUi(m) {
+    const cur = m || {};
+    const text = window.prompt("改记忆正文", String(cur.content || ""));
+    if (text == null) return;
+    const content = String(text || "").trim();
+    if (!content) {
+      shellToast("内容为空");
+      return;
+    }
+    const kwRaw = window.prompt(
+      "关键词（逗号分隔）",
+      (Array.isArray(cur.keywords) ? cur.keywords : []).join(",")
+    );
+    if (kwRaw == null) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/memory/" + encodeURIComponent(cur.id) + "?" + peerQuery(),
+        {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            withPeerBody({ content: content, keywords: kwRaw })
+          ),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "保存失败");
+      shellToast("已改");
+      await loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "保存失败");
+    }
+  }
+
+  async function deleteMemoryUi(id) {
+    if (!window.confirm("删掉这条记忆？")) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/memory/" + encodeURIComponent(id) + "?" + peerQuery(),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      shellToast("已删");
+      await loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "删除失败");
+    }
+  }
+
+  async function toggleMemoryUnresolved(id) {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/memory/" +
+          encodeURIComponent(id) +
+          "/unresolved?" +
+          peerQuery(),
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(withPeerBody({})),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "更新失败");
+      await loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "更新失败");
+    }
+  }
+
+  async function paintPeerMemCount(nOpt) {
+    const el = document.getElementById("chatPeerMemVal");
+    if (!el) return;
+    if (nOpt != null) {
+      el.textContent = String(nOpt);
+      return;
+    }
+    try {
+      const res = await fetch("/api/v1/chat/memory?" + peerQuery(), {
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        el.textContent = "—";
+        return;
+      }
+      el.textContent = Array.isArray(data.memories)
+        ? String(data.memories.length)
+        : "0";
+    } catch (_) {
+      el.textContent = "—";
     }
   }
   function escapeWorldHtml(s) {
@@ -4750,13 +5951,14 @@
     const el = document.getElementById("chatSessMenu");
     if (el) el.hidden = true;
   }
-  function openSessMenu() {
+  function openSessMenu(sessId) {
     const el = document.getElementById("chatSessMenu");
     if (!el) return;
+    menuSessId = String(sessId || activePeerId || "daily");
     const pinBtn = document.getElementById("btnChatSessPin");
     const muteBtn = document.getElementById("btnChatSessMute");
-    if (pinBtn) pinBtn.textContent = readPins().includes("daily") ? "取消置顶" : "置顶";
-    if (muteBtn) muteBtn.textContent = readMutes().includes("daily") ? "关闭免打扰" : "消息免打扰";
+    if (pinBtn) pinBtn.textContent = readPins().includes(menuSessId) ? "取消置顶" : "置顶";
+    if (muteBtn) muteBtn.textContent = readMutes().includes(menuSessId) ? "关闭免打扰" : "消息免打扰";
     el.hidden = false;
   }
   async function runShellSearch(q) {
@@ -4822,6 +6024,227 @@
     const r = s % 60;
     return String(m).padStart(2, "0") + ":" + String(r).padStart(2, "0");
   }
+  let callTalkRec = null;
+  let callTalkChunks = [];
+  let callTalkBusy = false;
+  let callAudioEl = null;
+
+  function callBubbleLabel(msg) {
+    const body = String((msg && msg.body) || "").trim();
+    if (body) return body;
+    const p = (msg && msg.payload) || {};
+    const media = p.media === "video" ? "视频" : "语音";
+    const out = p.dir === "out";
+    const clock = formatCallClockUi(p.durationSec);
+    switch (p.phase) {
+      case "invite":
+        return out ? "等待对方接听" : "邀请你" + media + "通话";
+      case "rejected":
+        return "对方已拒绝";
+      case "declined":
+        return out ? "已取消" : "已拒绝";
+      case "answered":
+        return out ? "对方已接听" : "已接听";
+      case "active":
+        return "通话中 " + clock;
+      case "ended":
+        return Number(p.durationSec) > 0 ? "通话时长 " + clock : media + "通话";
+      case "missed":
+        return "未接" + media + "通话";
+      default:
+        return media + "通话";
+    }
+  }
+
+  function setCallTalkUi(on) {
+    const talk = document.getElementById("chatCallTalk");
+    const cap = document.getElementById("chatCallCaption");
+    const acts = document.getElementById("chatCallActs");
+    const answer = document.getElementById("chatCallAnswer");
+    const outbound = !!(callSession && callSession.dir === "out");
+    if (talk) talk.hidden = !on;
+    if (cap) {
+      if (!on) {
+        cap.hidden = true;
+        cap.textContent = "";
+      }
+    }
+    if (acts) acts.classList.toggle("is-active", !!on || outbound);
+    /* 拨出从不显示接听；接通后也用 hidden，不单靠 CSS */
+    if (answer) answer.hidden = outbound || !!on;
+  }
+
+  function speakBrowserTts(text) {
+    try {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(String(text || ""));
+      u.lang = "zh-CN";
+      u.rate = 1.05;
+      window.speechSynthesis.speak(u);
+    } catch (_) {}
+  }
+
+  /** 在用户手势里解锁朗读，避免接通延时后被浏览器静音 */
+  function primeSpeechSynth() {
+    try {
+      if (!window.speechSynthesis) return;
+      const u = new SpeechSynthesisUtterance(" ");
+      u.volume = 0;
+      u.lang = "zh-CN";
+      window.speechSynthesis.speak(u);
+    } catch (_) {}
+  }
+
+  function playCallAudioBase64(b64, contentType) {
+    try {
+      if (callAudioEl) {
+        callAudioEl.pause();
+        callAudioEl = null;
+      }
+      const mime = contentType || "audio/mpeg";
+      const src = "data:" + mime + ";base64," + b64;
+      const a = new Audio(src);
+      callAudioEl = a;
+      a.play().catch(() => {});
+    } catch (_) {}
+  }
+
+  function paintCallCaption(userText, botText) {
+    const cap = document.getElementById("chatCallCaption");
+    if (!cap) return;
+    const u = String(userText || "").trim();
+    const b = String(botText || "").trim();
+    if (!u && !b) {
+      cap.hidden = true;
+      cap.textContent = "";
+      return;
+    }
+    cap.hidden = false;
+    cap.textContent =
+      (u ? "你：" + u.slice(0, 40) : "") +
+      (u && b ? "\n" : "") +
+      (b ? "家机：" + b.slice(0, 60) : "");
+  }
+
+  async function beginCallTalkHold(ev) {
+    if (ev) ev.preventDefault();
+    if (!callSession || callSession.phase !== "active" || callTalkBusy) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      shellToast("无法录音");
+      return;
+    }
+    const talk = document.getElementById("chatCallTalk");
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = pickRecorderMime();
+      callTalkChunks = [];
+      callTalkRec = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
+      callTalkRec.ondataavailable = (e) => {
+        if (e.data && e.data.size) callTalkChunks.push(e.data);
+      };
+      callTalkRec.start(200);
+      if (talk) {
+        talk.classList.add("is-pressing");
+        talk.textContent = "松开 发送";
+      }
+    } catch (_) {
+      shellToast("麦克风不可用");
+    }
+  }
+
+  async function endCallTalkHold(ev) {
+    if (ev) ev.preventDefault();
+    const talk = document.getElementById("chatCallTalk");
+    if (talk) {
+      talk.classList.remove("is-pressing");
+      talk.textContent = "按住 说话";
+    }
+    if (!callTalkRec) return;
+    const rec = callTalkRec;
+    callTalkRec = null;
+    await new Promise((resolve) => {
+      rec.onstop = resolve;
+      try {
+        rec.stop();
+      } catch (_) {
+        resolve();
+      }
+    });
+    try {
+      const tracks = rec.stream && rec.stream.getTracks();
+      if (tracks) tracks.forEach((t) => t.stop());
+    } catch (_) {}
+    if (callTalkBusy) return;
+    const blob = new Blob(callTalkChunks, {
+      type: (rec.mimeType || "audio/webm").split(";")[0],
+    });
+    callTalkChunks = [];
+    if (!blob.size || blob.size < 800) {
+      shellToast("太短了");
+      return;
+    }
+    callTalkBusy = true;
+    if (talk) talk.disabled = true;
+    paintCallCaption("", "听你说…");
+    try {
+      const res = await fetch("/api/v1/chat/voice-turn?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": blob.type || "audio/webm",
+        },
+        body: blob,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "没接上");
+      if (data.skipped) {
+        paintCallCaption(data.user_text || "", "（冷战中，先挂了）");
+        shellToast("家机不想接");
+        return;
+      }
+      paintCallCaption(data.user_text || "", data.bot_text || "");
+      if (data.provider === "fish" && data.audio_base64) {
+        playCallAudioBase64(data.audio_base64, data.content_type);
+      } else if (data.bot_text) {
+        speakBrowserTts(data.bot_text);
+        if (data.tts_error) shellToast("Fish 未通，先用系统音");
+      }
+    } catch (err) {
+      paintCallCaption("", "");
+      shellToast((err && err.message) || "通话回合失败");
+    } finally {
+      callTalkBusy = false;
+      if (talk) talk.disabled = false;
+    }
+  }
+
+  function armCallTalkClock(stateEl) {
+    if (callTimer) {
+      clearTimeout(callTimer);
+      clearInterval(callTimer);
+    }
+    callTimer = setInterval(() => {
+      if (!callSession || callSession.phase !== "active") return;
+      const sec = Math.floor((Date.now() - callSession.activeAt) / 1000);
+      if (stateEl) stateEl.textContent = "通话中 " + formatCallClockUi(sec);
+    }, 1000);
+  }
+
+  function enterActiveCallUi(stateEl) {
+    if (!callSession) return;
+    callSession.phase = "active";
+    callSession.activeAt = Date.now();
+    if (stateEl) stateEl.textContent = "通话中…";
+    setCallTalkUi(true);
+    armCallTalkClock(stateEl);
+    /* 接通先短声提示；之后按住说话才走 ASR→LLM→TTS */
+    speakBrowserTts("喂，我在。按住说话就可以了");
+  }
+
   function openCall(kind) {
     const modal = document.getElementById("chatCallModal");
     const kindEl = document.getElementById("chatCallKind");
@@ -4831,33 +6254,43 @@
     closeCallPicker();
     setPanels(null);
     const media = kind === "video" ? "video" : "voice";
-    callSession = { media, phase: "invite", activeAt: 0, started: Date.now() };
+    callSession = {
+      media,
+      phase: "invite",
+      activeAt: 0,
+      started: Date.now(),
+      dir: "out",
+    };
     if (kindEl) kindEl.textContent = media === "video" ? "视频通话" : "语音通话";
     if (peerEl) peerEl.textContent = displayPeerName();
     if (stateEl) stateEl.textContent = "等待接听…";
+    primeSpeechSynth();
+    setCallTalkUi(false);
     modal.hidden = false;
     if (callTimer) clearTimeout(callTimer);
     callTimer = setTimeout(() => {
       if (!callSession) return;
-      callSession.phase = "active";
-      callSession.activeAt = Date.now();
-      if (stateEl) stateEl.textContent = "通话中…";
-      callTimer = setInterval(() => {
-        if (!callSession || callSession.phase !== "active") return;
-        const sec = Math.floor((Date.now() - callSession.activeAt) / 1000);
-        if (stateEl) stateEl.textContent = "通话中 " + formatCallClockUi(sec);
-      }, 1000);
+      enterActiveCallUi(stateEl);
     }, 900);
-    fetch("/api/v1/chat/call/start", {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ media, dir: "out" }),
-    }).catch(() => {});
+    /* ponytail: 挂断时再落一条通话气泡，避免 start 再多一条「等待接听」；有 phase API 后再绑 call id */
   }
   function closeCall() {
     const modal = document.getElementById("chatCallModal");
     if (modal) modal.hidden = true;
+    setCallTalkUi(false);
+    if (callTalkRec) {
+      try {
+        callTalkRec.stop();
+      } catch (_) {}
+      callTalkRec = null;
+    }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    if (callAudioEl) {
+      try {
+        callAudioEl.pause();
+      } catch (_) {}
+      callAudioEl = null;
+    }
     if (callTimer) {
       clearTimeout(callTimer);
       clearInterval(callTimer);
@@ -4868,20 +6301,20 @@
         ? Math.floor((Date.now() - callSession.activeAt) / 1000)
         : 0;
     const media = (callSession && callSession.media) || "voice";
+    const dir = (callSession && callSession.dir) || "out";
     callSession = null;
     postChatPayload({
       kind: "call",
       media: media,
-      phase: dur > 0 ? "ended" : "cancelled",
+      dir: dir,
+      phase: dur > 0 ? "ended" : "declined",
       durationSec: dur,
     }).catch(() => {});
   }
   function answerCallSession() {
-    if (!callSession) return;
-    callSession.phase = "active";
-    callSession.activeAt = Date.now();
-    const stateEl = document.getElementById("chatCallState");
-    if (stateEl) stateEl.textContent = "通话中…";
+    if (!callSession || callSession.dir === "out") return;
+    if (callSession.phase !== "invite") return;
+    enterActiveCallUi(document.getElementById("chatCallState"));
   }
   function voiceBubbleSec(p) {
     const src = p || {};
@@ -4915,6 +6348,20 @@
     if (voiceHoldMs(1, 130000) !== 120000) throw new Error("cap");
     if (voicePlaySrc({}, "/api/v1/chat/media/a") !== "/api/v1/chat/media/a") throw new Error("body");
     if (voicePlaySrc({}, "memo") !== "") throw new Error("plain");
+    if (
+      callBubbleLabel({
+        body: "",
+        payload: { media: "voice", dir: "out", phase: "declined", durationSec: 0 },
+      }) !== "已取消"
+    )
+      throw new Error("call declined");
+    if (
+      callBubbleLabel({
+        body: "",
+        payload: { media: "voice", dir: "out", phase: "ended", durationSec: 7 },
+      }) !== "通话时长 00:07"
+    )
+      throw new Error("call ended");
   })();
   function pickRecorderMime() {
     const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
@@ -5012,7 +6459,7 @@
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: "{}",
+          body: JSON.stringify(withPeerBody({})),
         });
         refreshChatThread();
       } catch (e) {
@@ -5041,15 +6488,15 @@
     const home = document.getElementById("btnChatShellHome");
     if (home) home.addEventListener("click", () => deps.showView("home"));
     const add = document.getElementById("btnChatShellAdd");
-    if (add) add.addEventListener("click", () => shellToast("单 peer 够用 · 多会话后置"));
-    const sess = document.getElementById("btnChatSessHome");
-    if (sess) {
-      sess.addEventListener("click", () => openThreadLayer());
-      bindLongPress(sess, () => openSessMenu());
+    if (add) {
+      add.addEventListener("click", () =>
+        shellToast("已有家机 + 薄巧测试两条会话")
+      );
     }
     const contact = document.getElementById("btnChatContactHome");
     if (contact) {
       contact.addEventListener("click", () => {
+        setActivePeer("daily");
         openPeerPage();
       });
     }
@@ -5213,6 +6660,28 @@
     }
     const prefsBack = document.getElementById("btnChatPrefsBack");
     if (prefsBack) prefsBack.addEventListener("click", () => closeShellOverlays());
+    const moodMapPrefs = document.getElementById("btnChatMoodMapPrefs");
+    if (moodMapPrefs) {
+      moodMapPrefs.addEventListener("click", () => openMoodMapPage("prefs"));
+    }
+    const moodMapBack = document.getElementById("btnChatMoodMapBack");
+    if (moodMapBack) moodMapBack.addEventListener("click", () => backFromMoodMap());
+    const memoryBack = document.getElementById("btnChatMemoryBack");
+    if (memoryBack) memoryBack.addEventListener("click", () => backFromMemory());
+    const memoryAdd = document.getElementById("btnChatMemoryAdd");
+    if (memoryAdd) memoryAdd.addEventListener("click", () => addMemoryUi());
+    const memoryDigest = document.getElementById("btnChatMemoryDigest");
+    if (memoryDigest) {
+      memoryDigest.addEventListener("click", () => runMemoryDigest());
+    }
+    const memoryQ = document.getElementById("chatMemoryQ");
+    if (memoryQ) {
+      let memTimer = null;
+      memoryQ.addEventListener("input", () => {
+        if (memTimer) clearTimeout(memTimer);
+        memTimer = setTimeout(() => loadMemoryBank(), 220);
+      });
+    }
     const wallet = document.getElementById("btnChatWallet");
     if (wallet) {
       wallet.addEventListener("click", () => {
@@ -5334,14 +6803,14 @@
     const sessPin = document.getElementById("btnChatSessPin");
     if (sessPin) {
       sessPin.addEventListener("click", () => {
-        toggleSessionPin("daily");
+        toggleSessionPin(menuSessId);
         closeSessMenu();
       });
     }
     const sessMute = document.getElementById("btnChatSessMute");
     if (sessMute) {
       sessMute.addEventListener("click", () => {
-        toggleSessionMute("daily");
+        toggleSessionMute(menuSessId);
         closeSessMenu();
       });
     }
@@ -5349,9 +6818,9 @@
     if (sessUnread) {
       sessUnread.addEventListener("click", () => {
         const marks = readUnreadMarks();
-        marks.daily = true;
+        marks[menuSessId || "daily"] = true;
         writeUnreadMarks(marks);
-        refreshUnreadUi();
+        refreshSessionList();
         closeSessMenu();
         shellToast("已标为未读");
       });
@@ -5406,6 +6875,14 @@
     });
     /* H1.84：大图开着时 ←/→ 翻页、Esc 关闭；关着不抢输入 */
     document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        const song = document.getElementById("chatSongModal");
+        if (song && !song.hidden) {
+          e.preventDefault();
+          closeChatSongModal();
+          return;
+        }
+      }
       const view = document.getElementById("chatPicView");
       if (!view || view.hidden) return;
       if (e.key === "Escape") {
@@ -5454,6 +6931,11 @@
     const back = document.getElementById("btnChatBack");
     if (back) {
       back.addEventListener("click", () => {
+        const song = document.getElementById("chatSongModal");
+        if (song && !song.hidden) {
+          closeChatSongModal();
+          return;
+        }
         const rp = document.getElementById("chatRpView");
         if (rp && !rp.hidden) {
           closeRedpacketView();
@@ -5501,6 +6983,22 @@
         sendChatMessage();
       });
     }
+    const chatErrEl = document.getElementById("chatErr");
+    if (chatErrEl) {
+      chatErrEl.addEventListener("click", () => setChatErr(""));
+    }
+    const songForm = document.getElementById("chatSongForm");
+    if (songForm) {
+      songForm.addEventListener("submit", onChatSongSearchSubmit);
+    }
+    const songClose = document.getElementById("chatSongModalClose");
+    if (songClose) songClose.addEventListener("click", closeChatSongModal);
+    const songModal = document.getElementById("chatSongModal");
+    if (songModal) {
+      songModal.addEventListener("click", (e) => {
+        if (e.target === songModal) closeChatSongModal();
+      });
+    }
     const input = document.getElementById("dailyChatInput");
     if (input) {
       input.addEventListener("input", () => {
@@ -5517,6 +7015,7 @@
         if (stick) stick.hidden = true;
         if (plus) plus.hidden = true;
         if (sheet) sheet.hidden = true;
+        closeChatSongModal();
         sheetMode = "";
         if (stickBtn) stickBtn.setAttribute("aria-pressed", "false");
         if (plusBtn) plusBtn.setAttribute("aria-pressed", "false");
@@ -5573,6 +7072,15 @@
     if (hang) hang.addEventListener("click", closeCall);
     const answer = document.getElementById("chatCallAnswer");
     if (answer) answer.addEventListener("click", answerCallSession);
+    const callTalk = document.getElementById("chatCallTalk");
+    if (callTalk) {
+      callTalk.addEventListener("pointerdown", beginCallTalkHold);
+      callTalk.addEventListener("pointerup", endCallTalkHold);
+      callTalk.addEventListener("pointercancel", endCallTalkHold);
+      callTalk.addEventListener("pointerleave", (e) => {
+        if (callTalk.classList.contains("is-pressing")) endCallTalkHold(e);
+      });
+    }
     const pickVoice = document.getElementById("chatCallPickVoice");
     if (pickVoice) pickVoice.addEventListener("click", () => openCall("voice"));
     const pickVideo = document.getElementById("chatCallPickVideo");
@@ -5710,6 +7218,10 @@
 
   function mount(d) {
     deps = Object.assign(deps, d || {});
+    try {
+      const saved = String(localStorage.getItem(LS.activePeer) || "").trim();
+      if (saved) activePeerId = saved;
+    } catch (_) {}
     try {
       bind();
     } catch (err) {

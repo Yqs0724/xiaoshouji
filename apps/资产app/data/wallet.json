@@ -1,6 +1,6 @@
 {
-  "you_balance": 250.45,
-  "bot_balance": 1749.55,
+  "you_balance": 284.65,
+  "bot_balance": 1715.35,
   "ledger": [
     {
       "id": "2c2ee370-42a4-4dcf-a606-eadc9579959b",
@@ -201,6 +201,36 @@
       "amount": 1,
       "note": "转账",
       "msg_id": "bd811d65-b5bc-49ec-9894-752e0ec676cb"
+    },
+    {
+      "id": "9ee8e99e-1b4f-4bd1-a1c5-0b945d090a79",
+      "ts": 1792559917076,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 28,
+      "note": "拿去花",
+      "msg_id": "f9632f53-ea2e-48f4-9c76-862dbcbf515e"
+    },
+    {
+      "id": "05696daf-290f-46ea-a181-b48e4d5eb5a9",
+      "ts": 1792577442561,
+      "kind": "transfer",
+      "from": "bot",
+      "to": "you",
+      "amount": 1,
+      "note": "午饭钱",
+      "msg_id": "8319d016-f5bc-4a99-ab6d-636ff4499ad9"
+    },
+    {
+      "id": "ce347484-5682-426d-bde9-99464c18c5f7",
+      "ts": 1792586445163,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 5.2,
+      "note": "赏你的",
+      "msg_id": "2900e1ef-64b6-4cf3-b3d1-8af5fbab1053"
     }
   ]
 }

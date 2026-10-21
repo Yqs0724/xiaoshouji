@@ -773,6 +773,44 @@
     highlightLyricAt(cur);
   }
 
+  function requestTrackShare(song) {
+    const s = song || liveTrack;
+    if (!s || !(s.name || s.title || s.id)) return Promise.resolve();
+    return fetch("/api/v1/listen/track-share", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        song: {
+          provider: s.provider || "netease",
+          id: s.id,
+          name: s.name || s.title,
+          title: s.name || s.title,
+          artist: s.artist,
+          cover: s.cover,
+          stream_path: s.stream_path,
+        },
+      }),
+    })
+      .then((res) => res.json().catch(() => ({})))
+      .then((data) => {
+        if (data && data.message && Array.isArray(data.messages)) {
+          paintSession(data);
+        } else if (data && data.message) {
+          const thread = document.getElementById("colistenSpitThread");
+          if (!thread) return;
+          const empty = thread.querySelector(".empty");
+          if (empty) empty.remove();
+          const b = document.createElement("div");
+          b.className = "bubble";
+          b.textContent = data.message.body || "";
+          thread.append(b);
+          thread.scrollTop = thread.scrollHeight;
+        }
+      })
+      .catch(() => {});
+  }
+
   function postCoveEvent(event_type, song, note) {
     const s = song || liveTrack;
     const body = {
@@ -805,6 +843,8 @@
           return fetch("/api/v1/listen/engage", {
             method: "POST",
             credentials: "same-origin",
+          }).then(() => {
+            if (event_type === "play") requestTrackShare(s);
           });
         }
       })

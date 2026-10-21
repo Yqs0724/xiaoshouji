@@ -544,7 +544,7 @@
  .cl-player-wrap {
    position: relative;
    flex: 0 0 auto;
-   padding: 6px 14px 2px;
+   padding: 4px 12px 0;
    display: flex;
    flex-direction: column;
    align-items: stretch;
@@ -553,14 +553,14 @@
  .cl-mint-card {
    position: relative;
    z-index: 1;
-   margin-top: 8px;
-   padding: 14px 12px 12px;
-   border-radius: 16px;
+   margin-top: 4px;
+   padding: 8px 10px 8px;
+   border-radius: 14px;
    background:
      linear-gradient(180deg, rgba(255, 255, 255, .35), transparent 40%),
      rgba(198, 231, 209, .94);
-   border: 2.5px solid var(--cl-choco);
-   box-shadow: 0 8px 18px rgba(75, 44, 32, .1);
+   border: 2px solid var(--cl-choco);
+   box-shadow: 0 4px 12px rgba(75, 44, 32, .08);
  }
  .cl-now-lab {
    display: none;
@@ -634,9 +634,9 @@
  }
  .cl-session.cl-lyric-mode .cl-now-lab { display: block; }
  .cl-session.cl-lyric-mode .cl-cover {
-   width: 64px;
-   height: 64px;
-   border-radius: 12px;
+   width: 56px;
+   height: 56px;
+   border-radius: 11px;
  }
  .cl-session.cl-lyric-mode .cl-card-rule { display: none; }
  .cl-session.cl-lyric-mode .cl-lyrics-list {
@@ -672,21 +672,21 @@
  }
  .cl-card-row {
    display: flex;
-   gap: 12px;
-   align-items: stretch;
+   gap: 8px;
+   align-items: center;
  }
  .cl-cover {
    flex: 0 0 auto;
-   width: 92px;
-   height: 92px;
-   border-radius: 14px;
+   width: 48px;
+   height: 48px;
+   border-radius: 10px;
    background: var(--cl-cream);
    display: flex;
    align-items: center;
    justify-content: center;
    overflow: hidden;
-   border: 2px solid var(--cl-choco);
-   box-shadow: 1px 1px 0 rgba(75, 44, 32, .22);
+   border: 1.5px solid var(--cl-choco);
+   box-shadow: 1px 1px 0 rgba(75, 44, 32, .18);
    position: relative;
  }
  .cl-cover img {
@@ -698,8 +698,8 @@
  .cl-cover.has-art img { display: block; }
  .cl-cover.has-art .cl-note { display: none; }
  .cl-note {
-   width: 26px;
-   height: 26px;
+   width: 18px;
+   height: 18px;
    color: var(--cl-choco);
  }
  .cl-meta {
@@ -708,7 +708,7 @@
    display: flex;
    flex-direction: column;
    justify-content: center;
-   gap: 4px;
+   gap: 2px;
  }
  .cl-title-row {
    display: flex;
@@ -718,7 +718,7 @@
  .cl-title {
    flex: 1;
    min-width: 0;
-   font-size: 15px;
+   font-size: 13px;
    font-weight: 700;
    letter-spacing: .01em;
    color: var(--cl-choco);
@@ -728,8 +728,8 @@
  }
  .cl-like {
    flex: 0 0 auto;
-   width: 30px;
-   height: 30px;
+   width: 26px;
+   height: 26px;
    border: 2px solid var(--cl-choco);
    border-radius: 999px;
    background: var(--cl-cream);
@@ -823,28 +823,28 @@
    align-items: center;
    justify-content: space-between;
    padding: 0 2px;
-   gap: 4px;
-   min-height: 44px;
+   gap: 2px;
+   min-height: 36px;
  }
  .cl-transport button {
-   border: 2px solid var(--cl-choco);
+   border: 1.5px solid var(--cl-choco);
    background:
      linear-gradient(180deg, #fff 0%, var(--cl-cream) 48%, var(--cl-mint-soft) 100%);
    color: var(--cl-choco);
-   width: 34px;
-   height: 34px;
+   width: 30px;
+   height: 30px;
    padding: 0;
    display: grid;
    place-items: center;
    cursor: pointer;
-   border-radius: 10px;
+   border-radius: 9px;
    box-shadow:
      1px 1px 0 rgba(75, 44, 32, .26),
      inset 0 0 0 1px rgba(198, 231, 209, .9);
  }
  .cl-transport button svg {
-   width: 16px;
-   height: 16px;
+   width: 14px;
+   height: 14px;
    display: block;
  }
  .cl-transport button.on {
@@ -853,23 +853,23 @@
    box-shadow: inset 1px 1px 0 rgba(75, 44, 32, .2);
  }
  .cl-transport .cl-play {
-   width: 42px;
-   height: 42px;
+   width: 36px;
+   height: 36px;
    border-radius: 50%;
    background: url("/assets/colisten/stripe-mint-choco.png") center / 11px 11px repeat;
    color: var(--cl-cream);
    box-shadow: 2px 2px 0 rgba(75, 44, 32, .32);
  }
  .cl-transport .cl-play svg {
-   width: 16px;
-   height: 16px;
+   width: 14px;
+   height: 14px;
    background: var(--cl-choco);
    border-radius: 50%;
-   padding: 6px;
+   padding: 5px;
    box-sizing: content-box;
  }
  .cl-hint {
-   margin: 8px 4px 0;
+   margin: 4px 4px 0;
    font-size: 10px;
    color: var(--cl-choco-soft);
    text-align: center;

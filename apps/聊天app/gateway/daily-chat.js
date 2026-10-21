@@ -1,11 +1,13 @@
 /**
- * 日常短讯（D8 / D20）：单线程，与共看吐槽 / 共读 follow 分开。
+ * 日常短讯（D8 / D20）：按 peer 分桶线程，与共看吐槽 / 共读 follow 分开。
  * 你侧先落库；家机短回复失败不回滚你侧（A-daily）。
  * 红包/转账走模拟钱包（≠ LLM 额度/token）。
+ * H2.1：多 peer 骨架（默认 daily=家机 + mint=薄巧测试）；请求用 withPeer 隔离。
  */
 const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { AsyncLocalStorage } = require("node:async_hooks");
 const {
   listStickers,
   listAllStickers,
@@ -18,6 +20,36 @@ const DATA_DIR = path.join(__dirname, "..", "data");
 const CHAT_PATH = path.join(DATA_DIR, "chat.json");
 const MEDIA_DIR = path.join(DATA_DIR, "chat-media");
 const THREAD_ID = "daily";
+const DEFAULT_PEER_ID = "daily";
+const DEMO_PEER_ID = "mint";
+const PEER_ID_RE = /^[a-zA-Z0-9_-]{1,32}$/;
+const peerCtx = new AsyncLocalStorage();
+
+function normalizePeerId(raw) {
+  const s = String(raw || "").trim();
+  if (s && PEER_ID_RE.test(s)) return s;
+  return DEFAULT_PEER_ID;
+}
+
+function currentPeerId() {
+  const stored = peerCtx.getStore();
+  return stored ? normalizePeerId(stored) : DEFAULT_PEER_ID;
+}
+
+function withPeer(peerId, fn) {
+  return peerCtx.run(normalizePeerId(peerId), fn);
+}
+
+function emptyThread() {
+  return { messages: [], tokens_used: 0, budget_tokens: 0 };
+}
+
+function defaultPeers() {
+  return [
+    { id: DEFAULT_PEER_ID, name: "家机" },
+    { id: DEMO_PEER_ID, name: "薄巧测试" },
+  ];
+}
 const BODY_MAX = 800;
 const HISTORY = 20;
 const VARIANT_MAX = 5;
@@ -108,6 +140,11 @@ const DAILY_SYSTEM_BASE =
   "语气像室友短信：短、口语、轻松。" +
   "不要长篇剧情连载，不要章节目录，不要扮演系统通知。" +
   "问到日程/安排/几点有事/帮我加日程/改日程/删日程时：必须调用 calendar_* 工具，禁止口头编造或说「翻不到日历」。" +
+  "对方让你看屏幕/看在干嘛、或文字不够需要确认画面时：调用 cam_check（会先提示对方再截主屏）；不要连续多次、不要说「我监控了你」。" +
+  "想了解对方电脑最近在忙啥、久坐摸鱼、换没换任务时：调用 view_activity（slots=1～12≈10～120分钟前台摘要，不截屏）；比截屏轻，优先用它；未开采样时工具会说明。" +
+  "对方让你过会儿/到点再关心一下、预约看护（不是定闹钟）时：调用 schedule_monitor（minutes 或 at=HH:MM；list/cancel）；到点会主动发短讯。" +
+  "对方想听某首歌/让你点歌/分享共听正在播的歌时：调用 share_music（query 或 name+artist；歧义时用 pick_id；或 from_presence）。" +
+  "优先网易云整曲卡（需本机兼容 API）；否则 Apple 试听/外链。失败/多候选如实说，勿假装已播。" +
   "工具结果用一两句口语告诉对方；今天日期以 [TODAY] 段或工具返回的 today 为准。";
 
 /** 接话前塞进 system：今日日历摘要（有则列标题，无则写无行程） */
@@ -145,16 +182,151 @@ function ensureFile() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(MEDIA_DIR)) fs.mkdirSync(MEDIA_DIR, { recursive: true });
   if (!fs.existsSync(CHAT_PATH)) {
+    const peers = defaultPeers();
+    const threads = {};
+    for (const p of peers) threads[p.id] = emptyThread();
     fs.writeFileSync(
       CHAT_PATH,
       JSON.stringify(
-        { threadId: THREAD_ID, messages: [], tokens_used: 0, budget_tokens: 0 },
+        {
+          version: 2,
+          peers,
+          threads,
+          think: false,
+          slow_reply: true,
+          last_poke_day: "",
+          poke_count: 0,
+        },
         null,
         2
       ),
       "utf8"
     );
   }
+}
+
+/** v1 单线程 → v2 peers+threads；缺 mint 则补一条空会话 */
+function migrateStore(raw) {
+  const base = raw && typeof raw === "object" ? raw : {};
+  let peers = Array.isArray(base.peers)
+    ? base.peers
+        .map((p) => {
+          if (!p || typeof p !== "object") return null;
+          const id = String(p.id || "").trim();
+          if (!PEER_ID_RE.test(id)) return null;
+          const name = String(p.name || "").trim().slice(0, 32) || id;
+          return { id, name };
+        })
+        .filter(Boolean)
+    : [];
+  if (!peers.length) {
+    peers = defaultPeers();
+  } else {
+    if (!peers.some((p) => p.id === DEFAULT_PEER_ID)) {
+      peers.unshift({ id: DEFAULT_PEER_ID, name: "家机" });
+    }
+    if (!peers.some((p) => p.id === DEMO_PEER_ID)) {
+      peers.push({ id: DEMO_PEER_ID, name: "薄巧测试" });
+    }
+    /* 去重保序 */
+    const seen = new Set();
+    peers = peers.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }
+
+  let threads =
+    base.threads && typeof base.threads === "object" ? { ...base.threads } : null;
+  if (!threads) {
+    const legacyMsgs = Array.isArray(base.messages) ? base.messages : [];
+    threads = {
+      [DEFAULT_PEER_ID]: {
+        messages: legacyMsgs,
+        tokens_used: Math.max(0, Math.floor(Number(base.tokens_used) || 0)),
+        budget_tokens: Math.max(0, Math.floor(Number(base.budget_tokens) || 0)),
+      },
+    };
+  }
+  for (const p of peers) {
+    if (!threads[p.id] || typeof threads[p.id] !== "object") {
+      threads[p.id] = emptyThread();
+    } else {
+      const th = threads[p.id];
+      threads[p.id] = {
+        messages: Array.isArray(th.messages) ? th.messages : [],
+        tokens_used: Math.max(0, Math.floor(Number(th.tokens_used) || 0)),
+        budget_tokens: Math.max(0, Math.floor(Number(th.budget_tokens) || 0)),
+      };
+    }
+  }
+  return {
+    version: 2,
+    peers,
+    threads,
+    think: !!base.think,
+    slow_reply: base.slow_reply === false ? false : true,
+    last_poke_day: String(base.last_poke_day || "").trim(),
+    poke_count: Math.max(0, Math.floor(Number(base.poke_count) || 0)),
+  };
+}
+
+function readStore() {
+  ensureFile();
+  let raw = {};
+  try {
+    raw = JSON.parse(fs.readFileSync(CHAT_PATH, "utf8"));
+  } catch (_) {
+    raw = {};
+  }
+  const store = migrateStore(raw);
+  const needWrite =
+    !raw.version ||
+    !raw.threads ||
+    !Array.isArray(raw.peers) ||
+    !(raw.peers || []).some((p) => p && p.id === DEMO_PEER_ID);
+  if (needWrite) writeStore(store);
+  return store;
+}
+
+function writeStore(store) {
+  ensureFile();
+  const next = migrateStore(store);
+  fs.writeFileSync(CHAT_PATH, JSON.stringify(next, null, 2), "utf8");
+  return next;
+}
+
+function listPeers() {
+  const store = readStore();
+  const sessions = store.peers.map((p) =>
+    withPeer(p.id, () => {
+      const th = store.threads[p.id] || emptyThread();
+      const msgs = (th.messages || []).map(normalizeMsg).filter(Boolean);
+      msgs.sort((a, b) => a.ts - b.ts);
+      const last = msgs.length ? msgs[msgs.length - 1] : null;
+      const unread = msgs.filter((m) => m.from === "bot" && !m.read).length;
+      return {
+        id: p.id,
+        name: p.name,
+        unread,
+        last,
+        lastTs: last ? last.ts : 0,
+      };
+    })
+  );
+  return { ok: true, peers: sessions, defaultPeerId: DEFAULT_PEER_ID };
+}
+
+function resolvePeerForMessage(msgId) {
+  const id = String(msgId || "").trim();
+  if (!id) return null;
+  const store = readStore();
+  for (const p of store.peers) {
+    const msgs = (store.threads[p.id] && store.threads[p.id].messages) || [];
+    if (msgs.some((m) => m && m.id === id)) return p.id;
+  }
+  return null;
 }
 
 function normalizeKind(raw) {
@@ -415,11 +587,76 @@ function normalizeMusicPayload(raw) {
   const out = { name };
   const artist = String(src.artist || "").trim().slice(0, 80);
   if (artist) out.artist = artist;
-  if (src.musicStub === true || (!artist && src.fromPresence !== true)) {
+  const album = String(src.album || "").trim().slice(0, 80);
+  if (album) out.album = album;
+  if (src.fromPresence === true) out.fromPresence = true;
+  if (src.recommended === true) out.recommended = true;
+  const provider = String(src.provider || "").trim().toLowerCase();
+  if (provider) out.provider = provider.slice(0, 24);
+  if (src.id != null && Number.isFinite(Number(src.id))) {
+    out.id = Math.floor(Number(src.id));
+  }
+  if (src.song_key) out.song_key = String(src.song_key).trim().slice(0, 64);
+  const appleUrl = String(src.apple_url || src.trackViewUrl || "").trim();
+  if (appleUrl && /^https?:\/\//i.test(appleUrl)) {
+    out.apple_url = appleUrl.slice(0, 400);
+  }
+  const preview = String(src.preview_url || src.previewUrl || "").trim();
+  if (preview && /^https?:\/\//i.test(preview)) {
+    out.preview_url = preview.slice(0, 400);
+  }
+  const streamPath = String(src.stream_path || src.stream_url || "").trim();
+  if (streamPath.startsWith("/api/v1/music/stream/")) {
+    out.stream_path = streamPath.slice(0, 200);
+  }
+  const cover = String(src.cover || "").trim();
+  if (cover && /^https?:\/\//i.test(cover)) out.cover = cover.slice(0, 400);
+  if (src.preview_only === true) out.preview_only = true;
+  if (src.lyric_share === true) out.lyric_share = true;
+  /* 本机文件 stub：无艺人、非共听、非点歌卡、非 Apple 目录卡 */
+  if (
+    src.musicStub === true ||
+    (!artist &&
+      !out.fromPresence &&
+      !out.recommended &&
+      !out.apple_url &&
+      !out.preview_url &&
+      !out.lyric_share)
+  ) {
     out.musicStub = true;
   }
-  if (src.fromPresence === true) out.fromPresence = true;
   return out;
+}
+
+/**
+ * 家机点歌 / 分享共听曲：落一条 music 气泡（不播放、不接网易云）。
+ * @param {{ name?: string, artist?: string, fromPresence?: boolean, recommended?: boolean, source?: string }} opts
+ */
+function appendBotMusic(opts = {}) {
+  const fromPresence = !!opts.fromPresence;
+  const payload = normalizeMusicPayload({
+    name: opts.name,
+    artist: opts.artist,
+    album: opts.album,
+    provider: opts.provider,
+    id: opts.id,
+    song_key: opts.song_key,
+    apple_url: opts.apple_url,
+    preview_url: opts.preview_url,
+    stream_path: opts.stream_path,
+    cover: opts.cover,
+    preview_only: opts.preview_only,
+    fromPresence,
+    recommended: fromPresence ? false : opts.recommended !== false,
+  });
+  if (!payload) {
+    const err = new Error("歌名不能为空");
+    err.code = "bad_chat_music";
+    throw err;
+  }
+  const extra = { payload };
+  if (opts.source) extra.source = String(opts.source).slice(0, 40);
+  return appendMessage("bot", payload.name, "music", extra);
 }
 
 function bodyForKind(kind, payload, fallback) {
@@ -544,11 +781,14 @@ function llmContent(m) {
     }
   } else if (m.kind === "music") {
     const p = m.payload || {};
-    if (p.fromPresence || (p.name && !p.musicStub)) {
+    if (p.fromPresence || p.recommended || p.apple_url || (p.name && !p.musicStub)) {
       core =
         "[音乐:" +
         (p.name || m.body || "") +
         (p.artist ? " · " + p.artist : "") +
+        (p.provider === "apple" ? " · Apple" : "") +
+        (p.preview_url ? " · 可试听" : "") +
+        (p.apple_url ? " · 有外链" : "") +
         "]";
     } else {
       core = "[音乐]";
@@ -603,7 +843,8 @@ function normalizeMsg(raw) {
   if (raw.recalled === true) {
     const out = {
       id,
-      threadId: THREAD_ID,
+      threadId: currentPeerId(),
+      peerId: currentPeerId(),
       from,
       kind: kind || "text",
       body: "",
@@ -670,7 +911,8 @@ function normalizeMsg(raw) {
 
   const out = {
     id,
-    threadId: THREAD_ID,
+    threadId: currentPeerId(),
+    peerId: currentPeerId(),
     from,
     kind,
     body,
@@ -1196,82 +1438,60 @@ function resolveChatMediaPath(id) {
 }
 
 function readAll() {
-  ensureFile();
-  try {
-    const raw = JSON.parse(fs.readFileSync(CHAT_PATH, "utf8"));
-    const messages = Array.isArray(raw.messages)
-      ? raw.messages.map(normalizeMsg).filter(Boolean)
-      : [];
-    messages.sort((a, b) => a.ts - b.ts);
-    return {
-      threadId: THREAD_ID,
-      messages,
-      tokens_used: Math.max(0, Math.floor(Number(raw.tokens_used) || 0)),
-      budget_tokens: Math.max(0, Math.floor(Number(raw.budget_tokens) || 0)),
-      last_poke_day: String(raw.last_poke_day || "").trim(),
-      poke_count: Math.max(0, Math.floor(Number(raw.poke_count) || 0)),
-      think: !!raw.think,
-      /* 默认开慢回；显式 false 才关 */
-      slow_reply: raw.slow_reply === false ? false : true,
-    };
-  } catch {
-    return {
-      threadId: THREAD_ID,
-      messages: [],
-      tokens_used: 0,
-      budget_tokens: 0,
-      last_poke_day: "",
-      poke_count: 0,
-      think: false,
-      slow_reply: true,
-    };
-  }
+  const store = readStore();
+  const peerId = currentPeerId();
+  const th = store.threads[peerId] || emptyThread();
+  const messages = (th.messages || []).map(normalizeMsg).filter(Boolean);
+  messages.sort((a, b) => a.ts - b.ts);
+  return {
+    threadId: peerId,
+    peerId,
+    messages,
+    tokens_used: Math.max(0, Math.floor(Number(th.tokens_used) || 0)),
+    budget_tokens: Math.max(0, Math.floor(Number(th.budget_tokens) || 0)),
+    last_poke_day: store.last_poke_day || "",
+    poke_count: store.poke_count || 0,
+    think: !!store.think,
+    slow_reply: store.slow_reply === false ? false : true,
+  };
 }
 
 function writeAll(data) {
-  ensureFile();
-  const prev = readAll();
+  const store = readStore();
+  const peerId = currentPeerId();
+  const prevTh = store.threads[peerId] || emptyThread();
   const messages = (data.messages || []).map(normalizeMsg).filter(Boolean);
   messages.sort((a, b) => a.ts - b.ts);
-  const last_poke_day = Object.prototype.hasOwnProperty.call(data, "last_poke_day")
-    ? String(data.last_poke_day || "").trim()
-    : prev.last_poke_day || "";
-  const poke_count = Object.prototype.hasOwnProperty.call(data, "poke_count")
-    ? Math.max(0, Math.floor(Number(data.poke_count) || 0))
-    : prev.poke_count || 0;
-  const think = Object.prototype.hasOwnProperty.call(data, "think")
-    ? !!data.think
-    : !!prev.think;
-  const slow_reply = Object.prototype.hasOwnProperty.call(data, "slow_reply")
-    ? data.slow_reply !== false
-    : prev.slow_reply !== false;
-  fs.writeFileSync(
-    CHAT_PATH,
-    JSON.stringify(
-      {
-        threadId: THREAD_ID,
-        messages,
-        tokens_used: Math.max(0, Math.floor(Number(data.tokens_used) || 0)),
-        budget_tokens: Math.max(0, Math.floor(Number(data.budget_tokens) || 0)),
-        last_poke_day,
-        poke_count,
-        think,
-        slow_reply,
-      },
-      null,
-      2
-    ),
-    "utf8"
-  );
+  const tokens_used = Object.prototype.hasOwnProperty.call(data, "tokens_used")
+    ? Math.max(0, Math.floor(Number(data.tokens_used) || 0))
+    : Math.max(0, Math.floor(Number(prevTh.tokens_used) || 0));
+  const budget_tokens = Object.prototype.hasOwnProperty.call(data, "budget_tokens")
+    ? Math.max(0, Math.floor(Number(data.budget_tokens) || 0))
+    : Math.max(0, Math.floor(Number(prevTh.budget_tokens) || 0));
+  store.threads[peerId] = { messages, tokens_used, budget_tokens };
+  if (Object.prototype.hasOwnProperty.call(data, "last_poke_day")) {
+    store.last_poke_day = String(data.last_poke_day || "").trim();
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "poke_count")) {
+    store.poke_count = Math.max(0, Math.floor(Number(data.poke_count) || 0));
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "think")) {
+    store.think = !!data.think;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, "slow_reply")) {
+    store.slow_reply = data.slow_reply !== false;
+  }
+  writeStore(store);
   return {
-    threadId: THREAD_ID,
+    threadId: peerId,
+    peerId,
     messages,
-    tokens_used: Math.max(0, Math.floor(Number(data.tokens_used) || 0)),
-    budget_tokens: Math.max(0, Math.floor(Number(data.budget_tokens) || 0)),
-    last_poke_day,
-    poke_count,
-    think,
-    slow_reply,
+    tokens_used,
+    budget_tokens,
+    last_poke_day: store.last_poke_day || "",
+    poke_count: store.poke_count || 0,
+    think: !!store.think,
+    slow_reply: store.slow_reply !== false,
   };
 }
 
@@ -1441,7 +1661,12 @@ function backfillMoneySysTips() {
 function listMessages() {
   backfillMoneySysTips();
   const all = readAll();
-  return { ok: true, threadId: all.threadId, messages: all.messages };
+  return {
+    ok: true,
+    threadId: all.threadId,
+    peerId: all.peerId || all.threadId,
+    messages: all.messages,
+  };
 }
 
 function dayStartMs(day) {
@@ -1526,7 +1751,13 @@ function searchMessages(query) {
   const kind = String((query && query.kind) || "all").trim() || "all";
   const fromMs = dayStartMs(query && query.from);
   const toMs = dayEndMs(query && query.to);
-  let messages = listMessages().messages.slice();
+  const store = readStore();
+  let messages = [];
+  for (const p of store.peers) {
+    withPeer(p.id, () => {
+      messages = messages.concat(listMessages().messages || []);
+    });
+  }
   if (kind === "money") {
     messages = messages.filter((m) => m.kind === "redpacket" || m.kind === "transfer");
   } else if (kind !== "all") {
@@ -1695,8 +1926,19 @@ function maybeBotMoney(you, botText) {
 }
 
 function unreadCount() {
-  const n = listMessages().messages.filter((m) => m.from === "bot" && !m.read).length;
-  return { ok: true, count: n };
+  const store = readStore();
+  const byPeer = {};
+  let total = 0;
+  for (const p of store.peers) {
+    const msgs = ((store.threads[p.id] || emptyThread()).messages || [])
+      .map(normalizeMsg)
+      .filter(Boolean);
+    const n = msgs.filter((m) => m.from === "bot" && !m.read).length;
+    byPeer[p.id] = n;
+    total += n;
+  }
+  /* count = 总和（Dock）；byPeer 给会话列表角标 */
+  return { ok: true, count: total, byPeer, total };
 }
 
 function markAllRead() {
@@ -2272,23 +2514,49 @@ function exclusiveBotReply(fn) {
  * 心情门控 + 流式接一句。you 可为 null（撤回后仅接话）。
  * emit: bot_start → (delay) → bot_delta* → bot_done|bot_error → done
  */
+function moodPublicSnap() {
+  try {
+    const { getMoodPublic } = require("./mood");
+    return getMoodPublic({ peerId: currentPeerId() });
+  } catch (_) {
+    return null;
+  }
+}
+
 async function runBotReplyStream(write, you, opts) {
-  const { observeUserText, decideReplyGate, sleep } = require("./mood");
+  const {
+    observeUserText,
+    decideReplyGate,
+    sleep,
+    maybeCalibrateMood,
+  } = require("./mood");
   if (!(opts && opts.skipObserve)) {
     const observe =
       (opts && opts.observeText) != null
         ? String(opts.observeText)
         : observeTextForMessage(you);
-    if (observe) observeUserText(observe);
+    if (observe) {
+      observeUserText(observe);
+      /* H2.9：大波动才 LLM 选词；未配置/失败不挡接话 */
+      try {
+        const bud = ensureBudget();
+        if (!budgetExhausted(bud)) {
+          const cal = await maybeCalibrateMood(observe);
+          if (cal && cal.used) addTokensUsed(cal.used);
+        }
+      } catch (_) {}
+    }
   }
 
   const prefs = getChatPrefs();
   const gate = decideReplyGate({
     slowReply: prefs.slow_reply !== false,
     coalesced: !!(opts && opts.coalesced),
+    peerId: currentPeerId(),
   });
   if (gate.skip) {
     const messages = listMessages().messages;
+    const mood = moodPublicSnap();
     await write({
       type: "done",
       ok: true,
@@ -2298,6 +2566,7 @@ async function runBotReplyStream(write, you, opts) {
       skipped: true,
       skip_reason: "mood_cold",
       messages,
+      mood,
     });
     return {
       ok: true,
@@ -2307,6 +2576,7 @@ async function runBotReplyStream(write, you, opts) {
       skipped: true,
       skip_reason: "mood_cold",
       messages,
+      mood,
     };
   }
 
@@ -2318,6 +2588,7 @@ async function runBotReplyStream(write, you, opts) {
     };
     await write({ type: "bot_error", ...bot_error });
     const messages = listMessages().messages;
+    const mood = moodPublicSnap();
     await write({
       type: "done",
       ok: true,
@@ -2325,6 +2596,7 @@ async function runBotReplyStream(write, you, opts) {
       bot_message: null,
       bot_error,
       messages,
+      mood,
     });
     return {
       ok: true,
@@ -2332,6 +2604,7 @@ async function runBotReplyStream(write, you, opts) {
       bot_message: null,
       bot_error,
       messages,
+      mood,
     };
   }
 
@@ -2345,12 +2618,27 @@ async function runBotReplyStream(write, you, opts) {
     }
     await write({ type: "bot_start" });
     if (gate.delayMs > 0) await sleep(gate.delayMs);
+    const memQuery =
+      (opts && opts.observeText) != null
+        ? String(opts.observeText)
+        : observeTextForMessage(you);
     const { text, thinkExtra, used } = await streamBotReply(write, prior, {
       moodPrompt: gate.moodPrompt,
+      memoryQuery: memQuery,
     });
     bot_message = appendMessage("bot", text, "text", thinkExtra);
     addTokensUsed(used > 0 ? used : 400);
     await write({ type: "bot_done", message: bot_message });
+    try {
+      const { maybeExtractMemory } = require("./memory");
+      const obs =
+        (opts && opts.observeText) != null
+          ? String(opts.observeText)
+          : observeTextForMessage(you);
+      if (obs) maybeExtractMemory(currentPeerId(), obs);
+    } catch (_) {
+      /* 抽记失败不挡接话 */
+    }
     const bot_money = maybeBotMoney(you, text);
     if (bot_money) await write({ type: "bot_money", message: bot_money });
     const bot_sticker = maybeBotSticker(you, text);
@@ -2370,6 +2658,7 @@ async function runBotReplyStream(write, you, opts) {
   }
 
   const messages = listMessages().messages;
+  const mood = moodPublicSnap();
   await write({
     type: "done",
     ok: true,
@@ -2377,6 +2666,7 @@ async function runBotReplyStream(write, you, opts) {
     bot_message,
     bot_error,
     messages,
+    mood,
   });
   return {
     ok: true,
@@ -2384,6 +2674,7 @@ async function runBotReplyStream(write, you, opts) {
     bot_message,
     bot_error,
     messages,
+    mood,
   };
 }
 
@@ -2695,6 +2986,7 @@ async function streamBotReply(write, priorIn, opts) {
   const { readSettings, resolveAppPersona } = require("../../共读app/gateway/settings");
   const {
     MAX_TOOL_ROUNDS,
+    CAM_CHECK_DELAY_SEC,
     runChatTool,
     resolveToolLabel,
     summarizeToolResult,
@@ -2712,7 +3004,8 @@ async function streamBotReply(write, priorIn, opts) {
     "对方可能发贴纸、图片、红包、转账或位置；用一两句口语接住即可。" +
     "不要每条都提表情包，也不要说「我发了贴纸/红包」（贴纸与红包由系统按气氛另发）。";
   if (!toolsOn) {
-    system += "\n（工具已关闭：不要声称已查/已改日历，可请对方去日历 App 看。）";
+    system +=
+      "\n（工具已关闭：不要声称已查/已改日历或已看屏幕，可请对方去日历 App 看 / 自己描述屏幕。）";
   } else if (toolBundle && toolBundle.mcpMap.size) {
     system += "\n（另有外接 MCP 工具可用，名称见工具表。）";
   } else if (toolBundle && toolBundle.mcpError) {
@@ -2727,7 +3020,26 @@ async function streamBotReply(write, priorIn, opts) {
   if (nameBot) system += "\n你的显示名：" + nameBot + "。";
   const moodPrompt = opts && opts.moodPrompt ? String(opts.moodPrompt).trim() : "";
   if (moodPrompt) system += "\n" + moodPrompt;
+  try {
+    const { buildMemoryPrompt } = require("./memory");
+    const memPrompt = await buildMemoryPrompt(
+      currentPeerId(),
+      opts && opts.memoryQuery
+    );
+    if (memPrompt) system += "\n" + memPrompt;
+  } catch (_) {
+    /* 记忆模块异常不挡接话 */
+  }
   system += "\n" + buildTodayPrompt();
+  try {
+    const {
+      buildMusicContextPrompt,
+    } = require("../../共听app/gateway/music-session");
+    const musicCtx = buildMusicContextPrompt();
+    if (musicCtx) system += "\n" + musicCtx;
+  } catch (_) {
+    /* 共听上下文可选 */
+  }
   system +=
     "\n对话历史里若出现「以上对话发生在约…前」的系统提示，那些是旧对话；" +
     "不要让旧对话的情绪盖过你当前的心情状态。对方当前这条消息才是前景。";
@@ -2795,6 +3107,17 @@ async function streamBotReply(write, priorIn, opts) {
       const name = (tc.function && tc.function.name) || "";
       const label = resolveToolLabel(name, toolLabels);
       await write({ type: "bot_tool", name, label });
+      if (name === "cam_check") {
+        const sec = CAM_CHECK_DELAY_SEC;
+        try {
+          require("../../共读app/gateway/ws-hub").broadcastMonitorAlert(
+            "家机要看一眼屏幕",
+            { kind: "cam_check", seconds: sec }
+          );
+        } catch (_) {}
+        await write({ type: "cam_check_wait", seconds: sec });
+        await new Promise((r) => setTimeout(r, sec * 1000));
+      }
       const ran = await runChatTool(name, tc.function && tc.function.arguments, {
         mcpMap: toolBundle && toolBundle.mcpMap,
         settings,
@@ -2809,6 +3132,12 @@ async function streamBotReply(write, priorIn, opts) {
         ok: !!ran.ok,
         summary,
       });
+      if (name === "share_music" && ran.ok) {
+        try {
+          const o = JSON.parse(ran.result);
+          if (o && o.message) await write({ type: "bot_music", message: o.message });
+        } catch (_) {}
+      }
       prior.push({
         role: "tool",
         tool_call_id: tc.id,
@@ -2873,7 +3202,9 @@ async function regenerateMessageStream(id, emit) {
   let bot_error = null;
   try {
     await write({ type: "bot_start", regen: true, id: msg.id });
-    const { text, thinkExtra, used } = await streamBotReply(write, prior);
+    const { text, thinkExtra, used } = await streamBotReply(write, prior, {
+      memoryQuery: you ? observeTextForMessage(you) : "",
+    });
     bot_message = appendVariantToMessage(msg.id, {
       body: text,
       ts: Date.now(),
@@ -3001,6 +3332,13 @@ if (require.main === module) {
   const musicMsg = createMessage({ kind: "music", name: "夜曲.mp3" });
   console.assert(musicMsg.message.kind === "music" && musicMsg.message.payload.musicStub === true);
   console.assert(llmContent(musicMsg.message) === "[音乐]");
+  const botSong = appendBotMusic({
+    name: "自检点歌",
+    artist: "测试",
+    source: "selfcheck",
+  });
+  console.assert(botSong.kind === "music" && botSong.payload.recommended === true);
+  console.assert(String(llmContent(botSong)).includes("自检点歌"));
   console.assert(
     searchMessages({ q: "夜曲.mp3" }).messages.some((m) => m.id === musicMsg.message.id)
   );
@@ -3045,6 +3383,7 @@ if (require.main === module) {
         m.id !== loc.message.id &&
         m.id !== fileMsg.message.id &&
         m.id !== musicMsg.message.id &&
+        m.id !== botSong.id &&
         m.id !== rp.message.id &&
         !pokeSet.has(m.id)
     ),
@@ -3363,6 +3702,7 @@ module.exports = {
   appendVariantToMessage,
   assertRegenTarget,
   appendMessage,
+  appendBotMusic,
   appendToolMessage,
   unreadCount,
   markAllRead,
@@ -3395,6 +3735,14 @@ module.exports = {
   formatCallClock,
   callDisplayBody,
   MEDIA_MAX_BYTES,
+  addTokensUsed,
   CHAT_PATH,
   VARIANT_MAX,
+  DEFAULT_PEER_ID,
+  DEMO_PEER_ID,
+  normalizePeerId,
+  currentPeerId,
+  withPeer,
+  listPeers,
+  resolvePeerForMessage,
 };

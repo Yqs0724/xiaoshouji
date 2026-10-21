@@ -44,10 +44,15 @@ const BOT_SKIP = [
   "换这首我也能哼两句。",
 ];
 const BOT_REPLY = [
-  "嗯嗯，记下来了。",
-  "哈哈，同感。",
-  "你吐槽比副歌还准。",
-  "我先安静听，你接着说。",
+  "这首确实对味，我多听两遍。",
+  "副歌这块我挺吃，你也是吗。",
+  "和你一起听这首莫名安心。",
+  "这氛围我记下了，先贴着听。",
+];
+const BOT_TRACK_SHARE = [
+  "刚切到「{title}」，这开口我挺吃。",
+  "「{title}」这首，我先安静陪你听会儿。",
+  "换「{title}」了？行，我跟。",
 ];
 
 function pickLine(pool) {
@@ -231,6 +236,19 @@ function writeAll(next) {
 }
 
 function currentTrack(all = readAll()) {
+  /* 真曲优先：吐槽/主动分享勿再落到 mock「Chocolate Drizzle」 */
+  const cove = peekCovePresenceSong();
+  if (cove && cove.title) {
+    return {
+      id: cove.id,
+      title: cove.title,
+      artist: cove.artist || "",
+      cover: cove.cover || "",
+      stream_path: cove.stream_path || "",
+      provider: cove.provider || "netease",
+      index: 0,
+    };
+  }
   const i = all.playback.trackIndex % MOCK_TRACKS.length;
   return { ...MOCK_TRACKS[i], index: i };
 }
@@ -652,8 +670,14 @@ function createSpit(patch) {
 const SPIT_HISTORY = 12;
 const LISTEN_SYSTEM_BASE =
   "你是同居室友「家机」，正在和用户一起听歌（共听）。" +
-  "用一两句短吐槽接话，口语、轻松，可轻轻提曲情绪，不要编造版权内幕。" +
-  "不要长篇，不要扮演系统通知，不要提议改播放进度（用户主控）。";
+  "回复必须贴着「当前在播」这首：听感、氛围、某句歌词、和对方这句话的关系。" +
+  "一两句口语即可；可点出歌名/歌手或引用一句歌词；不要编造版权内幕或虚假乐评。" +
+  "不要长篇，不要扮演系统通知，不要提议改播放进度（用户主控）。" +
+  "若对方在问好不好听/喜不喜欢，先表态再落到这首的具体感受。";
+
+/** 切歌主动分享：同曲短冷却，避免刷屏 */
+let lastTrackShareId = "";
+let lastTrackShareAt = 0;
 
 function persistBotSpit(passId, body) {
   const all = readAll();
@@ -661,6 +685,105 @@ function persistBotSpit(passId, body) {
   if (!msg) return null;
   writeAll(all);
   return msg;
+}
+
+async function pickLyricHint(track) {
+  try {
+    if (!track || !track.id) return "";
+    if (String(track.provider || "netease") !== "netease") return "";
+    const { getLyric } = require("./netease-catalog");
+    const data = await getLyric(track.id);
+    const rows = Array.isArray(data.lines) ? data.lines : [];
+    const pick = rows.find(
+      (r) =>
+        r &&
+        r.text &&
+        !/^(作[词曲]|编曲|制作|录音|混音|母带)/.test(String(r.text))
+    );
+    return pick ? String(pick.text).trim().slice(0, 48) : "";
+  } catch (_) {
+    return "";
+  }
+}
+
+/**
+ * 切歌/开播时家机主动丢一句听感或歌词（短冷却）。
+ */
+async function shareTrackMoment(opts) {
+  const track = (opts && opts.song) || currentTrack();
+  const title = String((track && (track.title || track.name)) || "").trim();
+  if (!title) return { ok: true, skipped: true, reason: "no_track" };
+  const tid = String((track && track.id) || title);
+  const now = Date.now();
+  if (tid === lastTrackShareId && now - lastTrackShareAt < 50000) {
+    return { ok: true, skipped: true, reason: "cooldown" };
+  }
+  if (passBudgetExhausted(ensureActivePass().pass)) {
+    return { ok: true, skipped: true, reason: "budget" };
+  }
+  const { pass } = ensureActivePass();
+  markPassEngaged(pass.id);
+  const lyricHint = await pickLyricHint(track);
+  let body = "";
+  try {
+    const { chatCompletion } = require("../../共读app/gateway/llm");
+    const { readSettings, effectiveDialogue } = require("../../共读app/gateway/settings");
+    const dlg = effectiveDialogue(readSettings());
+    let system =
+      "你是同居室友「家机」，刚和用户一起切到/开播一首歌。" +
+      "主动发一句短听感或点出一句歌词，口语、轻松，20字内为宜。" +
+      "不要提问连环弹，不要系统腔。";
+    const persona = String((dlg && dlg.persona) || "").trim();
+    if (persona) system += "\n人设：" + persona;
+    const user =
+      "歌：" +
+      title +
+      (track.artist ? " · " + track.artist : "") +
+      (lyricHint ? "\n可引用歌词：「" + lyricHint + "」" : "") +
+      "\n请直接说那一句。";
+    const raw = await Promise.race([
+      chatCompletion({
+        system,
+        messages: [{ role: "user", content: user }],
+        think: false,
+        replyKind: "chat",
+      }),
+      new Promise((_, rej) =>
+        setTimeout(() => {
+          const e = new Error("timeout");
+          e.code = "llm_timeout";
+          rej(e);
+        }, 12000)
+      ),
+    ]);
+    const { parseThinkBody } = require("../../共读app/gateway/llm");
+    const parsed = parseThinkBody(
+      (raw && raw.content) || "",
+      false
+    );
+    body = String((parsed && parsed.body) || (raw && raw.content) || "")
+      .trim()
+      .slice(0, SPIT_BODY_MAX);
+    if (body) {
+      let used =
+        (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0);
+      if (used <= 0) used = 200;
+      addPassTokensUsed(pass.id, used);
+    }
+  } catch (_) {
+    body = "";
+  }
+  if (!body) {
+    if (lyricHint) {
+      body = "忽然听见「" + lyricHint.slice(0, 28) + "」，这句有点戳。";
+    } else {
+      body = pickLine(BOT_TRACK_SHARE).replace(/\{title\}/g, title.slice(0, 20));
+    }
+  }
+  const message = persistBotSpit(pass.id, body);
+  lastTrackShareId = tid;
+  lastTrackShareAt = now;
+  return { ok: true, skipped: false, message, ...getSession() };
 }
 
 async function streamTextAsDeltas(write, text) {
@@ -730,12 +853,18 @@ async function createSpitWithReplyStream(patch, emit) {
   const trackHint =
     (track && track.title ? track.title : "这轨") +
     (track && track.artist ? " · " + track.artist : "");
+  const lyricHint = await pickLyricHint(track);
 
   try {
     const { chatCompletionStream, parseThinkBody } = require("../../共读app/gateway/llm");
     const { readSettings, effectiveDialogue } = require("../../共读app/gateway/settings");
     const dlg = effectiveDialogue(readSettings());
-    let system = LISTEN_SYSTEM_BASE + "\n当前在播：" + trackHint + "。";
+    let system =
+      LISTEN_SYSTEM_BASE +
+      "\n当前在播：" +
+      trackHint +
+      "。" +
+      (lyricHint ? "\n可引用的一句歌词：「" + lyricHint + "」。" : "");
     const persona = String((dlg && dlg.persona) || "").trim();
     if (persona) system += "\n人设（请遵守语气与关系）：" + persona;
 
@@ -805,7 +934,16 @@ async function createSpitWithReplyStream(patch, emit) {
       message: e.message || "家机暂时接不上",
       fallback: "mock_stream",
     };
-    const mock = pickLine(BOT_REPLY);
+    let mock = pickLine(BOT_REPLY);
+    if (track && track.title) {
+      mock =
+        "「" +
+        track.title +
+        "」" +
+        (lyricHint ? "这句「" + lyricHint.slice(0, 24) + "」" : "") +
+        "，" +
+        mock;
+    }
     await write({ type: "bot_start" });
     await streamTextAsDeltas(write, mock);
     bot_message = persistBotSpit(you.pass.id, mock);
@@ -989,6 +1127,7 @@ module.exports = {
   respondProposal,
   createSpit,
   createSpitWithReplyStream,
+  shareTrackMoment,
   endActivePass,
   ensureActivePass,
   getListenPresence,

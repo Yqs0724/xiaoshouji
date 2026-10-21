@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.AriadneShell" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#5C7A6B</item>
+        <item name="colorPrimaryVariant">#3D5348</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="android:statusBarColor">#3D5348</item>
+        <item name="android:navigationBarColor">#F2F7F4</item>
+        <item name="android:windowBackground">#F2F7F4</item>
+    </style>
+</resources>

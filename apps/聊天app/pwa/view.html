@@ -8,23 +8,7 @@
       </header>
       <div class="chat-scroll">
         <button type="button" class="chat-search-bar" id="btnChatShellSearch">搜索</button>
-        <button type="button" class="chat-sess" id="btnChatSessHome" data-sess-id="daily">
-          <span class="chat-av-wrap">
-            <img class="face" id="chatSessAv" src="/assets/cafe/avatar-bot.png" alt="" />
-            <span class="chat-badge" id="chatSessBadge" hidden>0</span>
-          </span>
-          <span class="chat-sess-body">
-            <span class="chat-sess-row1">
-              <span class="chat-sess-namewrap">
-                <span class="chat-sess-name" id="chatSessName">家机</span>
-                <span class="chat-sess-pin" id="chatSessPin" hidden>置顶</span>
-                <span class="chat-sess-mute" id="chatSessMute" hidden>免打扰</span>
-              </span>
-              <span class="chat-sess-time" id="chatSessTime"></span>
-            </span>
-            <span class="chat-sess-preview" id="chatSessPreview">还没有短讯</span>
-          </span>
-        </button>
+        <div class="chat-sess-list" id="chatSessList"></div>
       </div>
     </section>
 
@@ -33,7 +17,7 @@
       <div class="chat-scroll">
         <div class="chat-sec-lab">家机</div>
         <button type="button" class="chat-contact" id="btnChatContactHome">
-          <span class="chat-av-wrap sm">
+          <span class="chat-av-wrap sm av-frame-full">
             <img id="chatContactAv" src="/assets/cafe/avatar-bot.png" alt="" />
           </span>
           <span class="chat-contact-nm" id="chatContactName">家机</span>
@@ -61,7 +45,7 @@
       <header class="chat-top"><span class="chat-top-title">我</span></header>
       <div class="chat-scroll">
         <div class="chat-me-head">
-          <div class="av"><img id="chatMeAv" src="/assets/cafe/avatar-you.png" alt="" /></div>
+          <div class="av av-frame-full"><img id="chatMeAv" src="/assets/cafe/avatar-you.png" alt="" /></div>
           <div>
             <div class="nm">你</div>
             <div class="id">微信号</div>
@@ -120,7 +104,7 @@
       </header>
       <div class="chat-ov-pad chat-persona-pad">
         <div class="chat-peer-head">
-          <span class="chat-peer-av-wrap">
+          <span class="chat-peer-av-wrap av-frame-full" id="chatProfileAvWrap">
             <img id="chatProfileAv" src="/assets/cafe/avatar-bot.png" alt="" />
           </span>
           <div class="chat-peer-meta">
@@ -238,10 +222,11 @@
           <span class="lab">慢回</span>
           <button type="button" class="chat-toggle on" id="chatTogSlow" aria-label="慢回"></button>
         </div>
-        <div class="chat-pref-row">
+        <button type="button" class="chat-pref-row" id="btnChatMoodMapPrefs" data-mood-map="prefs">
           <span class="lab">当前心情</span>
           <span class="val" id="chatPrefMoodLab">—</span>
-        </div>
+          <span class="chev">›</span>
+        </button>
         <div class="chat-pref-row">
           <span class="lab">家机工具</span>
           <span class="val">手机设置 · MCP</span>
@@ -343,6 +328,49 @@
       </div>
     </div>
 
+    <div class="chat-overlay" id="chatOvMemory" hidden>
+      <header class="chat-top">
+        <button type="button" class="chat-top-side left" id="btnChatMemoryBack" aria-label="返回">←</button>
+        <span class="chat-top-title">记忆库</span>
+        <button type="button" class="chat-top-side right" id="btnChatMemoryAdd" aria-label="记一条">+</button>
+      </header>
+      <div class="chat-ov-pad chat-memory-pad">
+        <p class="chat-hint-line" id="chatMemoryHint">本会话记忆 · 待办优先</p>
+        <button type="button" class="chat-memory-digest" id="btnChatMemoryDigest">
+          总结新记忆
+        </button>
+        <div class="chat-memory-search">
+          <input type="search" id="chatMemoryQ" placeholder="搜内容 / 关键词" autocomplete="off" />
+        </div>
+        <div class="chat-memory-list" id="chatMemoryList"></div>
+      </div>
+    </div>
+
+    <div class="chat-overlay" id="chatOvMoodMap" hidden>
+      <header class="chat-top">
+        <button type="button" class="chat-top-side left" id="btnChatMoodMapBack" aria-label="返回">←</button>
+        <span class="chat-top-title">情绪星图</span>
+      </header>
+      <div class="chat-ov-pad chat-mood-map-pad">
+        <p class="chat-hint-line" id="chatMoodMapHint">心情小宇宙 · 只读</p>
+        <div class="chat-mood-map-frame" id="chatMoodMapFrame" aria-hidden="true">
+          <div class="chat-mood-map-sparkles" aria-hidden="true"></div>
+          <svg class="chat-mood-map-svg" id="chatMoodMapSvg" viewBox="0 0 280 200" role="img" aria-label="情绪散点"></svg>
+          <div class="chat-mood-map-axis x-neg">不开心</div>
+          <div class="chat-mood-map-axis x-pos">开心</div>
+          <div class="chat-mood-map-axis y-hi">激动</div>
+          <div class="chat-mood-map-axis y-lo">软软的</div>
+          <div class="chat-mood-map-legend">
+            <span class="leg score">评 ★</span>
+            <span class="leg ambient">饰 ✦</span>
+            <span class="leg now">你 ○</span>
+          </div>
+        </div>
+        <p class="chat-hint-line">近几颗小星星</p>
+        <div class="chat-mood-map-list" id="chatMoodMapList"></div>
+      </div>
+    </div>
+
     <div class="chat-overlay" id="chatOvPeer" hidden>
       <header class="chat-top">
         <button type="button" class="chat-top-side left" id="btnChatPeerBack" aria-label="返回">←</button>
@@ -364,6 +392,19 @@
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="hist">
           <span class="lab">聊天记录</span>
+          <span class="chev">›</span>
+        </button>
+        <button type="button" class="chat-pref-row" data-peer-act="mood-map">
+          <span class="lab">情绪星图</span>
+          <span class="chev">›</span>
+        </button>
+        <button type="button" class="chat-pref-row" data-peer-act="memory-add">
+          <span class="lab">记一条记忆</span>
+          <span class="chev">›</span>
+        </button>
+        <button type="button" class="chat-pref-row" data-peer-act="memory-list">
+          <span class="lab">记忆库</span>
+          <span class="val" id="chatPeerMemVal">—</span>
           <span class="chev">›</span>
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="bg">
@@ -482,6 +523,20 @@
       </div>
       <div class="wx-panel wx-stickers" id="chatStickerPanel" hidden></div>
       <div class="wx-panel wx-plus" id="chatPlusPanel" hidden></div>
+      <div class="wx-modal" id="chatSongModal" hidden>
+        <div class="wx-sheet-card chat-song-card">
+          <div class="wx-sheet-title chat-song-head">
+            <span>点歌</span>
+            <button type="button" id="chatSongModalClose" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <form class="chat-song-form" id="chatSongForm">
+            <input type="text" id="chatSongQuery" maxlength="120" placeholder="歌名，可加歌手" autocomplete="off" />
+            <button type="submit" class="primary">搜索</button>
+          </form>
+          <p class="chat-song-hint" id="chatSongHint">搜到后点一首，发成音乐卡</p>
+          <ul class="chat-song-results" id="chatSongResults"></ul>
+        </div>
+      </div>
       <div class="wx-modal" id="chatSheet" hidden>
         <div class="wx-sheet-card">
           <div class="wx-sheet-title" id="chatSheetTitle">标题</div>
@@ -536,6 +591,8 @@
           <div class="wx-call-kind" id="chatCallKind">语音通话</div>
           <div class="wx-call-peer" id="chatCallPeer">家机</div>
           <div class="wx-call-state" id="chatCallState">邀请你语音通话</div>
+          <p class="wx-call-caption" id="chatCallCaption" hidden></p>
+          <button type="button" class="wx-call-talk" id="chatCallTalk" hidden>按住 说话</button>
           <div class="wx-call-acts" id="chatCallActs">
             <button type="button" class="wx-call-answer" id="chatCallAnswer">接听</button>
             <button type="button" class="wx-call-hang" id="chatCallHang">挂断</button>

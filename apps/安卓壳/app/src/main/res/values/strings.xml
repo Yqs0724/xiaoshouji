@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ariadne 壳</string>
+    <string name="title_launcher">打开小手机</string>
+    <string name="hint_home">家庭 Wi‑Fi 地址（电脑局域网 IP）</string>
+    <string name="hint_tail">Tailscale / 远程地址（可选）</string>
+    <string name="btn_home">家庭 Wi‑Fi 进入</string>
+    <string name="btn_tail">Tailscale 进入</string>
+    <string name="btn_save">记住地址</string>
+    <string name="btn_camera_stub">摄像头（占位）</string>
+    <string name="camera_stub_toast">摄像头占位未启用 · 不申请权限、不取帧</string>
+    <string name="err_empty_url">先填地址，例如 http://192.168.1.8:8787</string>
+    <string name="saved">已记住</string>
+</resources>

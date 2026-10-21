@@ -17,6 +17,90 @@ function audioTranscriptionsUrl(base) {
   return b + "/audio/transcriptions";
 }
 
+function embeddingsUrl(base) {
+  const b = String(base || "").trim().replace(/\/$/, "");
+  if (!b) return "";
+  if (b.endsWith("/embeddings")) return b;
+  if (b.endsWith("/chat/completions")) {
+    return b.slice(0, -"/chat/completions".length) + "/embeddings";
+  }
+  if (b.endsWith("/v1")) return b + "/embeddings";
+  return b + "/embeddings";
+}
+
+/** 设定里填了 embed_model 且有 Base/Key 才可用 */
+function embedConfigured() {
+  const s = readSettings();
+  return !!(
+    String(s.embed_model || "").trim() &&
+    String(s.llm_base || "").trim() &&
+    String(s.llm_key || "").trim()
+  );
+}
+
+/**
+ * OpenAI 兼容 embeddings：POST {base}/embeddings
+ * 复用 llm_base / llm_key；模型用 embed_model（如 BAAI/bge-m3）。
+ * @returns {Promise<number[][] | null>} 未配置返回 null
+ */
+async function embedTexts(texts) {
+  if (!embedConfigured()) return null;
+  const list = (Array.isArray(texts) ? texts : [texts])
+    .map((t) => String(t || "").trim().slice(0, 2000))
+    .filter(Boolean);
+  if (!list.length) return [];
+  const s = readSettings();
+  const base = String(s.llm_base || "").trim();
+  const key = String(s.llm_key || "").trim();
+  const model = String(s.embed_model || "").trim();
+  const url = embeddingsUrl(base);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + key,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model, input: list.length === 1 ? list[0] : list }),
+  });
+  const raw = await res.text();
+  let data = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch (_) {
+    data = {};
+  }
+  if (!res.ok) {
+    const detail =
+      (data && data.error && (data.error.message || data.error)) ||
+      (data && data.message) ||
+      raw.slice(0, 160);
+    const err = new Error(
+      String(detail || "").trim() || "Embedding HTTP " + res.status
+    );
+    err.code = "embed_failed";
+    throw err;
+  }
+  const rows = Array.isArray(data.data) ? data.data : [];
+  rows.sort((a, b) => (Number(a.index) || 0) - (Number(b.index) || 0));
+  const out = rows.map((r) => {
+    const emb = r && r.embedding;
+    if (!Array.isArray(emb) || !emb.length) return null;
+    return emb.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+  });
+  if (out.some((v) => !v || !v.length)) {
+    const err = new Error("Embedding 返回空向量");
+    err.code = "embed_empty";
+    throw err;
+  }
+  return out;
+}
+
+async function embedOne(text) {
+  const vecs = await embedTexts([text]);
+  if (!vecs || !vecs.length) return null;
+  return vecs[0];
+}
+
 /**
  * OpenAI 兼容语音转写：POST {base}/audio/transcriptions
  * 复用设定里的 llm_base / llm_key；model 默认 whisper-1，可被 asr_model 覆盖。
@@ -363,6 +447,10 @@ module.exports = {
   resolveThinkText,
   chatCompletionsUrl,
   audioTranscriptionsUrl,
+  embeddingsUrl,
+  embedConfigured,
+  embedTexts,
+  embedOne,
   transcribeAudio,
   withReplySuffix,
   replyKindLabel,
