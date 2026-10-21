@@ -13,8 +13,15 @@ const DEFAULTS = {
   llm_base: "",
   llm_key: "",
   llm_model: "",
+  /** 记忆向量模型（OpenAI 兼容 /embeddings）；空则只用关键词召回 */
+  embed_model: "",
   /** 语音转写模型；空则 whisper-1 */
   asr_model: "",
+  /** Fish Audio TTS（通话朗读）；空则前端用浏览器语音 */
+  fish_api_key: "",
+  fish_voice_id: "",
+  /** 默认免费档模型；可改 s2.1-pro 等 */
+  fish_tts_model: "s2.1-pro-free",
   /**
    * 小屋底稿人设 = persona_card（一份长文）。
    * persona 仅兼容旧数据：卡空时回落；新写入请只写 persona_card。
@@ -68,6 +75,29 @@ const DEFAULTS = {
   mcp_token: "",
   /** H1.24：关掉的 MCP 远端工具名（remote name），不进 LLM 工具表 */
   mcp_tool_hidden: [],
+  /** V1 Sentinel/Core：默认关；开后定时截主屏轻量判断是否主动找你 */
+  sentinel_enabled: false,
+  sentinel_interval_min: 15,
+  sentinel_cooldown_min: 30,
+  sentinel_max_wake_day: 8,
+  /** 空=用 llm_model；可填更便宜的 flash 级 */
+  sentinel_model: "",
+  /** 安静时段：不截屏、不唤醒（可跨午夜） */
+  sentinel_quiet_enabled: false,
+  sentinel_quiet_start: "23:00",
+  sentinel_quiet_end: "08:00",
+  /** V4：PC 前台窗采样；默认关，仅本机 Win */
+  activity_enabled: false,
+  /** Cove 网易云：兼容 API 根地址（如 NeteaseCloudMusicApi :3000） */
+  netease_api_base_url: "http://127.0.0.1:3000",
+  /** 可选 Cookie / MUSIC_U=…；只存服务端，勿进 Git */
+  netease_cookie: "",
+  /** 音质偏好：exhigh / higher / standard … */
+  netease_music_quality: "exhigh",
+  /** 播放音量 0～1（共听 / 聊天卡） */
+  music_volume: 0.8,
+  /** 点歌优先：netease | apple | auto（有网易 API 则 netease） */
+  music_provider: "netease",
 };
 
 /** 工具显示名 map；只留合法 name → 短文案 */
@@ -345,7 +375,19 @@ function readSettings() {
     llm_base: (env.llm_base || file.llm_base || "").trim(),
     llm_key: (env.llm_key || file.llm_key || "").trim(),
     llm_model: (env.llm_model || file.llm_model || "").trim(),
+    embed_model: String(
+      file.embed_model || process.env.EMBED_MODEL || ""
+    ).trim(),
     asr_model: String(file.asr_model || process.env.ASR_MODEL || "").trim(),
+    fish_api_key: String(
+      file.fish_api_key || process.env.FISH_API_KEY || ""
+    ).trim(),
+    fish_voice_id: String(
+      file.fish_voice_id || process.env.FISH_VOICE_ID || ""
+    ).trim(),
+    fish_tts_model: String(
+      file.fish_tts_model || process.env.FISH_TTS_MODEL || "s2.1-pro-free"
+    ).trim() || "s2.1-pro-free",
     persona: (env.persona || file.persona || "").trim(),
     persona_card: (env.persona_card || file.persona_card || "").trim(),
     persona_card_in_follow: !!file.persona_card_in_follow,
@@ -387,7 +429,98 @@ function readSettings() {
     mcp_url: String(file.mcp_url || "").trim(),
     mcp_token: String(file.mcp_token || "").trim(),
     mcp_tool_hidden: normalizeMcpToolHidden(file.mcp_tool_hidden),
+    sentinel_enabled: !!file.sentinel_enabled,
+    sentinel_interval_min: Math.max(
+      5,
+      Math.min(120, Math.floor(Number(file.sentinel_interval_min) || 15))
+    ),
+    sentinel_cooldown_min: Math.max(
+      5,
+      Math.min(240, Math.floor(Number(file.sentinel_cooldown_min) || 30))
+    ),
+    sentinel_max_wake_day: Math.max(
+      1,
+      Math.min(40, Math.floor(Number(file.sentinel_max_wake_day) || 8))
+    ),
+    sentinel_model: String(file.sentinel_model || "").trim(),
+    sentinel_quiet_enabled: !!file.sentinel_quiet_enabled,
+    sentinel_quiet_start: normalizeHm(
+      file.sentinel_quiet_start,
+      DEFAULTS.sentinel_quiet_start
+    ),
+    sentinel_quiet_end: normalizeHm(
+      file.sentinel_quiet_end,
+      DEFAULTS.sentinel_quiet_end
+    ),
+    activity_enabled: !!file.activity_enabled,
+    netease_api_base_url: String(
+      file.netease_api_base_url != null
+        ? file.netease_api_base_url
+        : DEFAULTS.netease_api_base_url
+    )
+      .trim()
+      .replace(/\/+$/, ""),
+    netease_cookie: sanitizeNeteaseCookie(file.netease_cookie || ""),
+    netease_music_quality: String(
+      file.netease_music_quality || DEFAULTS.netease_music_quality
+    )
+      .trim()
+      .slice(0, 24),
+    music_volume: (() => {
+      const n = Number(file.music_volume);
+      if (!Number.isFinite(n)) return DEFAULTS.music_volume;
+      return Math.max(0, Math.min(1, n));
+    })(),
+    music_provider: ["netease", "apple", "auto"].includes(
+      String(file.music_provider || "").trim()
+    )
+      ? String(file.music_provider).trim()
+      : DEFAULTS.music_provider,
   };
+}
+
+/** @returns {string} HH:MM */
+/**
+ * 扫码/粘贴 Cookie 常混入 Set-Cookie 的 Expires/Path 等属性，既污染鉴权又占长度。
+ * 只保留 name=value；同名后者覆盖。
+ */
+function sanitizeNeteaseCookie(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (!s) return "";
+  const skip = new Set([
+    "expires",
+    "max-age",
+    "path",
+    "domain",
+    "secure",
+    "httponly",
+    "samesite",
+    "priority",
+  ]);
+  const map = new Map();
+  for (const part of s.split(";")) {
+    const p = part.trim();
+    if (!p || !p.includes("=")) continue;
+    const i = p.indexOf("=");
+    const k = p.slice(0, i).trim();
+    const v = p.slice(i + 1).trim();
+    if (!k || skip.has(k.toLowerCase())) continue;
+    map.set(k, v);
+  }
+  return [...map.entries()].map(([k, v]) => k + "=" + v).join("; ");
+}
+
+function normalizeHm(raw, fallback) {
+  const fb = String(fallback || "00:00");
+  const m = String(raw == null ? "" : raw)
+    .trim()
+    .match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fb;
+  const h = Math.max(0, Math.min(23, parseInt(m[1], 10)));
+  const min = Math.max(0, Math.min(59, parseInt(m[2], 10)));
+  return (
+    String(h).padStart(2, "0") + ":" + String(min).padStart(2, "0")
+  );
 }
 
 function writeSettings(next) {
@@ -410,7 +543,11 @@ function patchSettings(patch) {
     "llm_base",
     "llm_key",
     "llm_model",
+    "embed_model",
     "asr_model",
+    "fish_api_key",
+    "fish_voice_id",
+    "fish_tts_model",
     "persona",
     "persona_card",
     "lore_summary",
@@ -420,6 +557,7 @@ function patchSettings(patch) {
     "name_bot",
     "mcp_url",
     "mcp_token",
+    "sentinel_model",
   ];
   let mcpTouched = false;
   for (const key of stringKeys) {
@@ -594,6 +732,89 @@ function patchSettings(patch) {
       file.door_locked = !!v;
     }
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_enabled")) {
+    const v = patch.sentinel_enabled;
+    if (typeof v === "boolean") file.sentinel_enabled = v;
+    else if (typeof v === "string") {
+      file.sentinel_enabled = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else file.sentinel_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_interval_min")) {
+    const n = Number(patch.sentinel_interval_min);
+    if (Number.isFinite(n)) {
+      file.sentinel_interval_min = Math.max(5, Math.min(120, Math.floor(n)));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_cooldown_min")) {
+    const n = Number(patch.sentinel_cooldown_min);
+    if (Number.isFinite(n)) {
+      file.sentinel_cooldown_min = Math.max(5, Math.min(240, Math.floor(n)));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_max_wake_day")) {
+    const n = Number(patch.sentinel_max_wake_day);
+    if (Number.isFinite(n)) {
+      file.sentinel_max_wake_day = Math.max(1, Math.min(40, Math.floor(n)));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "activity_enabled")) {
+    const v = patch.activity_enabled;
+    if (typeof v === "boolean") file.activity_enabled = v;
+    else if (typeof v === "string") {
+      file.activity_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.activity_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "netease_api_base_url")) {
+    file.netease_api_base_url = String(patch.netease_api_base_url || "")
+      .trim()
+      .replace(/\/+$/, "")
+      .slice(0, 200);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "netease_cookie")) {
+    /* 扫码常带回 Set-Cookie 属性垃圾；且 VIP Cookie 远超 4KB，截断会丢 MUSIC_U */
+    file.netease_cookie = sanitizeNeteaseCookie(patch.netease_cookie).slice(
+      0,
+      24000
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "netease_music_quality")) {
+    file.netease_music_quality = String(patch.netease_music_quality || "exhigh")
+      .trim()
+      .slice(0, 24);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "music_volume")) {
+    let n = Number(patch.music_volume);
+    if (!Number.isFinite(n)) n = DEFAULTS.music_volume;
+    if (n > 1 && n <= 100) n = n / 100;
+    file.music_volume = Math.max(0, Math.min(1, n));
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "music_provider")) {
+    const p = String(patch.music_provider || "").trim();
+    if (["netease", "apple", "auto"].includes(p)) file.music_provider = p;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_quiet_enabled")) {
+    const v = patch.sentinel_quiet_enabled;
+    if (typeof v === "boolean") file.sentinel_quiet_enabled = v;
+    else if (typeof v === "string") {
+      file.sentinel_quiet_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.sentinel_quiet_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_quiet_start")) {
+    file.sentinel_quiet_start = normalizeHm(
+      patch.sentinel_quiet_start,
+      file.sentinel_quiet_start || DEFAULTS.sentinel_quiet_start
+    );
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "sentinel_quiet_end")) {
+    file.sentinel_quiet_end = normalizeHm(
+      patch.sentinel_quiet_end,
+      file.sentinel_quiet_end || DEFAULTS.sentinel_quiet_end
+    );
+  }
   writeSettings(file);
   if (mcpTouched) {
     try {
@@ -752,18 +973,24 @@ function publicSettings(s = readSettings()) {
     weread_key,
     llm_key,
     mcp_token,
+    fish_api_key,
     apple_music_dev_token: _amd,
     apple_music_user_token: _amu,
+    netease_cookie: _nc,
     ...rest
   } = s;
   return {
     ...rest,
     weread_key: weread_key || "",
     llm_key: llm_key || "",
+    fish_api_key: fish_api_key || "",
     /* token 回填给设定页编辑；与 llm_key 同级本机可信 */
     mcp_token: mcp_token || "",
+    /* Cookie 不回填明文；只告诉前端有没有 */
+    netease_cookie_set: !!String(_nc || "").trim(),
     gate_enabled: !!(s.gate_hash && s.gate_salt) || !!String(process.env.CABIN_GATE || "").trim(),
     gate_has_password: !!(s.gate_hash && s.gate_salt),
+    tts_fish: fish_api_key && s.fish_voice_id ? "configured" : "missing",
   };
 }
 
@@ -903,6 +1130,7 @@ if (require.main === module) {
 module.exports = {
   readSettings,
   patchSettings,
+  sanitizeNeteaseCookie,
   healthFlags,
   publicSettings,
   normalizeMcpToolHidden,

@@ -323,28 +323,79 @@ function markPassEngaged(passId) {
   return all.passes[pi];
 }
 
-/** 桌面胶囊 / 正在做什么：不新建场次 */
+/** Cove 真曲优先；stale 仍可展示歌名（勿回落 mock） */
+function peekCovePresenceSong() {
+  try {
+    const { getMusicSession } = require("./music-session");
+    const ms = getMusicSession().session;
+    if (!ms || !ms.current_song) return null;
+    if (ms.terminated) return null;
+    const song = ms.current_song;
+    const title = String(song.name || song.title || "").trim();
+    if (!title) return null;
+    return {
+      id: song.id,
+      title,
+      artist: String(song.artist || "").trim(),
+      cover: song.cover || "",
+      stream_path: song.stream_path || "",
+      provider: song.provider || "netease",
+      playing: !!ms.active,
+      paused: !!ms.paused || !!ms.stale,
+      ready: ms.state === "ready",
+      stale: !!ms.stale,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+/** 桌面胶囊 / 正在做什么：有 Cove 曲绝不用 MOCK 歌名 */
 function getListenPresence() {
   const all = readAll();
   const pass = all.passes.find((p) => p.status === "active");
-  const track = currentTrack(all);
-  const playing = !!all.playback.playing;
-  if (!pass || !pass.engaged) {
+  const engaged = !!(pass && pass.engaged);
+  const cove = peekCovePresenceSong();
+
+  if (cove) {
+    const title = cove.title;
+    const playing = !!cove.playing;
+    return {
+      ok: true,
+      active: true,
+      playing,
+      track: {
+        id: cove.id,
+        title,
+        artist: cove.artist,
+        cover: cove.cover,
+        stream_path: cove.stream_path,
+        provider: cove.provider,
+      },
+      label: playing ? "共听 · " + title : "共听中 · " + title,
+      source: "cove",
+    };
+  }
+
+  if (!engaged) {
     return {
       ok: true,
       active: false,
       playing: false,
       track: null,
       label: "",
+      source: "",
     };
   }
-  const title = track.title || "共听";
+
+  /* engaged 但尚无 Cove 曲：只显示共听中，绝不带 Chocolate Drizzle */
   return {
     ok: true,
     active: true,
-    playing,
-    track: { id: track.id, title: track.title, artist: track.artist },
-    label: playing ? "共听 · " + title : "共听中 · " + title,
+    playing: false,
+    track: null,
+    label: "共听中",
+    source: "engaged",
   };
 }
 
@@ -376,18 +427,51 @@ function getSession() {
   };
 }
 
-/** 切换当前曲（或指定 id）收藏 */
-function toggleFavorite(trackId) {
+/**
+ * 切换当前曲（或指定 id）收藏。
+ * @param {string|number} trackId
+ * @param {{ title?: string, name?: string, artist?: string, cover?: string, provider?: string }} [meta]
+ */
+function toggleFavorite(trackId, meta = {}) {
   const all = readAll();
   const cur = currentTrack(all);
   const tid = String(trackId || cur.id || "").trim();
-  const known = MOCK_TRACKS.find((t) => t.id === tid) || (cur.id === tid ? cur : null);
-  if (!known) {
+  const mock = MOCK_TRACKS.find((t) => t.id === tid);
+  const cove = peekCovePresenceSong();
+  const fromMeta =
+    tid &&
+    (meta.title || meta.name || meta.artist || meta.cover)
+      ? {
+          id: tid,
+          title: String(meta.title || meta.name || tid).trim(),
+          artist: String(meta.artist || "").trim(),
+          cover: String(meta.cover || "").trim(),
+          provider: String(meta.provider || "").trim() || undefined,
+        }
+      : null;
+  const fromCove =
+    cove && String(cove.id) === tid
+      ? {
+          id: tid,
+          title: cove.title,
+          artist: cove.artist,
+          cover: cove.cover || "",
+          provider: cove.provider || "netease",
+        }
+      : null;
+  const known =
+    mock ||
+    fromMeta ||
+    fromCove ||
+    (cur.id === tid
+      ? { id: cur.id, title: cur.title, artist: cur.artist, cover: cur.cover || "" }
+      : null);
+  if (!known || !tid) {
     const err = new Error("未知曲目");
     err.code = "bad_favorite";
     throw err;
   }
-  const idx = all.favorites.findIndex((f) => f.id === tid);
+  const idx = all.favorites.findIndex((f) => String(f.id) === tid);
   let liked;
   if (idx >= 0) {
     all.favorites.splice(idx, 1);
@@ -398,12 +482,20 @@ function toggleFavorite(trackId) {
       title: known.title,
       artist: known.artist,
       cover: known.cover || "",
+      provider: known.provider || undefined,
       ts: Date.now(),
     });
     liked = true;
   }
   writeAll(all);
-  return { ok: true, ...getSession(), liked, favorites: readAll().favorites };
+  return {
+    ok: true,
+    ...getSession(),
+    liked,
+    favorites: readAll().favorites,
+    track_id: tid,
+    provider: known.provider || undefined,
+  };
 }
 
 /** 已结束场次摘要 + 收藏列表（只读） */
@@ -662,15 +754,31 @@ async function createSpitWithReplyStream(patch, emit) {
 
     await write({ type: "bot_start" });
     let deltaChain = Promise.resolve();
-    const raw = await chatCompletionStream({
-      system,
-      messages: prior,
-      think: false,
-      replyKind: "chat",
-      onDelta: (piece) => {
-        if (!piece) return;
-        deltaChain = deltaChain.then(() => write({ type: "bot_delta", text: piece }));
-      },
+    /* ponytail: 吐槽不能干等 LLM；25s 无字则走 mock，升级=AbortController 取消上游 */
+    const SPIT_LLM_MS = 25000;
+    let spitTimer = null;
+    const raw = await Promise.race([
+      chatCompletionStream({
+        system,
+        messages: prior,
+        think: false,
+        replyKind: "chat",
+        onDelta: (piece) => {
+          if (!piece) return;
+          deltaChain = deltaChain.then(() =>
+            write({ type: "bot_delta", text: piece })
+          );
+        },
+      }),
+      new Promise((_, reject) => {
+        spitTimer = setTimeout(() => {
+          const err = new Error("家机想太久，先嘴贫一句");
+          err.code = "llm_timeout";
+          reject(err);
+        }, SPIT_LLM_MS);
+      }),
+    ]).finally(() => {
+      if (spitTimer) clearTimeout(spitTimer);
     });
     await deltaChain;
     const parsed = parseThinkBody(raw.content, false);
@@ -794,12 +902,29 @@ if (require.main === module) {
     console.assert(getListenPresence().active === true, "吐槽后应 engaged");
     const ended = endActivePass();
     console.assert(ended.ended === true);
-    console.assert(getListenPresence().active === false, "结束本场后不应显示进行中");
+    /* Cove 曲优先：有 current_song 时 presence 仍可 active（非 mock） */
+    const afterEnd = getListenPresence();
+    if (afterEnd.source === "cove") {
+      console.assert(afterEnd.active === true, "Cove 曲仍展示");
+      console.assert(afterEnd.source !== "mock");
+    } else {
+      console.assert(afterEnd.active === false, "结束本场后不应显示进行中");
+    }
     const fresh = getSession();
     console.assert(fresh.messages.every((m) => m.passId === fresh.pass.id));
-    console.assert(getListenPresence().active === false, "新空场未 engage");
+    if (getListenPresence().source !== "cove") {
+      console.assert(getListenPresence().active === false, "新空场未 engage");
+    }
     engageListen();
     console.assert(getListenPresence().active === true);
+    console.assert(
+      !/Chocolate/i.test(String(getListenPresence().label || "")),
+      "presence 勿带 mock 歌名"
+    );
+    console.assert(
+      getListenPresence().source !== "mock",
+      "presence 勿 source=mock"
+    );
     console.assert(appleMusicHealth() === "shelved");
     const tid = getSession().track.id;
     if (getSession().liked) toggleFavorite(tid);
@@ -835,6 +960,8 @@ if (require.main === module) {
       getSession().messages.some((m) => m.id === gated.message.id),
       "额度耗尽你侧仍落盘"
     );
+    /* 自检勿把 100 token 耗尽场留作 active，否则真用会「额度已用尽」 */
+    endActivePass();
     console.log("listen ok", {
       track: fresh.track.title,
       presence: getListenPresence().label,

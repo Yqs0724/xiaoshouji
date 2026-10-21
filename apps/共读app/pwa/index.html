@@ -87,9 +87,56 @@
       letter-spacing: .02em;
       line-height: var(--phone-status-h);
       min-height: var(--phone-status-h);
+      flex: 0 0 auto;
+    }
+    #phoneStatus .phone-status-now {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin: 0 6px;
+      color: inherit;
+      opacity: .92;
+    }
+    #phoneStatus .phone-status-now[hidden] { display: none !important; }
+    #phoneStatus .phone-status-eq {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 11px;
+    }
+    #phoneStatus .phone-status-eq i {
+      display: block;
+      width: 2px;
+      height: 4px;
+      border-radius: 1px;
+      background: currentColor;
+      transform-origin: bottom;
+    }
+    #phoneStatus .phone-status-eq.is-live i {
+      animation: phoneStatusEq .7s ease-in-out infinite;
+    }
+    #phoneStatus .phone-status-eq.is-live i:nth-child(2) { animation-delay: .12s; }
+    #phoneStatus .phone-status-eq.is-live i:nth-child(3) { animation-delay: .24s; }
+    @keyframes phoneStatusEq {
+      0%, 100% { height: 3px; }
+      50% { height: 11px; }
+    }
+    #phoneStatus .phone-status-now-text {
+      flex: 1;
+      min-width: 0;
+      font-size: 10px;
+      font-weight: 650;
+      line-height: var(--phone-status-h);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     #phoneStatus .lock-status {
       margin-left: auto;
+      flex: 0 0 auto;
     }
     .view {
       display: none !important;
@@ -655,30 +702,80 @@
       gap: 8px;
       flex-shrink: 0;
     }
-    /* S7.1 方案 A：纯字，贴时间右侧；同色、无呼吸 */
-    #phoneStatus .phone-status-hint {
-      position: relative;
-      z-index: 1;
-      flex-shrink: 0;
-      margin: 0 0 0 8px;
-      padding: 0;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: .02em;
-      line-height: var(--phone-status-h);
-      min-height: var(--phone-status-h);
-      white-space: nowrap;
-      color: inherit;
-      background: none;
-      border: 0;
-      box-shadow: none;
-      pointer-events: auto;
-    }
-    #phoneStatus .phone-status-hint[hidden] { display: none !important; }
+    /* 旧 S7.1 / 假岛：隐藏；状态改走悬浮窗 */
+    #phoneStatus .phone-status-hint { display: none !important; }
     #phoneStatus .phone-status-time,
     #phoneStatus .lock-status {
       position: relative;
       z-index: 2;
+    }
+    /* 家机悬浮占位（壳内可拖；非系统悬浮窗权限） */
+    #homeFloat {
+      --hf-size: 52px;
+      position: fixed;
+      right: 14px;
+      bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+      left: auto;
+      top: auto;
+      z-index: 46;
+      width: var(--hf-size);
+      height: var(--hf-size);
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      cursor: grab;
+      touch-action: none;
+      -webkit-tap-highlight-color: transparent;
+      pointer-events: auto;
+      user-select: none;
+    }
+    #homeFloat.is-off { display: none; }
+    #homeFloat.is-drag { cursor: grabbing; }
+    #homeFloat .hf-orb {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(160deg, #e8f6f0 0%, #cfe9de 100%);
+      color: #4a3228;
+      border: 2px solid rgba(75, 44, 32, 0.28);
+      box-shadow:
+        0 4px 14px rgba(75, 44, 32, 0.18),
+        inset 0 1px 0 rgba(255, 255, 255, 0.65);
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      line-height: 1;
+    }
+    #homeFloat[data-state="bad"] .hf-orb {
+      background: linear-gradient(160deg, #f0e8e2 0%, #e0d2c8 100%);
+      color: #6b5348;
+      border-color: rgba(110, 88, 79, 0.35);
+    }
+    #homeFloat .hf-tip {
+      position: absolute;
+      right: calc(100% + 8px);
+      top: 50%;
+      transform: translateY(-50%);
+      max-width: 140px;
+      padding: 6px 10px;
+      border-radius: 12px;
+      background: rgba(255, 252, 247, 0.96);
+      color: #4a3228;
+      border: 1.5px solid rgba(75, 44, 32, 0.22);
+      box-shadow: 0 3px 10px rgba(58, 46, 36, 0.14);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    #homeFloat .hf-tip[hidden] { display: none !important; }
+    #homeFloat.is-left .hf-tip {
+      right: auto;
+      left: calc(100% + 8px);
     }
     .home-wid {
       background: rgba(255, 252, 247, .94);
@@ -2860,9 +2957,9 @@
     }
 
   </style>
-  <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css" />
+  <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css?v=7" />
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx172" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx184" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
   <link rel="stylesheet" href="/app-ui/资产app/pwa/wallet.css" />
@@ -2888,6 +2985,10 @@
   </div>
   <header id="phoneStatus" class="is-off" aria-hidden="true">
     <div class="phone-status-time" id="phoneStatusTime">--:--</div>
+    <div class="phone-status-now" id="phoneStatusNow" hidden>
+      <span class="phone-status-eq" id="phoneStatusEq" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span class="phone-status-now-text" id="phoneStatusNowText"></span>
+    </div>
     <p class="phone-status-hint" id="phoneStatusHint" hidden role="status"></p>
     <div class="lock-status" id="phoneStatusLead">
       <span class="lock-sig" id="phoneSignal">
@@ -2902,6 +3003,10 @@
       </span>
     </div>
   </header>
+  <button type="button" id="homeFloat" class="is-off" aria-label="家机" data-state="ok" title="家机">
+    <span class="hf-orb" aria-hidden="true">机</span>
+    <span class="hf-tip" id="homeFloatTip" hidden>在</span>
+  </button>
   <div class="view active" id="view-standby">
     <div class="lock-top" id="lockTop" aria-hidden="true">
       <div class="lock-status" id="lockStatusLead">
@@ -3082,8 +3187,13 @@
             <span class="val" id="mcpToolsVal">开</span>
             <span class="chev">›</span>
           </div>
+          <div class="row tap" id="rowSentinel" role="button" tabindex="0">
+            <div>双脑监控<small>截屏哨兵 · 必要时主动找你</small></div>
+            <span class="val" id="sentinelVal">关</span>
+            <span class="chev">›</span>
+          </div>
           <div class="row tap" id="rowAppleMusic" role="button" tabindex="0">
-            <div>Apple Music<small>共听连接</small></div>
+            <div>共听音源<small>网易云 · Apple</small></div>
             <span class="val" id="appleMusicVal">搁置</span>
             <span class="chev">›</span>
           </div>
@@ -3142,12 +3252,60 @@
             <div class="field">
               <label for="inLlmModel">LLM Model<small>如 flash 级模型名</small></label>
               <input id="inLlmModel" type="text" autocomplete="off" placeholder="model id" />
+              <label for="inEmbedModel">Embedding Model<small>记忆向量，空=只用关键词；硅基可填 BAAI/bge-m3</small></label>
+              <input id="inEmbedModel" type="text" autocomplete="off" placeholder="可选" />
+              <label for="inFishKey">Fish Audio Key<small>通话朗读 · 明天可填</small></label>
+              <input id="inFishKey" type="password" autocomplete="off" placeholder="fish.audio API key" />
+              <label for="inFishVoice">Fish Voice ID<small>克隆音色 / 模型 reference_id</small></label>
+              <input id="inFishVoice" type="text" autocomplete="off" placeholder="voice / model id" />
+              <label for="inFishModel">Fish TTS Model<small>默认 s2.1-pro-free</small></label>
+              <input id="inFishModel" type="text" autocomplete="off" placeholder="s2.1-pro-free" />
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveSettings">保存</button>
               <button type="button" class="ghost" id="btnCloseConn">返回</button>
               <span class="save-msg" id="saveMsg"></span>
             </div>
+          </div>
+          <div class="conn-panel" id="sentinelPanel">
+            <div class="hint">定时截主屏 → 轻量模型判断 → 必要时家机主动发一条。默认关；会读屏幕，仅本机。日志对齐 AionsHome JSONL（保留 3 天）。开关勾选会立刻保存；间隔/模型仍要点「保存」。PC 前台采样另开，约每分钟记窗口标题，摘要喂哨兵；聊天里可「查看动态」或「定时监控」预约到点看护（非闹钟）。</div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inSentinelEnabled" type="checkbox" style="width:auto" />
+              <label for="inSentinelEnabled" style="font-weight:500;margin:0">启用双脑监控<small>立即生效</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inActivityEnabled" type="checkbox" style="width:auto" />
+              <label for="inActivityEnabled" style="font-weight:500;margin:0">记录 PC 前台活动<small>立即生效 · 仅 Windows</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inSentinelQuiet" type="checkbox" style="width:auto" />
+              <label for="inSentinelQuiet" style="font-weight:500;margin:0">安静时段<small>时段内不截屏、不主动找你</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap">
+              <label for="inSentinelQuietStart" style="margin:0">从</label>
+              <input id="inSentinelQuietStart" type="time" style="width:auto;min-width:7.5rem" />
+              <label for="inSentinelQuietEnd" style="margin:0">到</label>
+              <input id="inSentinelQuietEnd" type="time" style="width:auto;min-width:7.5rem" />
+              <span class="hint" style="margin:0">可跨午夜，如 23:00–08:00</span>
+            </div>
+            <div class="field">
+              <label for="inSentinelInterval">监控间隔（分钟）<small>5–120，默认 15</small></label>
+              <input id="inSentinelInterval" type="number" min="5" max="120" step="1" placeholder="15" />
+              <label for="inSentinelModel">哨兵 Model<small>空=用「连接与健康」里的 LLM Model</small></label>
+              <input id="inSentinelModel" type="text" autocomplete="off" placeholder="可选 flash 级" />
+            </div>
+            <div class="save-row">
+              <button type="button" class="primary" id="btnSaveSentinel">保存</button>
+              <button type="button" class="ghost" id="btnCloseSentinel">返回</button>
+              <span class="save-msg" id="saveSentinelMsg"></span>
+            </div>
+            <div class="hint" style="margin-top:14px">监控日志<small>哨兵 / CAM_CHECK · WS 实时；看屏前有 monitor_alert 提示音</small></div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <label for="inMonitorLogDate" style="margin:0;flex:0 0 auto">日期</label>
+              <select id="inMonitorLogDate" style="flex:1;min-width:0"></select>
+              <button type="button" class="ghost" id="btnRefreshMonitorLogs">刷新</button>
+            </div>
+            <div id="monitorLogList" class="world-book-list" style="max-height:220px;overflow:auto;font-size:12px;color:var(--muted)">暂无日志</div>
           </div>
           <div class="conn-panel" id="mcpToolsPanel">
             <div class="hint">开着时，日常聊天可调下列工具。显示名可改；模型仍用英文 name。MCP 工具可逐项关掉（不进模型工具表）；内置工具只受总开关控制。</div>
@@ -3179,8 +3337,48 @@
             </div>
           </div>
           <div class="conn-panel" id="appleMusicPanel">
-            <div class="hint">连接配置搁置：不强制开发者账号 / JWT。共听 App 已用 mock 播控 + 本场吐槽骨架；真 MusicKit 以后再接。</div>
+            <div class="hint">Cove 点歌：优先网易云整曲（需本机兼容 API）。Apple MusicKit 仍搁置；无网易云时可回落 iTunes 试听/外链。</div>
+            <div class="field">
+              <label for="inMusicProvider">点歌优先</label>
+              <select id="inMusicProvider">
+                <option value="netease">网易云</option>
+                <option value="apple">Apple 试听</option>
+                <option value="auto">自动（网易云失败再 Apple）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="inNeteaseApi">网易云兼容 API<small>默认 http://127.0.0.1:3000</small></label>
+              <input id="inNeteaseApi" type="text" autocomplete="off" placeholder="http://127.0.0.1:3000" />
+            </div>
+            <div class="field">
+              <label for="inNeteaseQuality">音质偏好</label>
+              <select id="inNeteaseQuality">
+                <option value="exhigh">较高 (exhigh)</option>
+                <option value="higher">较高+</option>
+                <option value="standard">标准</option>
+                <option value="lossless">无损（要会员）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="inMusicVolume">播放音量<small>共听 / 聊天音乐卡</small></label>
+              <input id="inMusicVolume" type="range" min="0" max="100" step="1" value="80" />
+            </div>
+            <div class="field">
+              <label>扫码登录<small>网易云 App 扫码，免 F12 抠 Cookie</small></label>
+              <div id="neteaseQrBox" style="display:none;text-align:center;margin:8px 0">
+                <img id="neteaseQrImg" alt="网易云登录二维码" style="max-width:200px;width:100%;background:#fff;border-radius:8px" />
+                <div class="hint" id="neteaseQrStatus" style="margin-top:6px">等待扫码</div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="inNeteaseCookie">或手动 Cookie<small>F12 不便时用扫码即可</small></label>
+              <input id="inNeteaseCookie" type="password" autocomplete="off" placeholder="留空=不改；填 MUSIC_U=… 或整段 Cookie" />
+            </div>
+            <div class="hint" id="neteaseCookieHint">Cookie：未设置</div>
             <div class="save-row">
+              <button type="button" class="ghost" id="btnNeteaseQr">扫码登录</button>
+              <button type="button" class="ghost" id="btnNeteasePing">探测 API</button>
+              <button type="button" class="primary" id="btnSaveNeteaseMusic">保存</button>
               <button type="button" class="ghost" id="btnCloseAppleMusic">返回</button>
               <span class="save-msg" id="appleMusicMsg"></span>
             </div>
@@ -3793,9 +3991,10 @@
     </div>
   </div>
 
-  <script src="/assets-colisten/colisten.js"></script>
+  <script src="/assets-colisten/cove-player.js"></script>
+  <script src="/assets-colisten/colisten.js?v=7"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx172"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx187"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
@@ -4170,19 +4369,147 @@
       return "网关正常 · " + w + " · " + l;
     }
 
-    /** S7.1：顶栏灵动岛；网关+LLM 都好→已连接，任一断→未连接 */
+    /** 家机悬浮：网关+LLM → 在 / 未连接；图腾槽暂用「机」 */
     function updateHomeShellHint(state) {
-      const el = document.getElementById("phoneStatusHint");
-      if (!el) return;
       const down = !!(state && state.gatewayDown);
       const llmMiss = !!(state && state.llmMissing);
       const ok = !down && !llmMiss;
-      el.textContent = ok ? "已连接" : "未连接";
       const bits = [];
       bits.push(down ? "网关不可达" : "网关正常");
       bits.push(llmMiss ? "LLM 未配" : "LLM 已配");
-      el.title = bits.join(" · ");
-      el.hidden = false;
+      const tip = bits.join(" · ");
+      const label = ok ? "在" : "未连接";
+      const legacy = document.getElementById("phoneStatusHint");
+      if (legacy) {
+        legacy.textContent = ok ? "已连接" : "未连接";
+        legacy.title = tip;
+      }
+      const floatEl = document.getElementById("homeFloat");
+      const tipEl = document.getElementById("homeFloatTip");
+      if (floatEl) {
+        floatEl.dataset.state = ok ? "ok" : "bad";
+        floatEl.title = "家机 · " + tip;
+      }
+      if (tipEl) tipEl.textContent = label;
+    }
+
+    function bindHomeFloat() {
+      const el = document.getElementById("homeFloat");
+      if (!el || el.dataset.bound === "1") return;
+      el.dataset.bound = "1";
+      const POS_KEY = "ariadne.homeFloat.pos";
+      const SIZE = 52;
+      let tipTimer = null;
+
+      function clampPos(x, y) {
+        const pad = 8;
+        const maxX = Math.max(pad, window.innerWidth - SIZE - pad);
+        const maxY = Math.max(pad, window.innerHeight - SIZE - pad);
+        const minY = pad + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--phone-status-pad")) || 24);
+        return {
+          x: Math.min(maxX, Math.max(pad, x)),
+          y: Math.min(maxY, Math.max(minY, y)),
+        };
+      }
+
+      function applyPos(x, y) {
+        const p = clampPos(x, y);
+        el.style.left = p.x + "px";
+        el.style.top = p.y + "px";
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+        el.classList.toggle("is-left", p.x < window.innerWidth / 2);
+        return p;
+      }
+
+      function savePos(x, y) {
+        try {
+          localStorage.setItem(POS_KEY, JSON.stringify({ x, y }));
+        } catch (_) {}
+      }
+
+      function restorePos() {
+        try {
+          const raw = localStorage.getItem(POS_KEY);
+          if (!raw) return;
+          const o = JSON.parse(raw);
+          if (Number.isFinite(o.x) && Number.isFinite(o.y)) applyPos(o.x, o.y);
+        } catch (_) {}
+      }
+
+      function showTipBrief() {
+        const tipEl = document.getElementById("homeFloatTip");
+        if (!tipEl) return;
+        tipEl.hidden = false;
+        if (tipTimer) clearTimeout(tipTimer);
+        tipTimer = setTimeout(() => {
+          tipEl.hidden = true;
+          tipTimer = null;
+        }, 2200);
+      }
+
+      restorePos();
+
+      let dragging = false;
+      let moved = false;
+      let sx = 0;
+      let sy = 0;
+      let ox = 0;
+      let oy = 0;
+      let pid = null;
+
+      el.addEventListener("pointerdown", (e) => {
+        if (e.button != null && e.button !== 0) return;
+        dragging = true;
+        moved = false;
+        pid = e.pointerId;
+        try {
+          el.setPointerCapture(pid);
+        } catch (_) {}
+        el.classList.add("is-drag");
+        const rect = el.getBoundingClientRect();
+        sx = e.clientX;
+        sy = e.clientY;
+        ox = rect.left;
+        oy = rect.top;
+        e.preventDefault();
+      });
+
+      el.addEventListener("pointermove", (e) => {
+        if (!dragging || (pid != null && e.pointerId !== pid)) return;
+        const dx = e.clientX - sx;
+        const dy = e.clientY - sy;
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) moved = true;
+        if (!moved) return;
+        applyPos(ox + dx, oy + dy);
+      });
+
+      function endPointer(e) {
+        if (!dragging || (pid != null && e.pointerId !== pid)) return;
+        dragging = false;
+        el.classList.remove("is-drag");
+        try {
+          el.releasePointerCapture(pid);
+        } catch (_) {}
+        pid = null;
+        if (moved) {
+          const rect = el.getBoundingClientRect();
+          const p = applyPos(rect.left, rect.top);
+          savePos(p.x, p.y);
+        } else {
+          showTipBrief();
+        }
+      }
+
+      el.addEventListener("pointerup", endPointer);
+      el.addEventListener("pointercancel", endPointer);
+      window.addEventListener("resize", () => {
+        const rect = el.getBoundingClientRect();
+        if (el.style.left) {
+          const p = applyPos(rect.left, rect.top);
+          savePos(p.x, p.y);
+        }
+      });
     }
 
     async function checkHealth() {
@@ -4217,6 +4544,29 @@
         document.getElementById("inLlmBase").value = s.llm_base || "";
         document.getElementById("inLlmKey").value = s.llm_key || "";
         document.getElementById("inLlmModel").value = s.llm_model || "";
+        const embIn = document.getElementById("inEmbedModel");
+        if (embIn) embIn.value = s.embed_model || "";
+        const senEn = document.getElementById("inSentinelEnabled");
+        if (senEn) senEn.checked = !!s.sentinel_enabled;
+        const actEn = document.getElementById("inActivityEnabled");
+        if (actEn) actEn.checked = !!s.activity_enabled;
+        const senQuiet = document.getElementById("inSentinelQuiet");
+        if (senQuiet) senQuiet.checked = !!s.sentinel_quiet_enabled;
+        const senQs = document.getElementById("inSentinelQuietStart");
+        if (senQs) senQs.value = s.sentinel_quiet_start || "23:00";
+        const senQe = document.getElementById("inSentinelQuietEnd");
+        if (senQe) senQe.value = s.sentinel_quiet_end || "08:00";
+        const senIv = document.getElementById("inSentinelInterval");
+        if (senIv) senIv.value = s.sentinel_interval_min || 15;
+        const senModel = document.getElementById("inSentinelModel");
+        if (senModel) senModel.value = s.sentinel_model || "";
+        paintSentinelVal(!!s.sentinel_enabled);
+        const fishKey = document.getElementById("inFishKey");
+        const fishVoice = document.getElementById("inFishVoice");
+        const fishModel = document.getElementById("inFishModel");
+        if (fishKey) fishKey.value = s.fish_api_key || "";
+        if (fishVoice) fishVoice.value = s.fish_voice_id || "";
+        if (fishModel) fishModel.value = s.fish_tts_model || "s2.1-pro-free";
         if (window.ColistenApp) ColistenApp.loadAuth();
         const hutCard = String(s.persona_card || "").trim() || String(s.persona || "").trim();
         document.getElementById("inPersonaCard").value = hutCard;
@@ -4315,6 +4665,9 @@
     function closeSettingsSub() {
       const leaving = phoneSettingsSubKey;
       phoneSettingsSubKey = null;
+      if (leaving === "sentinel" && typeof stopMonitorLogStream === "function") {
+        stopMonitorLogStream();
+      }
       const list = document.getElementById("phoneSettingsList");
       const sub = document.getElementById("phoneSettingsSub");
       const titleEl = document.getElementById("phoneSettingsTitle");
@@ -4433,6 +4786,357 @@
         if (remote && !el.checked) hidden.push(remote);
       });
       return hidden;
+    }
+
+    function paintSentinelVal(on) {
+      const el = document.getElementById("sentinelVal");
+      if (el) el.textContent = on ? "开" : "关";
+    }
+
+    let monitorLogEs = null;
+    let monitorLogPanelOpen = false;
+    let shellWs = null;
+    let shellWsTimer = null;
+    let shellWsWant = false;
+
+    function playShellMonitorChime() {
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        const ctx = new AC();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.12, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        o.stop(ctx.currentTime + 0.45);
+        o.onended = () => {
+          try {
+            ctx.close();
+          } catch (_) {}
+        };
+      } catch (_) {}
+    }
+
+    function shellToastLite(msg) {
+      const el = document.getElementById("chatShellToast");
+      if (el && typeof window.ChatApp === "object") {
+        /* 聊天页 toast 优先 */
+      }
+      try {
+        const t = document.getElementById("chatShellToast");
+        if (t) {
+          t.textContent = msg;
+          t.hidden = false;
+          clearTimeout(window.__ariadneShellToastTimer);
+          window.__ariadneShellToastTimer = setTimeout(() => {
+            t.hidden = true;
+          }, 2200);
+          return;
+        }
+      } catch (_) {}
+      try {
+        console.info("[monitor_alert]", msg);
+      } catch (_) {}
+    }
+
+    function onShellWsMessage(msg) {
+      if (!msg || !msg.type) return;
+      if (msg.type === "monitor_alert") {
+        window.__ariadneMonitorAlertAt = Date.now();
+        playShellMonitorChime();
+        const d = msg.data || {};
+        const sec = Number(d.seconds) || 0;
+        const line =
+          String(d.content || "即将查看屏幕").trim() +
+          (sec > 0 ? " · " + sec + " 秒" : "");
+        shellToastLite(line);
+        return;
+      }
+      if (msg.type === "monitor_log" && monitorLogPanelOpen) {
+        onMonitorLogPush(msg);
+      }
+    }
+
+    function stopShellWs() {
+      shellWsWant = false;
+      if (shellWsTimer) {
+        clearTimeout(shellWsTimer);
+        shellWsTimer = null;
+      }
+      if (shellWs) {
+        try {
+          shellWs.onclose = null;
+          shellWs.close();
+        } catch (_) {}
+        shellWs = null;
+      }
+    }
+
+    function startShellWs() {
+      shellWsWant = true;
+      if (shellWs && shellWs.readyState <= 1) return;
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      let wsUrl;
+      try {
+        wsUrl = proto + "//" + location.host + "/ws";
+      } catch (_) {
+        return;
+      }
+      try {
+        const ws = new WebSocket(wsUrl);
+        shellWs = ws;
+        ws.onmessage = (ev) => {
+          let msg = null;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch (_) {
+            return;
+          }
+          onShellWsMessage(msg);
+        };
+        ws.onclose = () => {
+          shellWs = null;
+          if (!shellWsWant) return;
+          shellWsTimer = setTimeout(() => {
+            shellWsTimer = null;
+            if (shellWsWant) startShellWs();
+          }, 2500);
+        };
+        ws.onerror = () => {};
+      } catch (_) {}
+    }
+
+    function stopMonitorLogStream() {
+      monitorLogPanelOpen = false;
+      if (monitorLogEs) {
+        try {
+          monitorLogEs.close();
+        } catch (_) {}
+        monitorLogEs = null;
+      }
+    }
+
+    function onMonitorLogPush(msg) {
+      if (!msg || msg.type !== "monitor_log" || !msg.data) return;
+      const sel = document.getElementById("inMonitorLogDate");
+      const day = String((msg.data && msg.data.date) || "");
+      if (sel && sel.value && day && sel.value !== day) return;
+      loadMonitorLogs(sel && sel.value);
+    }
+
+    function startMonitorLogSseFallback() {
+      if (monitorLogEs) return;
+      try {
+        monitorLogEs = new EventSource("/api/v1/chat/sentinel/logs/stream");
+        monitorLogEs.onmessage = (ev) => {
+          let msg = null;
+          try {
+            msg = JSON.parse(ev.data);
+          } catch (_) {
+            return;
+          }
+          onMonitorLogPush(msg);
+        };
+      } catch (_) {}
+    }
+
+    function paintMonitorLogList(logs) {
+      const box = document.getElementById("monitorLogList");
+      if (!box) return;
+      const arr = Array.isArray(logs) ? logs.slice().reverse() : [];
+      if (!arr.length) {
+        box.textContent = "暂无日志";
+        return;
+      }
+      box.replaceChildren();
+      for (const e of arr.slice(0, 80)) {
+        const row = document.createElement("div");
+        row.className = "world-book-row";
+        const wake = e.call_core || e.woke ? " · 唤醒" : "";
+        const kind = String(e.kind || "log");
+        const time = String(e.time || "").trim();
+        const body = String(e.monitoringlog || e.core_reason || "").trim() || "（空）";
+        row.innerHTML =
+          '<span class="nm">' +
+          (time ? time + " " : "") +
+          kind +
+          wake +
+          '</span><span class="meta">' +
+          body.replace(/</g, "&lt;").slice(0, 120) +
+          "</span>";
+        box.appendChild(row);
+      }
+    }
+
+    async function loadMonitorLogs(dateOpt) {
+      const sel = document.getElementById("inMonitorLogDate");
+      const q = dateOpt || (sel && sel.value) || "";
+      try {
+        const url =
+          "/api/v1/chat/sentinel/logs" +
+          (q ? "?date=" + encodeURIComponent(q) : "");
+        const res = await fetch(url, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) throw new Error("logs");
+        if (sel) {
+          const dates = Array.isArray(data.dates) ? data.dates.slice() : [];
+          if (data.date && !dates.includes(data.date)) dates.unshift(data.date);
+          const cur = q || data.date || "";
+          sel.replaceChildren();
+          for (const d of dates) {
+            const opt = document.createElement("option");
+            opt.value = d;
+            opt.textContent = d;
+            if (d === cur) opt.selected = true;
+            sel.appendChild(opt);
+          }
+          if (!sel.options.length && data.date) {
+            const opt = document.createElement("option");
+            opt.value = data.date;
+            opt.textContent = data.date;
+            opt.selected = true;
+            sel.appendChild(opt);
+          }
+        }
+        paintMonitorLogList(data.logs);
+      } catch (_) {
+        paintMonitorLogList([]);
+        const box = document.getElementById("monitorLogList");
+        if (box) box.textContent = "日志加载失败";
+      }
+    }
+
+    function startMonitorLogStream() {
+      monitorLogPanelOpen = true;
+      startShellWs();
+      setTimeout(() => {
+        if (monitorLogPanelOpen && (!shellWs || shellWs.readyState !== 1)) {
+          startMonitorLogSseFallback();
+        }
+      }, 800);
+    }
+
+    function expandSentinel() {
+      const msg = document.getElementById("saveSentinelMsg");
+      if (msg) {
+        msg.textContent = "";
+        msg.className = "save-msg";
+      }
+      openSettingsSub("sentinel", "双脑监控", "sentinelPanel", async () => {
+        await loadSettings();
+        await loadMonitorLogs();
+        startMonitorLogStream();
+      });
+    }
+
+    function collapseSentinel() {
+      stopMonitorLogStream();
+      if (phoneSettingsSubKey === "sentinel") closeSettingsSub();
+    }
+
+    function toggleSentinel() {
+      const p = document.getElementById("sentinelPanel");
+      if (p && p.classList.contains("open")) collapseSentinel();
+      else expandSentinel();
+    }
+
+    async function patchSentinelSettings(patch, opts) {
+      const quiet = !!(opts && opts.quiet);
+      const msg = document.getElementById("saveSentinelMsg");
+      if (!quiet && msg) {
+        msg.textContent = "保存中…";
+        msg.className = "save-msg";
+      }
+      const res = await fetch("/api/v1/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) throw new Error("http " + res.status);
+      const data = await res.json().catch(() => ({}));
+      if (Object.prototype.hasOwnProperty.call(patch, "sentinel_enabled")) {
+        paintSentinelVal(!!patch.sentinel_enabled);
+      } else if (data && typeof data.sentinel_enabled === "boolean") {
+        paintSentinelVal(!!data.sentinel_enabled);
+      }
+      if (!quiet && msg) {
+        msg.textContent = "已保存";
+        msg.className = "save-msg ok";
+      }
+      return data;
+    }
+
+    async function saveSentinel() {
+      const msg = document.getElementById("saveSentinelMsg");
+      try {
+        await patchSentinelSettings({
+          sentinel_enabled: !!(document.getElementById("inSentinelEnabled") || {})
+            .checked,
+          activity_enabled: !!(document.getElementById("inActivityEnabled") || {})
+            .checked,
+          sentinel_quiet_enabled: !!(document.getElementById("inSentinelQuiet") || {})
+            .checked,
+          sentinel_quiet_start:
+            (document.getElementById("inSentinelQuietStart") || {}).value ||
+            "23:00",
+          sentinel_quiet_end:
+            (document.getElementById("inSentinelQuietEnd") || {}).value || "08:00",
+          sentinel_interval_min: Number(
+            (document.getElementById("inSentinelInterval") || {}).value || 15
+          ),
+          sentinel_model:
+            (document.getElementById("inSentinelModel") || {}).value || "",
+        });
+        collapseSentinel();
+      } catch (_) {
+        if (msg) {
+          msg.textContent = "保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
+    }
+
+    async function onSentinelEnabledChange() {
+      const enabled = !!(document.getElementById("inSentinelEnabled") || {}).checked;
+      const msg = document.getElementById("saveSentinelMsg");
+      try {
+        await patchSentinelSettings({ sentinel_enabled: enabled }, { quiet: true });
+        if (msg) {
+          msg.textContent = enabled ? "已开启并保存" : "已关闭并保存";
+          msg.className = "save-msg ok";
+        }
+      } catch (_) {
+        const el = document.getElementById("inSentinelEnabled");
+        if (el) el.checked = !enabled;
+        if (msg) {
+          msg.textContent = "开关保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
+    }
+
+    async function onActivityEnabledChange() {
+      const enabled = !!(document.getElementById("inActivityEnabled") || {}).checked;
+      const msg = document.getElementById("saveSentinelMsg");
+      try {
+        await patchSentinelSettings({ activity_enabled: enabled }, { quiet: true });
+        if (msg) {
+          msg.textContent = enabled ? "前台采样已开" : "前台采样已关";
+          msg.className = "save-msg ok";
+        }
+      } catch (_) {
+        const el = document.getElementById("inActivityEnabled");
+        if (el) el.checked = !enabled;
+        if (msg) {
+          msg.textContent = "活动开关保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
     }
 
     function expandMcpTools() {
@@ -4827,6 +5531,7 @@
         loadSettings();
         loadBooks();
         refreshLockAgenda();
+        startShellWs();
       } catch (_) {
         err.textContent = "解锁失败";
       }
@@ -4894,6 +5599,11 @@
         llm_base: document.getElementById("inLlmBase").value,
         llm_key: document.getElementById("inLlmKey").value,
         llm_model: document.getElementById("inLlmModel").value,
+        embed_model: (document.getElementById("inEmbedModel") || {}).value || "",
+        fish_api_key: (document.getElementById("inFishKey") || {}).value || "",
+        fish_voice_id: (document.getElementById("inFishVoice") || {}).value || "",
+        fish_tts_model:
+          (document.getElementById("inFishModel") || {}).value || "s2.1-pro-free",
       };
       try {
         const res = await fetch("/api/v1/settings", {
@@ -6629,12 +7339,20 @@
         el.style.removeProperty("display");
       });
       const phoneStatus = document.getElementById("phoneStatus");
+      const homeFloat = document.getElementById("homeFloat");
       const body = document.body;
       body.classList.remove("phone-status-home", "phone-status-app");
       if (phoneStatus) {
         const off = name === "standby";
         phoneStatus.classList.toggle("is-off", off);
         phoneStatus.setAttribute("aria-hidden", off ? "true" : "false");
+        if (homeFloat) {
+          homeFloat.classList.toggle("is-off", off);
+          if (off) {
+            const tip = document.getElementById("homeFloatTip");
+            if (tip) tip.hidden = true;
+          }
+        }
         if (!off) {
           body.classList.add(name === "home" ? "phone-status-home" : "phone-status-app");
         }
@@ -6772,7 +7490,10 @@
     let homePresenceItems = [];
     let homePresenceIdx = 0;
     let homePresenceTimer = null;
+    let presencePollTimer = null;
+    let lastPresenceTrackTitle = "";
     const HOME_PRESENCE_MS = 5000;
+    const PRESENCE_POLL_MS = 4000;
 
     function stopHomePresenceCycle() {
       if (homePresenceTimer) {
@@ -6781,10 +7502,63 @@
       }
     }
 
+    function stopPresencePoll() {
+      if (presencePollTimer) {
+        clearInterval(presencePollTimer);
+        presencePollTimer = null;
+      }
+    }
+
+    function ensurePresencePoll() {
+      if (presencePollTimer) return;
+      presencePollTimer = setInterval(() => {
+        refreshListenPresence();
+      }, PRESENCE_POLL_MS);
+    }
+
+    function paintPhoneNowPlaying(title, playing) {
+      const box = document.getElementById("phoneStatusNow");
+      const txt = document.getElementById("phoneStatusNowText");
+      const eq = document.getElementById("phoneStatusEq");
+      const name = String(title || "").trim();
+      if (!box || !txt) return;
+      if (!name) {
+        box.hidden = true;
+        txt.textContent = "";
+        if (eq) eq.classList.remove("is-live");
+        return;
+      }
+      box.hidden = false;
+      txt.textContent = name;
+      box.title = name;
+      if (eq) eq.classList.toggle("is-live", !!playing);
+    }
+
+    function paintPhoneNowFromCoveOrPresence(listen) {
+      let title = "";
+      let playing = false;
+      try {
+        if (window.CovePlayer) {
+          const snap = CovePlayer.snapshot();
+          const t = snap && snap.track;
+          if (t && (t.name || t.title)) {
+            title = String(t.name || t.title).trim();
+            playing = !!snap.playing;
+          }
+        }
+      } catch (_) {}
+      if (!title && listen && listen.active && listen.track) {
+        title = String(listen.track.title || "").trim();
+        playing = !!listen.playing;
+      }
+      paintPhoneNowPlaying(title, playing);
+    }
+
     function clearHomePresenceUi() {
       stopHomePresenceCycle();
       homePresenceItems = [];
       homePresenceIdx = 0;
+      lastPresenceTrackTitle = "";
       const cap = document.getElementById("btnHomeCapsule");
       const chip = document.getElementById("profileDoingChip");
       if (cap) {
@@ -6795,6 +7569,27 @@
       }
       if (chip) chip.textContent = "暂无";
       setHomeListenDeco(false);
+      paintPhoneNowFromCoveOrPresence(null);
+    }
+
+    function coveLiveTitle() {
+      try {
+        if (!window.CovePlayer) return "";
+        const snap = CovePlayer.snapshot();
+        const t = snap && snap.track;
+        return t ? String(t.name || t.title || "").trim() : "";
+      } catch (_) {
+        return "";
+      }
+    }
+
+    function coveLivePlaying() {
+      try {
+        if (!window.CovePlayer) return false;
+        return !!CovePlayer.snapshot().playing;
+      } catch (_) {
+        return false;
+      }
     }
 
     function paintHomePresenceFrame() {
@@ -6807,9 +7602,16 @@
       }
       if (homePresenceIdx >= items.length) homePresenceIdx = 0;
       const cur = items[homePresenceIdx];
+      let label = cur.label;
+      if (cur.go === "colisten") {
+        const live = coveLiveTitle();
+        if (live) {
+          label = (coveLivePlaying() ? "共听 · " : "共听中 · ") + live;
+        }
+      }
       if (cap) {
         cap.hidden = false;
-        cap.textContent = cur.label;
+        cap.textContent = label;
         cap.dataset.go = cur.go;
         if (cur.titleId) cap.dataset.titleId = cur.titleId;
         else delete cap.dataset.titleId;
@@ -6817,10 +7619,44 @@
       if (chip) {
         chip.textContent =
           items.length === 1
-            ? cur.label
+            ? label
             : items.map((x) => x.short || x.label).join(" · ");
       }
       setHomeListenDeco(items.some((x) => x.go === "colisten"));
+    }
+
+    async function restoreCovePresenceFromSession() {
+      try {
+        const res = await fetch("/api/v1/music/session", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.session) return;
+        const song = data.session.current_song;
+        if (!song || !(song.name || song.title)) return;
+        if (window.CovePlayer) {
+          CovePlayer.setTrack(
+            {
+              provider: song.provider || "netease",
+              id: song.id,
+              name: song.name || song.title,
+              artist: song.artist,
+              cover: song.cover,
+              stream_path:
+                song.stream_path ||
+                (song.provider === "netease" && song.id
+                  ? "/api/v1/music/stream/netease/" + song.id
+                  : ""),
+            },
+            "restore"
+          );
+        }
+        paintPhoneNowPlaying(
+          String(song.name || song.title).trim(),
+          !!data.session.active
+        );
+      } catch (_) {}
     }
 
     function startHomePresenceCycle() {
@@ -6845,7 +7681,15 @@
         const next = [];
         if (listenRes.ok && listen.active) {
           const label = String(listen.label || "").trim() || "共听中";
-          next.push({ go: "colisten", label, short: "共听中" });
+          const trackTitle = String(
+            (listen.track && listen.track.title) || ""
+          ).trim();
+          next.push({
+            go: "colisten",
+            label,
+            short: "共听中",
+            trackTitle,
+          });
         }
         if (watchRes.ok && watch.active) {
           const label = String(watch.label || "").trim() || "共看中";
@@ -6856,10 +7700,18 @@
             titleId: String(watch.titleId || ""),
           });
         }
+        paintPhoneNowFromCoveOrPresence(
+          listenRes.ok && listen.active ? listen : null
+        );
+        if (listenRes.ok && listen.active) ensurePresencePoll();
+        else if (!next.length) stopPresencePoll();
+
         if (!next.length) {
           clearHomePresenceUi();
           return;
         }
+        const trackTitle = next.find((x) => x.go === "colisten");
+        const titleNow = (trackTitle && trackTitle.trackTitle) || "";
         const same =
           next.length === homePresenceItems.length &&
           next.every(
@@ -6870,12 +7722,17 @@
               homePresenceItems[i].label === x.label
           );
         if (same && homePresenceItems.length) {
+          if (titleNow && titleNow !== lastPresenceTrackTitle) {
+            lastPresenceTrackTitle = titleNow;
+            homePresenceItems = next;
+          }
           paintHomePresenceFrame();
           if (homePresenceItems.length > 1 && !homePresenceTimer) {
             startHomePresenceCycle();
           }
           return;
         }
+        lastPresenceTrackTitle = titleNow;
         homePresenceItems = next;
         homePresenceIdx = 0;
         startHomePresenceCycle();
@@ -9281,6 +10138,16 @@
         collapsePhoneLore,
       });
     }
+    if (window.CovePlayer) {
+      const kickPresence = () => {
+        paintPhoneNowFromCoveOrPresence(null);
+        refreshListenPresence();
+      };
+      CovePlayer.on("state", kickPresence);
+      CovePlayer.on("local-play", kickPresence);
+      CovePlayer.on("remote-takeover", kickPresence);
+    }
+    restoreCovePresenceFromSession().then(() => refreshListenPresence());
     document.getElementById("btnSyncShelf").addEventListener("click", syncWereadShelf);
     document.getElementById("btnImportLocal").addEventListener("click", () => {
       const input = document.getElementById("localBookFile");
@@ -9446,6 +10313,22 @@
     document.getElementById("btnCloseConn").addEventListener("click", collapseConn);
     document.getElementById("rowConn").addEventListener("click", toggleConn);
     document.getElementById("rowMcpTools").addEventListener("click", toggleMcpTools);
+    document.getElementById("rowSentinel").addEventListener("click", toggleSentinel);
+    document.getElementById("btnSaveSentinel").addEventListener("click", saveSentinel);
+    document
+      .getElementById("inSentinelEnabled")
+      .addEventListener("change", onSentinelEnabledChange);
+    document
+      .getElementById("inActivityEnabled")
+      .addEventListener("change", onActivityEnabledChange);
+    document.getElementById("btnCloseSentinel").addEventListener("click", collapseSentinel);
+    document.getElementById("btnRefreshMonitorLogs").addEventListener("click", () => {
+      loadMonitorLogs();
+    });
+    document.getElementById("inMonitorLogDate").addEventListener("change", () => {
+      loadMonitorLogs();
+    });
+    document.getElementById("sentinelPanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("btnSaveMcpTools").addEventListener("click", saveMcpTools);
     document.getElementById("btnMcpPing").addEventListener("click", pingMcpTools);
     document.getElementById("btnCloseMcpTools").addEventListener("click", collapseMcpTools);
@@ -11688,6 +12571,7 @@
       if (dy > 56 && dy > Math.abs(dx)) showView("standby");
     }, { passive: true });
 
+    bindHomeFloat();
     ensureGate().then((ok) => {
       if (!ok) return;
       checkHealth();
@@ -11696,6 +12580,7 @@
       startClockTick();
       startCalRemindTick();
       refreshCalRemind();
+      startShellWs();
     });
     updateLockClock();
     updateLockNetStatus();

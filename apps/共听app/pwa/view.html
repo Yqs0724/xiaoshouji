@@ -1,89 +1,303 @@
   <div class="view" id="view-colisten">
-    <div class="cabin-top">
-      <span class="down" id="btnColistenBack" role="button" tabindex="0" title="回桌面">←</span>
-      <div class="spacer"></div>
-      <div>共听</div>
+    <div class="cabin-top cl-music-top">
+      <span class="down" id="btnColistenBack" role="button" tabindex="0" title="返回">←</span>
+      <div id="colistenTopTitle" class="cl-music-word">music</div>
     </div>
     <div class="cl-body">
-      <div class="cl-player-wrap">
-        <div class="cl-mint-card" id="colistenPlayer">
-          <div class="cl-card-row">
-            <div class="cl-cover" id="colistenArtWrap" aria-hidden="true">
-              <img id="colistenCoverImg" alt="" />
-              <svg class="cl-note" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+      <!-- 找层：底栏三页 Home / Playlists / Discover -->
+      <div class="cl-home" id="colistenHome">
+        <div class="cl-page" id="clPageHome" data-page="home">
+          <div class="cl-home-profile" id="colistenHomeHero">
+            <div class="cl-home-banner" aria-hidden="true"></div>
+            <div class="cl-home-pair" aria-label="你与家机">
+              <!-- 头梁只走头顶上方；竖段+耳罩在头像外侧，不穿脸 -->
+              <svg class="cl-home-hp" viewBox="0 0 240 100" fill="none" aria-hidden="true">
+                <path d="M28 52 L28 28 C28 6, 212 6, 212 28 L212 52"
+                      stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M28 52 L28 30 C28 12, 212 12, 212 30 L212 52"
+                      stroke="#c6e7d1" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>
               </svg>
-            </div>
-            <div class="cl-meta">
-              <div class="cl-title-row">
-                <div class="cl-title" id="colistenTitle">Mint Melody</div>
-                <button type="button" class="cl-like" id="btnColistenLike" title="喜欢" aria-label="喜欢" aria-pressed="false">♡</button>
-              </div>
-              <div class="cl-artist" id="colistenArtist">薄巧电台</div>
-              <div class="cl-progress" id="colistenProgress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <div class="cl-progress-track">
-                  <div class="cl-progress-fill" id="colistenProgressFill"></div>
-                  <i class="cl-progress-thumb" id="colistenProgressThumb"></i>
+              <div class="cl-home-duo">
+                <div class="cl-home-person" data-side="you">
+                  <span class="cl-home-cup" aria-hidden="true"></span>
+                  <div class="cl-home-avatar" id="colistenHomeAvatarYou">
+                    <img id="colistenHomeAvatarYouImg" alt="" hidden />
+                    <span id="colistenHomeAvatarYouLab">你</span>
+                  </div>
+                  <div class="cl-home-name" id="colistenHomeNameYou">你</div>
+                </div>
+                <div class="cl-home-person" data-side="bot">
+                  <div class="cl-home-avatar" id="colistenHomeAvatarBot">
+                    <img id="colistenHomeAvatarBotImg" alt="" hidden />
+                    <span id="colistenHomeAvatarBotLab">机</span>
+                  </div>
+                  <span class="cl-home-cup" aria-hidden="true"></span>
+                  <div class="cl-home-name" id="colistenHomeNameBot">家机</div>
                 </div>
               </div>
             </div>
           </div>
-          <div class="cl-card-rule"></div>
-          <div class="cl-transport" aria-label="播控">
-            <button type="button" id="btnColistenShuffle" title="随机" aria-label="随机" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
-            </button>
-            <button type="button" id="btnColistenPrev" title="上一首" aria-label="上一首">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z"/></svg>
-            </button>
-            <button type="button" class="cl-play" id="btnColistenPlayToggle" title="播放/暂停" aria-label="播放">
-              <svg id="colistenPlayIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7L8 5z"/></svg>
-            </button>
-            <button type="button" id="btnColistenNext" title="下一首" aria-label="下一首">
-              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z"/></svg>
-            </button>
-            <button type="button" id="btnColistenRepeat" title="循环" aria-label="循环" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-            </button>
+          <div class="cl-home-head">
+            <span>Recently Played</span>
           </div>
+          <p class="cl-home-note" id="colistenHomeNote" hidden></p>
+          <ul class="cl-home-list" id="colistenHomeList"></ul>
         </div>
-        <p class="cl-hint" id="colistenPlayerHint">连接搁置 · mock 播控</p>
-      </div>
-      <div class="cl-propose" id="colistenPropose" hidden>
-        <div id="colistenProposeText">家机提议：切歌？</div>
-        <div class="acts">
-          <button type="button" id="btnColistenProposeOk">确认</button>
-          <button type="button" class="ghost" id="btnColistenProposeNo">忽略</button>
-        </div>
-      </div>
-      <div class="cl-history" id="colistenHistory" hidden>
-        <div class="cl-history-head">
-          <span>最近场次</span>
-          <button type="button" id="btnColistenHistoryClose" title="关闭" aria-label="关闭">×</button>
-        </div>
-        <ul id="colistenHistoryList"></ul>
-      </div>
-      <div class="cl-playlist" id="colistenPlaylist" hidden>
-        <div class="cl-playlist-head">
-          <span>本场歌单</span>
-          <button type="button" id="btnColistenPlaylistClose" title="关闭" aria-label="关闭">×</button>
-        </div>
-        <ul id="colistenPlaylistList"></ul>
-      </div>
-      <div class="cl-chat" aria-label="本场吐槽">
-        <div class="thread" id="colistenSpitThread"></div>
-        <div class="composer-wrap">
-          <div class="cl-plus-menu" id="colistenPlusMenu" hidden>
-            <button type="button" class="ghost" id="btnColistenDemoPropose">提议</button>
-            <button type="button" class="ghost" id="btnColistenPlaylist">歌单</button>
-            <button type="button" class="ghost" id="btnColistenHistory">历史</button>
-            <button type="button" id="btnColistenEnd">结束本场</button>
+
+        <div class="cl-page" id="clPagePlaylists" data-page="playlists" hidden>
+          <div class="cl-home-head">
+            <button type="button" id="btnColistenHomeUp" hidden title="返回歌单列表" aria-label="返回">‹</button>
+            <span id="colistenHomeTitle">Playlists</span>
+            <button type="button" class="cl-home-plus" id="btnColistenHomeImport" title="导入歌单" aria-label="导入歌单">＋</button>
           </div>
-          <form class="composer" id="colistenSpitForm">
-            <button type="button" class="plus" id="btnColistenPlus" title="更多" aria-label="更多" aria-expanded="false">＋</button>
-            <input type="text" id="colistenSpitInput" maxlength="400" placeholder="说句吐槽…" autocomplete="off" />
-            <button type="submit" id="btnColistenSpit">发送</button>
+          <p class="cl-home-note" id="colistenPlNote" hidden></p>
+          <ul class="cl-home-list" id="colistenPlList"></ul>
+        </div>
+
+        <div class="cl-page" id="clPageDiscover" data-page="discover" hidden>
+          <form class="cl-discover-search" id="colistenDiscoverForm">
+            <input type="text" id="colistenDiscoverQuery" maxlength="120" placeholder="Search songs or artists…" autocomplete="off" />
+            <button type="submit" class="primary">Go</button>
           </form>
+          <div class="cl-home-head">
+            <span>今日日推</span>
+            <button type="button" class="cl-home-enqueue-all" id="btnColistenDailyEnqueue" hidden title="全部加入队列">全部加入</button>
+            <button type="button" class="cl-home-refresh" id="btnColistenDailyRefresh" title="换一批">换一批</button>
+          </div>
+          <p class="cl-home-note" id="colistenDiscoverNote" hidden></p>
+          <ul class="cl-home-list" id="colistenDiscoverList"></ul>
+        </div>
+      </div>
+
+      <!-- 下级：播放器；歌词模式见 .cl-lyric-mode（对齐效果图：上曲目卡 / 中歌词 / 下播控） -->
+      <div class="cl-session" id="colistenSession" hidden>
+        <div class="cl-player-wrap">
+          <div class="cl-lyric-toolbar" id="colistenLyricToolbar" hidden>
+            <button type="button" class="ghost cl-lyric-back" id="btnColistenLyricSheetClose" title="收起歌词" aria-label="收起歌词">↓</button>
+            <div class="cl-lyric-tools">
+              <button type="button" class="cl-lyric-trans-btn" id="btnColistenLyricTrans" aria-pressed="false" title="显示翻译" hidden>译</button>
+              <button type="button" class="cl-lyric-tool" id="btnColistenLyricOpenComments" title="评论" aria-label="评论">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16v10H8l-4 3V6z"/></svg>
+              </button>
+              <button type="button" class="cl-lyric-tool" id="btnColistenLyricOpenQueue" title="队列" aria-label="队列">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="cl-mint-card" id="colistenPlayer">
+            <div class="cl-card-row">
+              <div class="cl-cover" id="colistenArtWrap" aria-hidden="true">
+                <img id="colistenCoverImg" alt="" />
+                <svg class="cl-note" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/>
+                </svg>
+              </div>
+              <div class="cl-meta">
+                <div class="cl-now-lab" aria-hidden="true">NOW PLAYING</div>
+                <div class="cl-title-row">
+                  <div class="cl-title" id="colistenTitle">Mint Melody</div>
+                  <button type="button" class="cl-like" id="btnColistenLike" title="喜欢" aria-label="喜欢" aria-pressed="false">♡</button>
+                </div>
+                <div class="cl-artist" id="colistenArtist">薄巧电台</div>
+              </div>
+            </div>
+            <div class="cl-card-rule cl-dock-in-card"></div>
+            <div class="cl-dock cl-dock-in-card">
+              <div class="cl-progress-row">
+                <span class="cl-time" id="colistenTimeCur">0:00</span>
+                <div class="cl-progress" id="colistenProgress" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                  <div class="cl-progress-track">
+                    <div class="cl-progress-fill" id="colistenProgressFill"></div>
+                    <i class="cl-progress-thumb" id="colistenProgressThumb"></i>
+                  </div>
+                </div>
+                <span class="cl-time" id="colistenTimeDur">—:—</span>
+              </div>
+              <div class="cl-transport" aria-label="播控">
+                <button type="button" id="btnColistenPlayMode" title="顺序播放" aria-label="顺序播放" data-mode="seq">
+                  <svg id="colistenPlayModeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l7 7-7 7"/><path d="M12 5l7 7-7 7"/></svg>
+                </button>
+                <button type="button" id="btnColistenPrev" title="上一首" aria-label="上一首">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z"/></svg>
+                </button>
+                <button type="button" class="cl-play" id="btnColistenPlayToggle" title="播放/暂停" aria-label="播放">
+                  <svg id="colistenPlayIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7L8 5z"/></svg>
+                </button>
+                <button type="button" id="btnColistenNext" title="下一首" aria-label="下一首">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 6h2v12h-2V6zM6 18l8.5-6L6 6v12z"/></svg>
+                </button>
+                <button type="button" id="btnColistenOpenQueue" title="队列" aria-label="队列">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <ul class="cl-lyrics-list cl-lyrics-full" id="colistenLyricsList" aria-label="全部歌词" hidden></ul>
+          <p class="cl-lyrics-tip" id="colistenLyricsTip" hidden>长按一句发到聊天</p>
+          <button type="button" class="cl-lyrics-preview" id="colistenLyrics" title="打开歌词">
+            <div class="cl-lyrics-preview-lines" id="colistenLyricsPreview" aria-label="当前歌词">
+              <div class="cl-ly-line on" id="colistenLyLine0">加载歌词…</div>
+              <div class="cl-ly-line" id="colistenLyLine1"> </div>
+            </div>
+            <span class="cl-lyrics-open-hint">点开全文</span>
+          </button>
+          <button type="button" class="cl-comments-entry" id="btnColistenOpenComments" hidden>
+            <span>评论</span>
+            <span class="cl-comments-count" id="colistenCommentsCount"></span>
+          </button>
+          <p class="cl-hint" id="colistenPlayerHint">连接搁置 · mock 播控</p>
+        </div>
+
+        <!-- 评论子界面；批注不做，吐槽用下方聊天 -->
+        <div class="cl-sub-page" id="colistenCommentSheet" hidden>
+          <div class="cl-sub-page-head">
+            <button type="button" class="ghost" id="btnColistenCommentSheetClose" title="返回" aria-label="返回">‹</button>
+            <span id="colistenCommentSheetTitle">评论区</span>
+          </div>
+          <ul class="cl-hot-list cl-comments-full" id="colistenHotList"></ul>
+        </div>
+        <div class="cl-propose" id="colistenPropose" hidden>
+          <div id="colistenProposeText">家机提议：切歌？</div>
+          <div class="acts">
+            <button type="button" id="btnColistenProposeOk">确认</button>
+            <button type="button" class="ghost" id="btnColistenProposeNo">忽略</button>
+          </div>
+        </div>
+        <div class="cl-history" id="colistenHistory" hidden>
+          <div class="cl-history-head">
+            <span>最近场次</span>
+            <button type="button" id="btnColistenHistoryClose" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <ul id="colistenHistoryList"></ul>
+        </div>
+        <div class="cl-chat" aria-label="本场吐槽">
+          <div class="thread" id="colistenSpitThread"></div>
+          <div class="composer-wrap">
+            <div class="cl-plus-menu" id="colistenPlusMenu" hidden>
+              <button type="button" class="ghost" id="btnColistenRequestSong">点歌</button>
+              <button type="button" class="ghost" id="btnColistenImportPlaylist">导歌单</button>
+              <button type="button" class="ghost" id="btnColistenDemoPropose">提议</button>
+              <button type="button" class="ghost" id="btnColistenGoHome">歌单库</button>
+              <button type="button" class="ghost" id="btnColistenHistory">历史</button>
+              <button type="button" id="btnColistenEnd">结束本场</button>
+            </div>
+            <form class="composer" id="colistenSpitForm">
+              <button type="button" class="plus" id="btnColistenPlus" title="更多" aria-label="更多" aria-expanded="false">＋</button>
+              <input type="text" id="colistenSpitInput" maxlength="400" placeholder="说句吐槽…" autocomplete="off" />
+              <button type="submit" id="btnColistenSpit">发送</button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <!-- 迷你条在底栏之上（参考效果图） -->
+      <div class="cl-mini" id="colistenMiniBar" role="button" tabindex="0" title="打开播放页">
+        <div class="cl-mini-cover" id="colistenMiniArt" aria-hidden="true">
+          <img id="colistenMiniCoverImg" alt="" />
+          <span class="cl-mini-note">♪</span>
+        </div>
+        <div class="cl-mini-meta">
+          <div class="cl-mini-title" id="colistenMiniTitle">未在播放</div>
+          <div class="cl-mini-artist" id="colistenMiniArtist">点这里进播放页</div>
+        </div>
+        <div class="cl-mini-acts">
+          <button type="button" class="cl-mini-ico" id="btnColistenMiniMode" title="顺序播放" aria-label="顺序播放">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 5l7 7-7 7"/><path d="M12 5l7 7-7 7"/></svg>
+          </button>
+          <button type="button" class="cl-mini-ico" id="btnColistenMiniPrev" title="上一首" aria-label="上一首">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="4.3" y="4.5" width="2.2" height="15" rx="0.6"/><path d="M19 19.5v-15L8 12l11 7.5z"/></svg>
+          </button>
+          <button type="button" class="cl-mini-play" id="btnColistenMiniPlay" title="播放/暂停" aria-label="播放">
+            <svg id="colistenMiniPlayIcon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7L8 5z"/></svg>
+          </button>
+          <button type="button" class="cl-mini-ico" id="btnColistenMiniNext" title="下一首" aria-label="下一首">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 4.5v15l11-7.5L5 4.5z"/><rect x="17.5" y="4.5" width="2.2" height="15" rx="0.6"/></svg>
+          </button>
+          <button type="button" class="cl-mini-ico" id="btnColistenMiniQueue" title="队列" aria-label="队列">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 队列上拉弹窗（迷你条 / 播放页入口） -->
+      <div class="cl-queue-sheet" id="colistenQueueSheet" hidden>
+        <button type="button" class="cl-queue-sheet-bg" id="colistenQueueSheetBg" aria-label="关闭队列"></button>
+        <div class="cl-queue-sheet-panel" role="dialog" aria-labelledby="colistenQueueSheetTitle">
+          <div class="cl-queue-sheet-grab" aria-hidden="true"></div>
+          <div class="cl-queue-sheet-head">
+            <span id="colistenQueueSheetTitle">正在播放</span>
+            <button type="button" class="ghost" id="btnColistenQueueEdit" aria-pressed="false">编辑</button>
+            <button type="button" class="ghost" id="btnColistenQueueSheetClose" title="收起" aria-label="收起">收起</button>
+          </div>
+          <p class="cl-home-note" id="colistenQueueSheetNote" hidden></p>
+          <ul class="cl-queue-sheet-list" id="colistenQueueSheetList"></ul>
+        </div>
+      </div>
+
+      <nav class="cl-tabbar" id="colistenTabbar" aria-label="共听导航">
+        <button type="button" class="on" data-tab="home" id="btnClTabHome">
+          <span class="cl-tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5"/><path d="M6 9.8V20h12V9.8"/><path d="M10 20v-5h4v5"/></svg>
+          </span>
+          <span>Home</span>
+        </button>
+        <button type="button" data-tab="playlists" id="btnClTabPlaylists">
+          <span class="cl-tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l10-2v12"/><circle cx="7" cy="18" r="2.5" fill="currentColor" stroke="none"/><circle cx="17" cy="16" r="2.5" fill="currentColor" stroke="none"/></svg>
+          </span>
+          <span>Playlists</span>
+        </button>
+        <button type="button" data-tab="discover" id="btnClTabDiscover">
+          <span class="cl-tab-ico" aria-hidden="true">
+            <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"/><path d="M16.5 16.5L21 21"/></svg>
+          </span>
+          <span>Discover</span>
+        </button>
+      </nav>
+
+      <div class="cl-modal" id="colistenSongModal" hidden>
+        <div class="cl-modal-card" role="dialog" aria-labelledby="colistenSongModalTitle">
+          <div class="cl-modal-head">
+            <span id="colistenSongModalTitle">点歌</span>
+            <button type="button" id="btnColistenSongModalClose" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <form class="cl-modal-form" id="colistenSongForm">
+            <input type="text" id="colistenSongQuery" maxlength="120" placeholder="歌名，可加歌手" autocomplete="off" />
+            <button type="submit" class="primary">搜索</button>
+          </form>
+          <p class="cl-modal-hint">也可在 Discover 页直接搜</p>
+        </div>
+      </div>
+      <div class="cl-modal" id="colistenImportModal" hidden>
+        <div class="cl-modal-card" role="dialog" aria-labelledby="colistenImportModalTitle">
+          <div class="cl-modal-head">
+            <span id="colistenImportModalTitle">导入歌单</span>
+            <button type="button" id="btnColistenImportModalClose" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <form class="cl-modal-form" id="colistenImportForm">
+            <input type="text" id="colistenImportQuery" maxlength="800" placeholder="粘贴分享文案或链接 / 数字 ID" autocomplete="off" />
+            <button type="submit" class="primary">导入</button>
+          </form>
+          <p class="cl-modal-hint">可直接粘「分享xxx的歌单：https://…」整段；导入后出现在 Playlists</p>
+        </div>
+      </div>
+      <div class="cl-modal" id="colistenAddToModal" hidden>
+        <div class="cl-modal-card cl-addto-card" role="dialog" aria-labelledby="colistenAddToTitle">
+          <div class="cl-modal-head">
+            <span id="colistenAddToTitle">加入歌单</span>
+            <button type="button" id="btnColistenAddToClose" title="关闭" aria-label="关闭">×</button>
+          </div>
+          <p class="cl-addto-song" id="colistenAddToSong">—</p>
+          <label class="cl-addto-check">
+            <input type="checkbox" id="colistenAddToLiked" />
+            <span>Liked · 喜欢的歌曲</span>
+          </label>
+          <ul class="cl-addto-list" id="colistenAddToList"></ul>
+          <div class="cl-addto-new">
+            <input type="text" id="colistenAddToNewName" maxlength="60" placeholder="新建歌单名称（可选）" autocomplete="off" />
+          </div>
+          <button type="button" class="primary cl-addto-submit" id="btnColistenAddToSubmit">加入所选</button>
+          <p class="cl-modal-hint">可多选；新建会同时写入该曲</p>
         </div>
       </div>
     </div>

@@ -39,6 +39,7 @@ const {
 const { getBudgetSummary } = require("../../额度app/gateway/budget");
 const {
   listMessages,
+  listPeers,
   searchMessages,
   createMessageWithReplyStream,
   recallMessageWithReplyStream,
@@ -67,8 +68,42 @@ const {
   setChatCallPhase,
   finishChatCallStream,
   MEDIA_MAX_BYTES,
+  addTokensUsed,
+  withPeer,
+  normalizePeerId,
+  DEFAULT_PEER_ID,
+  resolvePeerForMessage,
 } = require("../../聊天app/gateway/daily-chat");
+const { ttsStatus, synthesizeSpeech } = require("../../聊天app/gateway/tts");
+const { runVoiceTurn } = require("../../聊天app/gateway/voice-turn");
+
+function peerFromRequest(req, body) {
+  try {
+    const u = new URL(req.url || "/", "http://local");
+    const q = u.searchParams.get("peer") || u.searchParams.get("peerId");
+    if (q) return normalizePeerId(q);
+  } catch (_) {}
+  if (body && (body.peer || body.peerId)) {
+    return normalizePeerId(body.peer || body.peerId);
+  }
+  return DEFAULT_PEER_ID;
+}
+
+function peerForMessageOp(req, body, msgId) {
+  const found = resolvePeerForMessage(msgId);
+  if (found) return found;
+  return peerFromRequest(req, body);
+}
 const { getMoodPublic } = require("../../聊天app/gateway/mood");
+const {
+  listPeerMemories,
+  addMemory,
+  updateMemory,
+  deleteMemory,
+  toggleUnresolved,
+  digestStatus,
+  digestNewMemories,
+} = require("../../聊天app/gateway/memory");
 const {
   addUserSticker,
   resolveUserStickerPath,
@@ -138,6 +173,8 @@ const {
 } = require("./gate");
 
 const PORT = Number(process.env.PORT) || 8787;
+/** 安卓壳 / 局域网访问时设 HOST=0.0.0.0；默认仅本机 */
+const HOST = String(process.env.HOST || "127.0.0.1").trim() || "127.0.0.1";
 const ARIADNE_ROOT = path.join(__dirname, "..", "..", "..");
 const PWA_ROOT = path.join(__dirname, "..", "pwa");
 const APPS_ROOT = path.join(ARIADNE_ROOT, "apps");
@@ -227,8 +264,8 @@ function sendFile(res, filePath) {
     }
     const ext = path.extname(filePath).toLowerCase();
     const headers = { "Content-Type": MIME[ext] || "application/octet-stream" };
-    // ponytail: HTML 无版本指纹时靠 no-store，避免旧 #view-cal{display:flex} 缓存挡其它页
-    if (ext === ".html" || ext === "") {
+    // ponytail: HTML/JS/CSS 无版本指纹时靠 no-store，避免旧壳/共听脚本缓存挡改动
+    if (ext === ".html" || ext === "" || ext === ".js" || ext === ".css") {
       headers["Cache-Control"] = "no-store, no-cache";
     }
     res.writeHead(200, headers);
@@ -453,6 +490,613 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* Cove：搜歌（provider=netease|apple，默认跟设定） */
+  if (req.method === "GET" && urlPath === "/api/v1/music/search") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const term = q.get("q") || q.get("query") || "";
+      const limit = Number(q.get("limit") || 8);
+      let provider = String(q.get("provider") || "").trim();
+      if (!provider) {
+        try {
+          provider = String(readSettings().music_provider || "netease");
+        } catch (_) {
+          provider = "netease";
+        }
+      }
+      let songs = [];
+      let used = provider;
+      if (provider === "apple") {
+        songs = await require("../../共听app/gateway/apple-catalog").searchSongs(
+          term,
+          { limit }
+        );
+        used = "apple";
+      } else {
+        try {
+          songs = await require("../../共听app/gateway/netease-catalog").searchSongs(
+            term,
+            { limit }
+          );
+          used = "netease";
+        } catch (e) {
+          if (provider === "netease") throw e;
+          songs = await require("../../共听app/gateway/apple-catalog").searchSongs(
+            term,
+            { limit }
+          );
+          used = "apple";
+        }
+      }
+      sendJson(res, 200, { ok: true, provider: used, songs });
+    } catch (e) {
+      const catalog = require("../../共听app/gateway/netease-catalog");
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "music_search_failed",
+        message: catalog.explainMusicError(e.code, e.message || "搜歌失败"),
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/netease/ping") {
+    try {
+      sendJson(
+        res,
+        200,
+        await require("../../共听app/gateway/netease-catalog").pingApi()
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "ping_failed",
+        message: e.message || "探测失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/netease/qr/start") {
+    try {
+      const out = await require("../../共听app/gateway/netease-catalog").startQrLogin();
+      sendJson(res, out.ok ? 200 : 502, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "qr_start_failed",
+        message: e.message || "生成二维码失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/netease/qr/check") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const out = await require("../../共听app/gateway/netease-catalog").checkQrLogin(
+        q.get("key") || ""
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "qr_check_failed",
+        message: e.message || "查询扫码失败",
+      });
+    }
+    return;
+  }
+
+  const neteaseSongMatch = urlPath.match(
+    /^\/api\/v1\/music\/song\/netease\/(\d+)$/
+  );
+  if (req.method === "GET" && neteaseSongMatch) {
+    try {
+      const catalog = require("../../共听app/gateway/netease-catalog");
+      const song = await catalog.getSongDetail(neteaseSongMatch[1]);
+      if (!song) {
+        sendJson(res, 404, {
+          ok: false,
+          error: "MUSIC_NOT_FOUND",
+          message: catalog.explainMusicError("MUSIC_NOT_FOUND"),
+        });
+        return;
+      }
+      sendJson(res, 200, { ok: true, provider: "netease", song });
+    } catch (e) {
+      const catalog = require("../../共听app/gateway/netease-catalog");
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "song_detail_failed",
+        message: catalog.explainMusicError(e.code, e.message),
+      });
+    }
+    return;
+  }
+
+  const neteaseStreamMatch = urlPath.match(
+    /^\/api\/v1\/music\/stream\/netease\/(\d+)$/
+  );
+  if (req.method === "GET" && neteaseStreamMatch) {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      await require("../../共听app/gateway/music-stream").handleNeteaseStream(
+        req,
+        res,
+        neteaseStreamMatch[1],
+        q.get("quality") || undefined
+      );
+    } catch (e) {
+      if (!res.headersSent) {
+        const catalog = require("../../共听app/gateway/netease-catalog");
+        sendJson(res, 500, {
+          ok: false,
+          error: e.code || "stream_failed",
+          message: catalog.explainMusicError(e.code, e.message || "代理失败"),
+        });
+      }
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/session") {
+    try {
+      sendJson(
+        res,
+        200,
+        require("../../共听app/gateway/music-session").getMusicSession()
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "music_session_failed",
+        message: e.message || "读取共听状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/session/event") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = require("../../共听app/gateway/music-session").recordSessionEvent(
+        body
+      );
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "music_event_failed",
+        message: e.message || "记录播放事件失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/session/summary") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = require("../../共听app/gateway/music-session").postPhaseSummary(
+        body
+      );
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "music_summary_failed",
+        message: e.message || "写入阶段总结失败",
+      });
+    }
+    return;
+  }
+
+  /* Cove C：已导入歌单 / 队列 */
+  if (req.method === "GET" && urlPath === "/api/v1/music/library/playlists") {
+    try {
+      sendJson(
+        res,
+        200,
+        require("../../共听app/gateway/music-playlists").peekPlaylists()
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "playlists_failed",
+        message: e.message || "读取歌单失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/library/playlists") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const plMod = require("../../共听app/gateway/music-playlists");
+      const out = plMod.createPlaylist(body.name, body.song);
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "playlist_create_failed",
+        message: e.message || "新建歌单失败",
+      });
+    }
+    return;
+  }
+
+  /* 一首歌 → Liked / 多个本地歌单 / 新建（可多选） */
+  if (req.method === "POST" && urlPath === "/api/v1/music/library/add-to") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const song = body.song;
+      if (!song || song.id == null) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "bad_song",
+          message: "需要曲目",
+        });
+        return;
+      }
+      const plMod = require("../../共听app/gateway/music-playlists");
+      const catalog = require("../../共听app/gateway/netease-catalog");
+      const results = [];
+      if (body.liked) {
+        try {
+          const liked = await catalog.likeSong(song.id, true);
+          results.push({ target: "liked", ok: true, liked: !!liked.liked });
+        } catch (e) {
+          results.push({
+            target: "liked",
+            ok: false,
+            message: e.message || "红心失败",
+          });
+        }
+      }
+      const ids = Array.isArray(body.playlist_ids) ? body.playlist_ids : [];
+      for (const pid of ids) {
+        const out = plMod.addTrackToPlaylist(pid, song);
+        results.push({
+          target: "playlist:" + pid,
+          ok: !!out.ok,
+          added: out.added,
+          message: out.message,
+        });
+      }
+      const createName = String(body.create_name || "").trim();
+      if (createName) {
+        const created = plMod.createPlaylist(createName, song);
+        results.push({
+          target: "create",
+          ok: !!created.ok,
+          playlist: created.playlist,
+          message: created.message,
+        });
+      }
+      const okAny = results.some((r) => r.ok);
+      sendJson(res, okAny || !results.length ? 200 : 400, {
+        ok: okAny,
+        results,
+        message: okAny
+          ? "已加入所选"
+          : results[0] && results[0].message
+            ? results[0].message
+            : "请至少选一项",
+      });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "add_to_failed",
+        message: e.message || "加入失败",
+      });
+    }
+    return;
+  }
+
+  const libPlMatch = urlPath.match(
+    /^\/api\/v1\/music\/library\/playlists\/([^/]+)$/
+  );
+  if (libPlMatch) {
+    const plMod = require("../../共听app/gateway/music-playlists");
+    const id = decodeURIComponent(libPlMatch[1]);
+    if (req.method === "GET") {
+      try {
+        const out = plMod.getPlaylist(id);
+        sendJson(res, out.ok ? 200 : 404, out);
+      } catch (e) {
+        sendJson(res, 500, {
+          ok: false,
+          error: e.code || "playlist_failed",
+          message: e.message || "读取歌单失败",
+        });
+      }
+      return;
+    }
+    if (req.method === "POST") {
+      try {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const out = plMod.addTrackToPlaylist(id, body.song);
+        sendJson(res, out.ok ? 200 : 400, out);
+      } catch (e) {
+        sendJson(res, 500, {
+          ok: false,
+          error: e.code || "playlist_add_failed",
+          message: e.message || "加入歌单失败",
+        });
+      }
+      return;
+    }
+    if (req.method === "DELETE") {
+      try {
+        const out = plMod.deletePlaylist(id);
+        sendJson(res, out.ok ? 200 : 404, out);
+      } catch (e) {
+        sendJson(res, 500, {
+          ok: false,
+          error: e.code || "playlist_delete_failed",
+          message: e.message || "删除失败",
+        });
+      }
+      return;
+    }
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/playlists/import") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const url = body.url || body.id || body.playlist_id || "";
+      const out = await require("../../共听app/gateway/music-playlists").importPlaylistFromUrl(
+        url,
+        { limit: body.limit, actor: body.actor }
+      );
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "import_failed",
+        message: e.message || "导入歌单失败",
+      });
+    }
+    return;
+  }
+
+  /* Cove E：今日私选 */
+  if (req.method === "GET" && urlPath === "/api/v1/music/daily-discovery") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const refresh =
+        q.get("refresh") === "1" || q.get("refresh") === "true";
+      const out = await require("../../共听app/gateway/music-daily-discovery").getDailyDiscovery(
+        { refresh, limit: q.get("limit") }
+      );
+      sendJson(res, out.ok === false ? 502 : 200, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "discovery_failed",
+        message: e.message || "今日私选失败",
+      });
+    }
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    urlPath === "/api/v1/music/daily-discovery/feedback"
+  ) {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = require("../../共听app/gateway/music-daily-discovery").recordFeedback(
+        body
+      );
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "feedback_failed",
+        message: e.message || "反馈失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/queue") {
+    try {
+      const peek = require("../../共听app/gateway/music-playlists").peekPlaylists();
+      sendJson(res, 200, { ok: true, queue: peek.queue || [] });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "queue_failed",
+        message: e.message || "读取队列失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/queue") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const plMod = require("../../共听app/gateway/music-playlists");
+      let out;
+      if (body.action === "clear") out = plMod.clearQueue();
+      else if (
+        body.action === "from_playlist" ||
+        body.action === "append_playlist"
+      ) {
+        out = plMod.setQueueFromPlaylist(body.playlist_id || body.id, {
+          actor: body.actor,
+          replace: body.replace === true || body.action === "replace_playlist",
+        });
+      } else if (body.action === "enqueue_next" || body.action === "play_next") {
+        out = plMod.enqueueSongNext(
+          body.song,
+          body.after_id != null ? body.after_id : body.afterId
+        );
+      } else if (body.action === "enqueue" || body.song) {
+        out = plMod.enqueueSong(body.song);
+      } else if (body.action === "remove" || body.action === "remove_at") {
+        out = plMod.removeQueueAt(
+          body.index != null ? body.index : body.at
+        );
+      } else if (body.action === "move") {
+        out = plMod.moveQueueItem(body.from, body.to);
+      } else if (body.action === "at" || body.index != null) {
+        out = plMod.queueSongAt(body.index);
+      } else {
+        out = { ok: false, error: "bad_action", message: "需要 action 或 song" };
+      }
+      sendJson(res, out.ok ? 200 : 400, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "queue_write_failed",
+        message: e.message || "更新队列失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/netease/liked") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const out = await require("../../共听app/gateway/netease-catalog").getLikedSongs(
+        { limit: q.get("limit") }
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, e.code === "need_login" ? 401 : 502, {
+        ok: false,
+        error: e.code || "liked_failed",
+        message: e.message || "读取喜欢的歌失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/netease/playlists/add-song") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = await require("../../共听app/gateway/netease-catalog").addSongToUserPlaylist(
+        body.playlist_id || body.pid,
+        body.song_id || body.id
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "add_song_failed",
+        message: e.message || "加入网易云歌单失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/music/netease/like") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = await require("../../共听app/gateway/netease-catalog").likeSong(
+        body.song_id || body.id,
+        body.like !== false && body.liked !== false
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "like_failed",
+        message: e.message || "红心同步失败",
+      });
+    }
+    return;
+  }
+
+  const lyricMatch = urlPath.match(/^\/api\/v1\/music\/lyric\/netease\/(\d+)$/);
+  if (req.method === "GET" && lyricMatch) {
+    try {
+      const out = await require("../../共听app/gateway/netease-catalog").getLyric(
+        lyricMatch[1]
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "lyric_failed",
+        message: e.message || "歌词读取失败",
+      });
+    }
+    return;
+  }
+
+  const commentsMatch = urlPath.match(
+    /^\/api\/v1\/music\/comments\/netease\/(\d+)$/
+  );
+  if (req.method === "GET" && commentsMatch) {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const limit = Number(q.get("limit") || 8);
+      const out = await require("../../共听app/gateway/netease-catalog").getHotComments(
+        commentsMatch[1],
+        { limit }
+      );
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "comments_failed",
+        message: e.message || "热评读取失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/music/netease/profile") {
+    try {
+      const q = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const type = q.get("type") === "0" ? 0 : 1;
+      const uid = q.get("uid");
+      const out = await require("../../共听app/gateway/netease-catalog").getUserListenProfile({
+        uid: uid ? Number(uid) : undefined,
+        type,
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, e.code === "need_login" ? 401 : 502, {
+        ok: false,
+        error: e.code || "profile_failed",
+        message: e.message || "资料读取失败",
+      });
+    }
+    return;
+  }
+
+  const mvMatch = urlPath.match(/^\/api\/v1\/music\/mv\/netease\/(\d+)$/);
+  if (req.method === "GET" && mvMatch) {
+    try {
+      const out = await require("../../共听app/gateway/netease-catalog").getMvUrl(
+        mvMatch[1]
+      );
+      /* S6 后置：返回 deferred，前端默认不播 */
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 502, {
+        ok: false,
+        error: e.code || "mv_failed",
+        message: e.message || "MV 暂不可用",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/listen/engage") {
     try {
       sendJson(res, 200, engageListen());
@@ -483,7 +1127,41 @@ const server = http.createServer(async (req, res) => {
     try {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
-      sendJson(res, 200, toggleListenFavorite(body.trackId || body.id));
+      const tid = body.trackId || body.id;
+      const local = toggleListenFavorite(tid, {
+        title: body.title || body.name,
+        name: body.name,
+        artist: body.artist,
+        cover: body.cover,
+        provider: body.provider,
+      });
+      let netease = null;
+      const provider = String(body.provider || local.provider || "").toLowerCase();
+      const nid = Math.floor(Number(tid));
+      if (
+        (provider === "netease" || (!provider && Number.isFinite(nid) && nid > 1e5)) &&
+        Number.isFinite(nid) &&
+        nid > 0
+      ) {
+        try {
+          netease = await require("../../共听app/gateway/netease-catalog").likeSong(
+            nid,
+            !!local.liked
+          );
+        } catch (ne) {
+          sendJson(res, 200, {
+            ...local,
+            netease_sync: false,
+            netease_error: (ne && ne.message) || "红心同步网易云失败",
+          });
+          return;
+        }
+      }
+      sendJson(res, 200, {
+        ...local,
+        netease_sync: netease ? true : false,
+        netease,
+      });
     } catch (e) {
       if (e instanceof SyntaxError) {
         sendJson(res, 400, { ok: false, error: "invalid_json" });
@@ -733,6 +1411,16 @@ const server = http.createServer(async (req, res) => {
       delete patch.gate_salt;
       const hasMore = Object.keys(patch).length > 0;
       const s = hasMore ? patchSettings(patch) : readSettings();
+      try {
+        require("../../聊天app/gateway/presence").restartPresenceLoop();
+      } catch (_) {
+        /* presence 可选 */
+      }
+      try {
+        require("../../聊天app/gateway/activity").restartActivityLoop();
+      } catch (_) {
+        /* activity 可选 */
+      }
       sendJson(res, 200, publicSettings(s));
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -1111,8 +1799,21 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/chat/peers") {
+    try {
+      sendJson(res, 200, listPeers());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "chat_peers_failed",
+        message: e.message || "读取会话列表失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/chat/messages") {
-    sendJson(res, 200, listMessages());
+    withPeer(peerFromRequest(req), () => sendJson(res, 200, listMessages()));
     return;
   }
 
@@ -1123,7 +1824,12 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && urlPath === "/api/v1/chat/messages") {
     try {
-      sendJson(res, 200, clearChatMessages());
+      const peer = peerFromRequest(req);
+      sendJson(
+        res,
+        200,
+        withPeer(peer, () => clearChatMessages())
+      );
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
@@ -1136,13 +1842,155 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && urlPath === "/api/v1/chat/mood") {
     try {
-      sendJson(res, 200, getMoodPublic());
+      const peer = peerFromRequest(req);
+      sendJson(res, 200, getMoodPublic({ peerId: peer }));
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
         error: e.code || "mood_failed",
         message: e.message || "读取心情失败",
       });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/memory") {
+    try {
+      const peer = peerFromRequest(req);
+      const sp = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const q = String(sp.get("q") || "").trim();
+      const limit = Number(sp.get("limit") || 80);
+      sendJson(res, 200, listPeerMemories(peer, { limit, q: q || undefined }));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "memory_list_failed",
+        message: e.message || "读取记忆失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/memory") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      sendJson(res, 200, addMemory(peer, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_memory" ? 400 : 500, {
+        ok: false,
+        error: e.code || "memory_add_failed",
+        message: e.message || "写入记忆失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/memory/digest-status") {
+    try {
+      const peer = peerFromRequest(req);
+      sendJson(res, 200, digestStatus(peer));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "digest_status_failed",
+        message: e.message || "读取总结状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/memory/digest") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      const peer = peerFromRequest(req, body);
+      const out = await digestNewMemories(peer);
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const code = e.code || "digest_failed";
+      const status =
+        code === "budget_exhausted"
+          ? 402
+          : code === "bad_memory"
+            ? 400
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: code,
+        message: e.message || "总结记忆失败",
+      });
+    }
+    return;
+  }
+
+  const memUnresolved = urlPath.match(
+    /^\/api\/v1\/chat\/memory\/([^/]+)\/unresolved$/
+  );
+  if (req.method === "PATCH" && memUnresolved) {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      const peer = peerFromRequest(req, body);
+      sendJson(
+        res,
+        200,
+        toggleUnresolved(peer, decodeURIComponent(memUnresolved[1]))
+      );
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "not_found" ? 404 : e.code === "bad_memory" ? 400 : 500,
+        {
+          ok: false,
+          error: e.code || "memory_patch_failed",
+          message: e.message || "更新记忆失败",
+        }
+      );
+    }
+    return;
+  }
+
+  const memOne = urlPath.match(/^\/api\/v1\/chat\/memory\/([^/]+)$/);
+  if (memOne && (req.method === "PUT" || req.method === "DELETE")) {
+    try {
+      const id = decodeURIComponent(memOne[1]);
+      if (req.method === "DELETE") {
+        const peer = peerFromRequest(req);
+        sendJson(res, 200, deleteMemory(peer, id));
+      } else {
+        const raw = await readBody(req);
+        const body = raw ? JSON.parse(raw) : {};
+        const peer = peerFromRequest(req, body);
+        sendJson(res, 200, updateMemory(peer, id, body));
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "not_found" ? 404 : e.code === "bad_memory" ? 400 : 500,
+        {
+          ok: false,
+          error: e.code || "memory_mutate_failed",
+          message: e.message || "操作记忆失败",
+        }
+      );
     }
     return;
   }
@@ -1364,7 +2212,14 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && urlPath === "/api/v1/chat/read") {
     try {
-      sendJson(res, 200, markAllRead());
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      sendJson(
+        res,
+        200,
+        withPeer(peer, () => markAllRead())
+      );
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
@@ -1377,7 +2232,11 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && urlPath === "/api/v1/chat/poke") {
     try {
-      sendJson(res, 200, pokeDaily({}));
+      sendJson(
+        res,
+        200,
+        withPeer(DEFAULT_PEER_ID, () => pokeDaily({}))
+      );
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
@@ -1388,11 +2247,146 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/chat/sentinel/status") {
+    try {
+      const { getPresenceStatus } = require("../../聊天app/gateway/presence");
+      let activity = null;
+      try {
+        activity = require("../../聊天app/gateway/activity").getActivityStatus();
+      } catch (_) {}
+      sendJson(res, 200, { ...getPresenceStatus(), activity });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "sentinel_status_failed",
+        message: e.message || "哨兵状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/activity/status") {
+    try {
+      const { getActivityStatus } = require("../../聊天app/gateway/activity");
+      sendJson(res, 200, getActivityStatus());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "activity_status_failed",
+        message: e.message || "活动状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/sentinel/tick") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { runSentinelTick } = require("../../聊天app/gateway/presence");
+      const out = await runSentinelTick({
+        force: !!(body && body.force),
+        skipCapture: !!(body && body.skipCapture),
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "sentinel_tick_failed",
+        message: e.message || "哨兵 tick 失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/sentinel/logs") {
+    try {
+      const u = new URL(req.url || "/", "http://local");
+      const date = u.searchParams.get("date") || "";
+      const {
+        readMonitorLogs,
+        listMonitorLogDates,
+        localDateISO,
+      } = require("../../聊天app/gateway/monitor-log");
+      const day = date || localDateISO();
+      sendJson(res, 200, {
+        ok: true,
+        date: day,
+        dates: listMonitorLogDates(),
+        logs: readMonitorLogs(day),
+      });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "sentinel_logs_failed",
+        message: e.message || "监控日志读取失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/sentinel/logs/stream") {
+    try {
+      const { subscribeMonitorLogs } = require("../../聊天app/gateway/monitor-log");
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store, no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      if (res.socket && typeof res.socket.setNoDelay === "function") {
+        res.socket.setNoDelay(true);
+      }
+      res.write(":" + " ".repeat(512) + "\n\n");
+      res.write(
+        "data: " + JSON.stringify({ type: "monitor_log_hello", ok: true }) + "\n\n"
+      );
+      const unsub = subscribeMonitorLogs((entry) => {
+        try {
+          res.write(
+            "data: " +
+              JSON.stringify({ type: "monitor_log", data: entry }) +
+              "\n\n"
+          );
+        } catch (_) {}
+      });
+      const ping = setInterval(() => {
+        try {
+          res.write(": ping\n\n");
+        } catch (_) {}
+      }, 25000);
+      const onClose = () => {
+        clearInterval(ping);
+        unsub();
+      };
+      req.on("close", onClose);
+      res.on("close", onClose);
+    } catch (e) {
+      if (!res.headersSent) {
+        sendJson(res, 500, {
+          ok: false,
+          error: e.code || "sentinel_stream_failed",
+          message: e.message || "监控日志流失败",
+        });
+      }
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat/money/claim") {
     try {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
-      sendJson(res, 200, claimIncomingMoney(body && body.id));
+      const mid = body && body.id;
+      sendJson(
+        res,
+        200,
+        withPeer(peerForMessageOp(req, body, mid), () => claimIncomingMoney(mid))
+      );
     } catch (e) {
       if (e instanceof SyntaxError) {
         sendJson(res, 400, { ok: false, error: "invalid_json" });
@@ -1414,9 +2408,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(
         res,
         200,
-        startChatCall(
-          body && body.media,
-          (body && (body.dir || body.direction)) || "out"
+        withPeer(peerFromRequest(req, body), () =>
+          startChatCall(
+            body && body.media,
+            (body && (body.dir || body.direction)) || "out"
+          )
         )
       );
     } catch (e) {
@@ -1428,6 +2424,78 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "chat_call_failed",
         message: e.message || "发起通话失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/tts/status") {
+    sendJson(res, 200, ttsStatus());
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/tts") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const text = String((body && body.text) || "").trim();
+      const audio = await synthesizeSpeech(text);
+      res.writeHead(200, {
+        "Content-Type": audio.contentType || "audio/mpeg",
+        "Cache-Control": "no-store",
+        "X-TTS-Provider": audio.provider || "fish",
+      });
+      res.end(audio.buf);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "tts_not_configured"
+          ? 503
+          : e.code === "tts_empty"
+            ? 400
+            : e.code === "tts_fish_failed"
+              ? 502
+              : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "tts_failed",
+        message: e.message || "朗读失败",
+        fallback: "browser",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/voice-turn") {
+    try {
+      const peer = peerFromRequest(req);
+      const ctype = String(req.headers["content-type"] || "audio/webm");
+      const buf = await readBodyBuffer(req, MEDIA_MAX_BYTES);
+      const result = await withPeer(peer, () =>
+        runVoiceTurn({
+          buf,
+          contentType: ctype,
+          filename: "call.webm",
+        })
+      );
+      if (result && result.used) addTokensUsed(result.used);
+      sendJson(res, 200, result);
+    } catch (e) {
+      const status =
+        e.code === "voice_empty" || e.code === "asr_empty"
+          ? 400
+          : e.code === "llm_not_configured" || e.code === "bad_audio"
+            ? 400
+            : e.code === "asr_failed" || e.code === "asr_unsupported"
+              ? 502
+              : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "voice_turn_failed",
+        message: e.message || "通话回合失败",
       });
     }
     return;
@@ -1592,36 +2660,39 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      if (body.noreply) {
-        sendJson(res, 200, createMessage(body));
-        return;
-      }
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-store, no-cache",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
+      const peer = peerFromRequest(req, body);
+      await withPeer(peer, async () => {
+        if (body.noreply) {
+          sendJson(res, 200, createMessage(body));
+          return;
+        }
+        res.writeHead(200, {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-store, no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        });
+        if (res.socket && typeof res.socket.setNoDelay === "function") {
+          res.socket.setNoDelay(true);
+        }
+        res.write(":" + " ".repeat(2048) + "\n\n");
+        const emit = (obj) =>
+          new Promise((resolve, reject) => {
+            const line = "data: " + JSON.stringify(obj) + "\n\n";
+            const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
+            if (!ok) res.once("drain", resolve);
+          });
+        /* 关键事件后冲一发注释帧，避免 Node/代理把 you 和后续合并缓冲 */
+        const emitFlush = async (obj) => {
+          await emit(obj);
+          await new Promise((resolve, reject) => {
+            const ok = res.write(":\n\n", (err) => (err ? reject(err) : resolve()));
+            if (!ok) res.once("drain", resolve);
+          });
+        };
+        await createMessageWithReplyStream(body, emitFlush);
+        res.end();
       });
-      if (res.socket && typeof res.socket.setNoDelay === "function") {
-        res.socket.setNoDelay(true);
-      }
-      res.write(":" + " ".repeat(2048) + "\n\n");
-      const emit = (obj) =>
-        new Promise((resolve, reject) => {
-          const line = "data: " + JSON.stringify(obj) + "\n\n";
-          const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
-          if (!ok) res.once("drain", resolve);
-        });
-      /* 关键事件后冲一发注释帧，避免 Node/代理把 you 和后续合并缓冲 */
-      const emitFlush = async (obj) => {
-        await emit(obj);
-        await new Promise((resolve, reject) => {
-          const ok = res.write(":\n\n", (err) => (err ? reject(err) : resolve()));
-          if (!ok) res.once("drain", resolve);
-        });
-      };
-      await createMessageWithReplyStream(body, emitFlush);
-      res.end();
     } catch (e) {
       if (e instanceof SyntaxError) {
         if (!res.headersSent) {
@@ -1679,6 +2750,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && regenMatch) {
       try {
         const id = decodeURIComponent(regenMatch[1]);
+        const peer = peerForMessageOp(req, null, id);
+        await withPeer(peer, async () => {
         try {
           assertRegenTarget(id);
         } catch (e) {
@@ -1711,6 +2784,7 @@ const server = http.createServer(async (req, res) => {
           });
         await regenerateMessageStream(id, emit);
         res.end();
+        });
       } catch (e) {
         if (!res.headersSent) {
           sendJson(res, 500, {
@@ -1743,9 +2817,9 @@ const server = http.createServer(async (req, res) => {
       try {
         const raw = await readBody(req);
         const body = raw ? JSON.parse(raw) : {};
-        const msg = setMessageVariant(
-          decodeURIComponent(varMatch[1]),
-          body && body.index
+        const id = decodeURIComponent(varMatch[1]);
+        const msg = withPeer(peerForMessageOp(req, body, id), () =>
+          setMessageVariant(id, body && body.index)
         );
         sendJson(res, 200, { ok: true, message: msg });
       } catch (e) {
@@ -1773,6 +2847,21 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && recallMatch) {
       try {
         const recallId = decodeURIComponent(recallMatch[1]);
+        const raw = await readBody(req);
+        let recallOpts = {};
+        let recallBody = {};
+        try {
+          const o = raw ? JSON.parse(raw) : {};
+          if (o && typeof o === "object") {
+            recallBody = o;
+            if (o.screenshot) recallOpts.screenshotUrl = String(o.screenshot);
+            if (o.force_sight) recallOpts.forceSight = String(o.force_sight);
+          }
+        } catch (_) {
+          recallOpts = {};
+        }
+        const peer = peerForMessageOp(req, recallBody, recallId);
+        await withPeer(peer, async () => {
         const hit = (listMessages().messages || []).find((m) => m && m.id === recallId);
         if (hit && !hit.recalled && recallExpired(hit.ts)) {
           sendJson(res, 400, {
@@ -1781,17 +2870,6 @@ const server = http.createServer(async (req, res) => {
             message: "超过2分钟不能撤回",
           });
           return;
-        }
-        const raw = await readBody(req);
-        let recallOpts = {};
-        try {
-          const o = raw ? JSON.parse(raw) : {};
-          if (o && typeof o === "object") {
-            if (o.screenshot) recallOpts.screenshotUrl = String(o.screenshot);
-            if (o.force_sight) recallOpts.forceSight = String(o.force_sight);
-          }
-        } catch (_) {
-          recallOpts = {};
         }
         res.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
@@ -1811,6 +2889,7 @@ const server = http.createServer(async (req, res) => {
           });
         await recallMessageWithReplyStream(recallId, emit, recallOpts);
         res.end();
+        });
       } catch (e) {
         const bad =
           e.code === "not_found" ||
@@ -1847,10 +2926,9 @@ const server = http.createServer(async (req, res) => {
       try {
         const raw = await readBody(req);
         const body = raw ? JSON.parse(raw) : {};
-        const msg = toggleMessageReaction(
-          decodeURIComponent(reactMatch[1]),
-          body && body.emoji,
-          "you"
+        const id = decodeURIComponent(reactMatch[1]);
+        const msg = withPeer(peerForMessageOp(req, body, id), () =>
+          toggleMessageReaction(id, body && body.emoji, "you")
         );
         sendJson(res, 200, { ok: true, message: msg });
       } catch (e) {
@@ -1880,8 +2958,9 @@ const server = http.createServer(async (req, res) => {
     );
     if (req.method === "POST" && asrMatch) {
       try {
-        const msg = await toggleVoiceTranscript(
-          decodeURIComponent(asrMatch[1])
+        const id = decodeURIComponent(asrMatch[1]);
+        const msg = await withPeer(peerForMessageOp(req, null, id), () =>
+          toggleVoiceTranscript(id)
         );
         sendJson(res, 200, { ok: true, message: msg });
       } catch (e) {
@@ -1911,9 +2990,12 @@ const server = http.createServer(async (req, res) => {
     try {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
-      const out = createPat({
-        target: body && body.target === "you" ? "you" : "bot",
-      });
+      const peer = peerFromRequest(req, body);
+      const out = withPeer(peer, () =>
+        createPat({
+          target: body && body.target === "you" ? "you" : "bot",
+        })
+      );
       sendJson(res, 200, out);
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -1937,10 +3019,12 @@ const server = http.createServer(async (req, res) => {
         const indexRaw = q.get("index");
         const indexOpt =
           indexRaw != null && indexRaw !== "" ? Number(indexRaw) : undefined;
+        const id = decodeURIComponent(delMatch[1]);
+        const peer = peerForMessageOp(req, null, id);
         sendJson(
           res,
           200,
-          deleteMessage(decodeURIComponent(delMatch[1]), indexOpt)
+          withPeer(peer, () => deleteMessage(id, indexOpt))
         );
       } catch (e) {
         const bad =
@@ -3504,6 +4588,31 @@ const server = http.createServer(async (req, res) => {
   sendJson(res, 404, { ok: false, error: "not_found" });
 });
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`gateway listening on http://127.0.0.1:${PORT}`);
+try {
+  require("./ws-hub").attachWsHub(server);
+} catch (e) {
+  console.warn("ws hub skipped:", (e && e.message) || e);
+}
+
+server.listen(PORT, HOST, () => {
+  console.log(`gateway listening on http://${HOST}:${PORT}`);
+  console.log(`websocket on ws://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}/ws`);
+  if (HOST === "0.0.0.0" || HOST === "::") {
+    console.log("LAN bind on: set phone URL to http://<电脑局域网IP>:" + PORT);
+  }
+  try {
+    require("../../聊天app/gateway/presence").restartPresenceLoop();
+  } catch (e) {
+    console.warn("presence loop skipped:", (e && e.message) || e);
+  }
+  try {
+    require("../../聊天app/gateway/activity").restartActivityLoop();
+  } catch (e) {
+    console.warn("activity loop skipped:", (e && e.message) || e);
+  }
+  try {
+    require("../../聊天app/gateway/schedule-monitor").startMonitorLoop();
+  } catch (e) {
+    console.warn("schedule-monitor loop skipped:", (e && e.message) || e);
+  }
 });
