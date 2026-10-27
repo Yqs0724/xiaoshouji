@@ -66,6 +66,8 @@ const DEFAULTS = {
   gate_hash: "",
   gate_salt: "",
   name_user: "你",
+  /** 网名（我/朋友圈展示；空则回落 name_user） */
+  nick_user: "",
   name_bot: "熊",
   avatar_user: "/assets/cafe/avatar-you.png",
   avatar_bot: "/assets/cafe/avatar-bot.png",
@@ -576,6 +578,7 @@ function readSettings() {
     gate_hash: String(file.gate_hash || "").trim(),
     gate_salt: String(file.gate_salt || "").trim(),
     name_user: String(file.name_user || DEFAULTS.name_user).trim() || DEFAULTS.name_user,
+    nick_user: String(file.nick_user || "").trim().slice(0, 32),
     name_bot: String(file.name_bot || DEFAULTS.name_bot).trim() || DEFAULTS.name_bot,
     avatar_user: normalizeAvatar(file.avatar_user, DEFAULTS.avatar_user),
     avatar_bot: normalizeAvatar(file.avatar_bot, DEFAULTS.avatar_bot),
@@ -819,6 +822,9 @@ function patchSettings(patch) {
     else if (typeof v === "string") {
       file.mcp_heartbeat = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
     } else file.mcp_heartbeat = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "nick_user")) {
+    file.nick_user = String(patch.nick_user || "").trim().slice(0, 32);
   }
   if (Object.prototype.hasOwnProperty.call(patch, "avatar_user")) {
     file.avatar_user = normalizeAvatar(patch.avatar_user, file.avatar_user || DEFAULTS.avatar_user);

@@ -4,7 +4,8 @@
 > API / 工具名为**建议名**，可改；**不可**偷加 PRD 没有的产品能力。  
 > 共读网关现状以 `apps/共读app/Tech-Design.md` + 现行代码为准；本文描述**扩展**，不另起第二网关。  
 > **2026-10-11 补丁**：日常聊天工具循环与外接 MCP **客户端**已落地（见下 §3.3 / §5 注）。  
-> **2026-10-20 补丁**：`kind:sys` 灰字回执（含 list 时补种）；红包竖版 GIF 开箱；转账 `payload.is_receipt`；相册多图 `noreply`+末条 SSE；`maybeBotMoney` 语境触发与 bot 余额不足补发；位置底表；文件 `payload.text` 摘录；音乐 `fromPresence`；`POST …/transcribe` → `{llm_base}/audio/transcriptions`；语音气泡外挂转文字；聊天记录在会话 ···；字段以实现与 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md) 为准。
+> **2026-10-20 补丁**：`kind:sys` 灰字回执（含 list 时补种）；红包竖版 GIF 开箱；转账 `payload.is_receipt`；相册多图 `noreply`+末条 SSE；`maybeBotMoney` 语境触发与 bot 余额不足补发；位置底表；文件 `payload.text` 摘录；音乐 `fromPresence`；`POST …/transcribe` → `{llm_base}/audio/transcriptions`；语音气泡外挂转文字；聊天记录在会话 ···；字段以实现与 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md) 为准。  
+> **2026-10-27 指针**：查手机 `/api/v1/phone/*` · `/api/v1/bot-phone*`、IB H/M/D1、桌面 `desk_layout` 等**不在本文展开**；勾选与字段真源仍是聊天/母仓落地进度 + 现行网关代码。
 
 ---
 

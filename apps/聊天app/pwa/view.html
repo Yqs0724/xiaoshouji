@@ -55,13 +55,13 @@
           <div class="chat-drawer-weather-main" id="chatDrawerWeatherMain">天气加载中…</div>
           <div class="chat-drawer-weather-sub" id="chatDrawerWeatherSub">设定手动城市或开定位后显示</div>
         </div>
-        <div class="chat-me-head">
+        <button type="button" class="chat-me-head" id="btnChatMeHead" aria-label="我的资料">
           <div class="av av-frame-full"><img id="chatMeAv" src="/assets/cafe/avatar-you.png" alt="" /></div>
           <div>
-            <div class="nm">你</div>
-            <div class="id">微信号</div>
+            <div class="nm" id="chatMeNm">你</div>
+            <div class="id" id="chatMeId">点头像改资料</div>
           </div>
-        </div>
+        </button>
         <div class="chat-menu">
           <button type="button" id="btnChatWallet">
             <span class="ico">¥</span><span class="lab">微信钱包</span><span class="chev">›</span>
@@ -108,6 +108,49 @@
         <button type="button" class="cancel" id="btnChatShellSearchClose">取消</button>
       </div>
       <div class="chat-ov-pad" id="chatShellSearchHits"></div>
+    </div>
+
+    <div class="chat-overlay" id="chatOvMeProfile" hidden>
+      <header class="chat-top">
+        <button type="button" class="chat-top-side left" id="btnChatMeProfileBack" aria-label="返回">←</button>
+        <span class="chat-top-title">我的资料</span>
+        <button type="button" class="chat-top-side right chat-top-text" id="btnChatMeProfileSave">保存</button>
+      </header>
+      <div class="chat-ov-pad chat-persona-pad">
+        <div class="chat-peer-head">
+          <button type="button" class="chat-peer-av-wrap av-frame-full chat-me-av-btn" id="btnChatMeAvPick" aria-label="换头像">
+            <img id="chatMeProfileAv" src="/assets/cafe/avatar-you.png" alt="" />
+          </button>
+          <div class="chat-peer-meta">
+            <div class="nm" id="chatMeProfileTitle">你</div>
+            <div class="sub">点头像换图 · 预设或相册</div>
+          </div>
+        </div>
+        <input type="file" id="chatMeAvFile" accept="image/*" hidden />
+        <div class="chat-me-av-presets" id="chatMeAvPresets" role="listbox" aria-label="头像预设"></div>
+        <label class="chat-persona-lab" for="chatMeNickInput">网名</label>
+        <input
+          type="text"
+          id="chatMeNickInput"
+          class="chat-note-input"
+          maxlength="32"
+          autocomplete="off"
+          placeholder="列表和「我」页怎么显示"
+          aria-label="网名"
+        />
+        <p class="chat-hint-line">空着则用正式名。</p>
+        <label class="chat-persona-lab" for="chatMeNameInput">正式名</label>
+        <input
+          type="text"
+          id="chatMeNameInput"
+          class="chat-note-input"
+          maxlength="32"
+          autocomplete="off"
+          placeholder="家机怎么叫你"
+          aria-label="正式名"
+        />
+        <p class="chat-hint-line">写入小屋设定，对话里按这个称呼你。</p>
+      </div>
     </div>
 
     <div class="chat-overlay" id="chatOvProfile" hidden>
@@ -598,6 +641,10 @@
         <button type="button" class="chat-pref-row" data-peer-act="profile">
           <span class="lab">资料</span>
           <span class="chev">›</span>
+        </button>
+        <button type="button" class="chat-pref-row" data-peer-act="bot-phone" id="btnChatPeerBotPhone">
+          <span class="lab">查看 TA 的手机</span>
+          <span class="hint">反查 · 会留痕</span>
         </button>
         <button type="button" class="chat-pref-row" data-peer-act="world">
           <span class="lab">世界书</span>

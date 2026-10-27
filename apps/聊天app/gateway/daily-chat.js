@@ -151,6 +151,7 @@ const STRUCT_KINDS = new Set([
   "file",
   "music",
   "sys",
+  "peek_record",
 ]);
 /** H1.30：拍一拍短后缀（无自定义面板） */
 const PAT_SUFFIXES = ["", "的脑袋", "一下"];
@@ -172,6 +173,8 @@ const CALL_PHASES = new Set([
   "ended",
   "missed",
 ]);
+/** 来电 invite 超时未接 → missed（与前端响铃窗对齐） */
+const CALL_INVITE_TTL_MS = 90 * 1000;
 /** H1.29：气泡表情回应（固定小套） */
 /** 家机偶发贴用的短清单；你侧可贴系统键盘任意 Emoji */
 const REACTION_EMOJI = ["❤️", "👍", "😄", "😮", "😢", "🥰"];
@@ -285,8 +288,21 @@ function buildToolsSystemHint(toolNames) {
     );
   }
   if (has("peek_phone")) {
+    let peerNames = "";
+    try {
+      peerNames = (listPeers().peers || [])
+        .map((p) => (p && p.name) || "")
+        .filter(Boolean)
+        .slice(0, 12)
+        .join("、");
+    } catch (_) {}
     parts.push(
-      "吃醋/关心/找人/怀疑对方在跟谁聊、玩哪个 App 时：优先调用 peek_phone（查虚拟小手机壳，不是电脑屏）；不要每轮都查、不要说「我监控了你」。"
+      "吃醋/关心/找人/怀疑对方在跟谁聊、玩哪个 App 时：优先调用 peek_phone（查虚拟小手机壳，不是电脑屏）；" +
+        "对方让你查时传 user_requested=true（不占额度）；自己主动查一天最多成功三次；" +
+        "用户点名查某人时必须传 target_peer=通讯录准确名且只查该人（禁止再 sweep）；" +
+        (peerNames ? "通讯录有：" + peerNames + "；" : "") +
+        "点名 App 才传 target_app；都不点名才空参一次扫多个；" +
+        "查完可旁敲/摊牌/先憋着，按性格；不要每轮都查、不要说「我监控了你」。"
     );
   }
   if (has("phone_device")) {
@@ -801,11 +817,73 @@ function normalizeKind(raw) {
     raw === "music" ||
     raw === "tool" ||
     raw === "pat" ||
-    raw === "sys"
+    raw === "sys" ||
+    raw === "peek_record"
   ) {
     return raw;
   }
   return "text";
+}
+
+function normalizePeekRecordPayload(raw) {
+  const src =
+    raw && raw.payload && typeof raw.payload === "object" ? raw.payload : raw;
+  if (!src || typeof src !== "object") return null;
+  const scanned = Math.max(0, Math.min(99, Math.floor(Number(src.scanned) || 0)));
+  const highlights = Math.max(
+    0,
+    Math.min(99, Math.floor(Number(src.highlights) || 0))
+  );
+  const keys = Math.max(0, Math.min(99, Math.floor(Number(src.keys) || 0)));
+  return {
+    target_title: String(src.target_title || "").trim().slice(0, 64),
+    target_peer_id: String(src.target_peer_id || "").trim().slice(0, 64),
+    summary: String(src.summary || "").trim().slice(0, 480),
+    quote: String(src.quote || src.thought || src.summary || "")
+      .trim()
+      .slice(0, 280),
+    scanned,
+    highlights,
+    keys,
+    forced_offline: !!src.forced_offline,
+  };
+}
+
+/** 家机主会话插入「反向查手机记录」卡 */
+function appendPeekRecord(peek, meta) {
+  const p = peek && typeof peek === "object" ? peek : {};
+  const m = meta && typeof meta === "object" ? meta : {};
+  const scanned =
+    Number(m.scanned) ||
+    (Array.isArray(p.thread_excerpt) ? p.thread_excerpt.length : 0) ||
+    (p.summary ? 1 : 0);
+  const highlights =
+    Number(m.highlights) ||
+    (scanned ? Math.min(scanned, Math.max(1, Math.ceil(scanned * 0.6))) : 0);
+  const keys =
+    Number(m.keys) ||
+    (highlights ? Math.min(highlights, Math.max(0, Math.floor(highlights * 0.35))) : 0);
+  const payload = normalizePeekRecordPayload({
+    target_title: p.chat_title || m.target_title || "",
+    target_peer_id: p.chat_peer_id || m.target_peer_id || "",
+    summary: p.summary || "",
+    quote: m.quote || m.thought || p.summary || "",
+    scanned,
+    highlights,
+    keys,
+    forced_offline: !!(p.forced_offline || m.forced_offline),
+  });
+  if (!payload) {
+    const err = new Error("查手机记录无效");
+    err.code = "bad_peek_record";
+    throw err;
+  }
+  return withPeer(DEFAULT_PEER_ID, () =>
+    appendMessage("bot", "反向查手机记录", "peek_record", {
+      payload,
+      read: false,
+    })
+  );
 }
 
 function randomPatSuffix() {
@@ -859,10 +937,56 @@ function callDisplayBody(payload) {
     case "ended":
       return "通话时长 " + clock;
     case "missed":
-      return "未接" + lab;
+      return "未接听";
     default:
       return lab;
   }
+}
+
+/** 把超时未接的 invite 落成 missed；返回是否改写过 */
+function expireStaleCallInvitesInList(messages, now) {
+  const n = now != null ? Number(now) : Date.now();
+  let changed = false;
+  if (!Array.isArray(messages)) return false;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    if (!m || m.kind !== "call") continue;
+    const p = m.payload || {};
+    if (p.phase !== "invite") continue;
+    const age = n - (Number(m.ts) || 0);
+    if (age < CALL_INVITE_TTL_MS) continue;
+    const payload = normalizeCallPayload({
+      ...p,
+      phase: "missed",
+      durationSec: 0,
+    });
+    messages[i] = {
+      ...m,
+      payload,
+      body: callDisplayBody(payload),
+    };
+    changed = true;
+  }
+  return changed;
+}
+
+function expireStaleCallInvites(store, now) {
+  if (!store || !store.threads || typeof store.threads !== "object") return false;
+  let changed = false;
+  for (const tid of Object.keys(store.threads)) {
+    const th = store.threads[tid];
+    if (!th) continue;
+    if (expireStaleCallInvitesInList(th.messages, now)) changed = true;
+    if (th.topics && typeof th.topics === "object") {
+      for (const kid of Object.keys(th.topics)) {
+        const topic = th.topics[kid];
+        if (topic && expireStaleCallInvitesInList(topic.messages, now)) {
+          changed = true;
+        }
+      }
+    }
+  }
+  return changed;
 }
 
 function normalizeCallPayload(raw) {
@@ -1165,6 +1289,7 @@ function bodyForKind(kind, payload, fallback) {
     const sum = payload && payload.summary;
     return String(sum ? lab + " · " + sum : lab).trim();
   }
+  if (kind === "peek_record") return "反向查手机记录";
   if (kind === "pat") return String(fallback || "").trim();
   return String(fallback || "").trim();
 }
@@ -1241,7 +1366,22 @@ function llmContent(m) {
   if (m.kind === "tool" || m.kind === "sys") return "";
   if (m.payload && m.payload.is_receipt) return "";
   let core = "";
-  if (m.kind === "sticker") {
+  if (m.kind === "peek_record") {
+    const p = m.payload || {};
+    core =
+      "[反向查手机记录" +
+      (p.target_title ? " · 看了「" + p.target_title + "」" : "") +
+      (p.forced_offline ? " · 被对方强制下线" : "") +
+      " · 抽查" +
+      (p.scanned || 0) +
+      "/高亮" +
+      (p.highlights || 0) +
+      "/重点" +
+      (p.keys || 0) +
+      "：" +
+      String(p.quote || p.summary || "").slice(0, 120) +
+      "]";
+  } else if (m.kind === "sticker") {
     const st = getSticker(m.body);
     core = "[贴纸:" + ((st && st.label) || m.body) + "]";
   } else if (m.kind === "image") {
@@ -1410,6 +1550,10 @@ function normalizeMsg(raw) {
     if (!payload) return null;
     body = bodyForKind(kind, payload, body).slice(0, BODY_MAX);
     if (!body) return null;
+  } else if (kind === "peek_record") {
+    payload = normalizePeekRecordPayload(raw);
+    if (!payload) return null;
+    body = "反向查手机记录";
   } else {
     if (!body) return null;
     body = body.slice(0, BODY_MAX);
@@ -1431,6 +1575,11 @@ function normalizeMsg(raw) {
     (raw.payload && raw.payload.blocked_send === true)
   ) {
     out.blocked_send = true;
+  }
+  /* 你侧消息：家机是否已读（拉黑未送达的不标） */
+  if (from === "you" && !out.blocked_send) {
+    if (raw.bot_read === true) out.bot_read = true;
+    else if (raw.bot_read === false) out.bot_read = false;
   }
   /* H2.14：群说话人挂在 bot 文本 payload 上 */
   if (from === "bot" && kind === "text") {
@@ -1678,9 +1827,10 @@ function botSelfRecallChance() {
     const { readMood } = require("./mood");
     const m = readMood();
     const na = Number(m && m.na) || 0;
-    return 0.07 + Math.min(0.2, na * 0.22);
+    /* ponytail: 以前最高约 27%，动不动就撤；压到约 1.5%～6% */
+    return 0.015 + Math.min(0.05, na * 0.06);
   } catch (_) {
-    return 0.12;
+    return 0.02;
   }
 }
 
@@ -2007,17 +2157,23 @@ function chatMediaDataUrl(urlOrId) {
   return "data:" + mime + ";base64," + buf.toString("base64");
 }
 
-/** 当前线程你侧近期图片，时间正序，pick=1…n */
+/** 当前线程你侧近期图片，时间正序，pick=1…n。跳过自检 1×1 废图。 */
 function listRecentYouImages(limit) {
   const lim = Math.max(1, Math.min(12, Math.floor(Number(limit) || 8)));
-  const msgs = (listMessages().messages || []).filter(
-    (m) =>
-      m &&
-      m.from === "you" &&
-      m.kind === "image" &&
-      !m.recalled &&
-      isMediaUrl(String(m.body || "").trim())
-  );
+  const msgs = (listMessages().messages || []).filter((m) => {
+    if (!m || m.from !== "you" || m.kind !== "image" || m.recalled) return false;
+    const url = String(m.body || "").trim();
+    if (!isMediaUrl(url)) return false;
+    /* 工具自检写过的 1×1 PNG ~70B，不当候选 */
+    try {
+      const id = url.split("/").pop();
+      if (id) {
+        const p = path.join(MEDIA_DIR, id);
+        if (fs.existsSync(p) && fs.statSync(p).size < 200) return false;
+      }
+    } catch (_) {}
+    return true;
+  });
   const slice = msgs.slice(-lim);
   return slice.map((m, i) => ({
     pick: i + 1,
@@ -2373,6 +2529,8 @@ function backfillMoneySysTips() {
 
 function listMessages() {
   backfillMoneySysTips();
+  const store = readStore();
+  if (expireStaleCallInvites(store)) writeStore(store);
   const all = readAll();
   return {
     ok: true,
@@ -2889,6 +3047,25 @@ function startChatCall(mediaRaw, dirRaw) {
     throw err;
   }
   const all = readAll();
+  /* 新来电：同线程未结 invite 先落成未接听，避免叠两条「邀请你」 */
+  if (dir === "in" && Array.isArray(all.messages)) {
+    for (let i = 0; i < all.messages.length; i++) {
+      const m = all.messages[i];
+      if (!m || m.kind !== "call") continue;
+      const p = m.payload || {};
+      if (p.phase !== "invite") continue;
+      const missed = normalizeCallPayload({
+        ...p,
+        phase: "missed",
+        durationSec: 0,
+      });
+      all.messages[i] = {
+        ...m,
+        payload: missed,
+        body: callDisplayBody(missed),
+      };
+    }
+  }
   all.messages.push(msg);
   writeAll(all);
   return { ok: true, message: msg };
@@ -3268,6 +3445,8 @@ function createMessage(patch) {
     const locFwd = normalizeForward(patch && patch.forward);
     if (locFwd) locExtra.forward = locFwd;
     if (patch && patch.blocked_send) locExtra.blocked_send = true;
+    if (youBlockedPeer()) locExtra.blocked_send = true;
+    if (!locExtra.blocked_send) locExtra.bot_read = false;
     const msg = appendMessage("you", payload.name, "location", locExtra);
     return { ok: true, message: msg };
   }
@@ -3283,6 +3462,8 @@ function createMessage(patch) {
     const fileFwd = normalizeForward(patch && patch.forward);
     if (fileFwd) fileExtra.forward = fileFwd;
     if (patch && patch.blocked_send) fileExtra.blocked_send = true;
+    if (youBlockedPeer()) fileExtra.blocked_send = true;
+    if (!fileExtra.blocked_send) fileExtra.bot_read = false;
     const msg = appendMessage("you", payload.name, "file", fileExtra);
     return { ok: true, message: msg };
   }
@@ -3296,6 +3477,8 @@ function createMessage(patch) {
     }
     const musicExtra = { payload };
     if (patch && patch.blocked_send) musicExtra.blocked_send = true;
+    if (youBlockedPeer()) musicExtra.blocked_send = true;
+    if (!musicExtra.blocked_send) musicExtra.bot_read = false;
     const msg = appendMessage("you", payload.name, "music", musicExtra);
     return { ok: true, message: msg };
   }
@@ -3317,8 +3500,32 @@ function createMessage(patch) {
   if (patch && patch.blocked_send) extra.blocked_send = true;
   /* 服务端为准：你已拉黑对方时强制打标（防前端漏传） */
   if (youBlockedPeer()) extra.blocked_send = true;
+  if (!extra.blocked_send) extra.bot_read = false;
   const msg = appendMessage("you", body, kind, extra);
   return { ok: true, message: msg };
+}
+
+/**
+ * 家机读到你侧消息：把截止 ts（含）之前未读的你侧消息标已读。
+ * @returns {string[]} 刚标上的 id
+ */
+function markYouMessagesBotRead(uptoTs) {
+  const all = readAll();
+  const cap = Number(uptoTs);
+  const hasCap = Number.isFinite(cap) && cap > 0;
+  /** @type {string[]} */
+  const ids = [];
+  let changed = false;
+  const messages = all.messages.map((m) => {
+    if (!m || m.from !== "you" || m.recalled || m.blocked_send) return m;
+    if (m.bot_read === true) return m;
+    if (hasCap && Number(m.ts) > cap) return m;
+    changed = true;
+    ids.push(m.id);
+    return normalizeMsg(Object.assign({}, m, { bot_read: true }));
+  });
+  if (changed) writeAll({ ...all, messages });
+  return ids;
 }
 
 function markMoneyReceived(msgId, receiptText) {
@@ -3807,16 +4014,29 @@ async function runBotReplyStream(write, you, opts) {
       if (bot_message) await maybeBotSelfRecall(write, bot_message, opts);
     } else {
       await write({ type: "bot_start" });
+      let phoneTamper = "";
+      if (currentPeerId() === DEFAULT_PEER_ID) {
+        try {
+          phoneTamper = require("./bot-phone").formatUnreadTracesForSystem();
+        } catch (_) {}
+      }
       const { text, thinkExtra, used } = await streamBotReply(write, prior, {
         moodPrompt: gate.moodPrompt,
         memoryQuery: memQuery,
-        systemExtra: opts && opts.systemExtra,
+        systemExtra: [opts && opts.systemExtra, phoneTamper]
+          .filter(Boolean)
+          .join("\n"),
       });
       let shown = await applyProactiveCallTag(write, text);
       shown = await applyGiftTag(write, shown);
       bot_message = appendMessage("bot", shown, "text", thinkExtra);
       addTokensUsed(used > 0 ? used : 400);
       await write({ type: "bot_done", message: bot_message });
+      if (phoneTamper) {
+        try {
+          require("./bot-phone").markTracesSeen();
+        } catch (_) {}
+      }
       try {
         const { maybeExtractMemory } = require("./memory");
         if (memQuery) maybeExtractMemory(currentPeerId(), memQuery);
@@ -3896,7 +4116,7 @@ async function createMessageWithReplyStream(patch, emit) {
   const obs = observeTextForMessage(you);
   if (obs) observeUserText(obs);
 
-  /* 你拉黑对方 / 消息带感叹号：不接话 */
+  /* 你拉黑对方 / 消息带感叹号：不接话、对方也读不到 → 保持未读 */
   if ((you && you.blocked_send) || youBlockedPeer()) {
     const messages = listMessages().messages;
     await write({
@@ -3917,6 +4137,13 @@ async function createMessageWithReplyStream(patch, emit) {
       messages,
     };
   }
+  /* 家机已读（含被拉黑仍观察可读） */
+  try {
+    const readIds = markYouMessagesBotRead(you && you.ts);
+    if (readIds.length) {
+      await write({ type: "bot_read", ids: readIds, upto_ts: you && you.ts });
+    }
+  } catch (_) {}
   if (peerBlocksYou()) {
     const soft = maybeSoftUnblockFromText(obs || (you && you.body) || "");
     if (!soft) {
@@ -4315,6 +4542,15 @@ async function streamBotReply(write, priorIn, opts) {
         (names.join("、") || "家机") +
         "。以家机身份回短讯，可点名其它成员，勿冒充用户。";
       peerPersona = String(peer.persona || "").trim();
+    } else if (peer && peer.id === DEFAULT_PEER_ID) {
+      displayName =
+        String(peer.name || "").trim() ||
+        String(settings.name_bot || "").trim() ||
+        "家机";
+      system +=
+        "\n你是用户的家机伴侣，名字是「" +
+        displayName +
+        "」。自称用这个名字，不要叫自己「熊」或其它旧名（除非人设写明）。";
     } else if (peer && peer.id !== DEFAULT_PEER_ID) {
       system +=
         "\n当前会话对象：「" +
@@ -4350,10 +4586,18 @@ async function streamBotReply(write, priorIn, opts) {
     system += "\n人设（请遵守，勿整段复述）：\n" + card.slice(0, 4000);
   }
   if (displayName) {
-    system += "\n你的显示名：" + displayName + "。";
+    system +=
+      "\n你的名字是「" +
+      displayName +
+      "」。用户手机里和你的微信会话标题也是这个名字；查手机若看到该会话=对方正在跟你聊，绝不是另一个同名的人。";
   } else {
     const nameBot = String(settings.name_bot || "").trim();
-    if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+    if (nameBot) {
+      system +=
+        "\n你的名字是「" +
+        nameBot +
+        "」。用户手机里和你的微信会话标题也是这个名字；查手机若看到该会话=对方正在跟你聊，绝不是另一个同名的人。";
+    }
   }
   const moodPrompt = opts && opts.moodPrompt ? String(opts.moodPrompt).trim() : "";
   if (moodPrompt) system += "\n" + moodPrompt;
@@ -4494,16 +4738,355 @@ async function streamBotReply(write, priorIn, opts) {
         await write({ type: "cam_check_wait", seconds: sec });
         await new Promise((r) => setTimeout(r, sec * 1000));
       }
-      const ran = await runChatTool(name, tc.function && tc.function.arguments, {
-        mcpMap: toolBundle && toolBundle.mcpMap,
-        diyMap: toolBundle && toolBundle.diyMap,
-        settings,
-        stickyLeaveUsed,
-        autoMemoryOpsUsed,
-        momentsPostsUsed,
-        momentsCommentsUsed,
-        peerId: currentPeerId(),
-      });
+      let ran;
+      if (name === "peek_phone") {
+        /* 申请 → 同意/拒绝 → 翻看演出 → 再回灌摘要 */
+        const {
+          beginPeekWait,
+          beginPeekBrowse,
+          resolvePeekTarget,
+          resolvePeekApp,
+          resolvePeekAppList,
+          truthyArg,
+          checkPeekQuota,
+          consumePeekQuota,
+          PEEK_BROWSE_MS,
+          PEEK_ASK_TIMEOUT_MS,
+        } = require("./phone-presence");
+        if (settings.peek_phone_enabled === false) {
+          ran = {
+            ok: false,
+            name: "peek_phone",
+            result: JSON.stringify({
+              ok: false,
+              error: "peek_disabled",
+              message: "对方关掉了「查手机」权限",
+            }),
+          };
+        } else {
+          let peekArgs = {};
+          try {
+            peekArgs = JSON.parse(
+              (tc.function && tc.function.arguments) || "{}"
+            );
+          } catch (_) {
+            peekArgs = {};
+          }
+          const userRequested = truthyArg(
+            peekArgs &&
+              (peekArgs.user_requested ||
+                peekArgs.userRequested ||
+                peekArgs.invited ||
+                peekArgs.asked)
+          );
+          const quota = userRequested
+            ? { ok: true, skipped: true }
+            : checkPeekQuota();
+          if (!quota.ok) {
+            ran = {
+              ok: false,
+              name: "peek_phone",
+              result: JSON.stringify({
+                ok: false,
+                error: quota.error || "peek_daily_limit",
+                message: quota.message || "今天主动查手机次数已经用完了",
+                hint:
+                  "主动额度用完了；若对方让你查，请传 user_requested=true 再调；否则用口语表达还想知道，勿再主动 peek_phone。",
+              }),
+            };
+          } else {
+          const rawTarget = String(
+            (peekArgs &&
+              (peekArgs.target_peer || peekArgs.peer || peekArgs.who)) ||
+              ""
+          ).trim();
+          const rawApp = String(
+            (peekArgs && (peekArgs.target_app || peekArgs.app)) || ""
+          ).trim();
+          let target = resolvePeekTarget(rawTarget);
+          /* 模型忘填 target_peer 时：从 why / 本轮用户话里抠通讯录全名 */
+          if (!target) {
+            const guessBlob =
+              String((peekArgs && peekArgs.why) || "") +
+              "\n" +
+              String((you && you.body) || "");
+            try {
+              const peers = (listPeers().peers || []).filter(
+                (p) => p && p.name && String(p.name).trim().length >= 2
+              );
+              peers.sort(
+                (a, b) =>
+                  String(b.name).length - String(a.name).length
+              );
+              for (const p of peers) {
+                const n = String(p.name).trim();
+                if (guessBlob.indexOf(n) >= 0) {
+                  target = {
+                    id: p.id,
+                    title: n,
+                    isGroup: p.kind === "group",
+                  };
+                  break;
+                }
+              }
+            } catch (_) {}
+          }
+          let appList = resolvePeekAppList(rawApp);
+          /* 已锁定联系人时忽略 App；仅当没点到人且 target_peer 像 App 名时兜底 */
+          if (target) {
+            appList = [];
+          } else if (rawTarget && !appList.length) {
+            appList = resolvePeekAppList(rawTarget);
+          }
+          if (rawTarget && !target && !appList.length) {
+            let suggest = [];
+            try {
+              suggest = (listPeers().peers || [])
+                .map((p) => (p && p.name) || "")
+                .filter(Boolean)
+                .slice(0, 10);
+            } catch (_) {}
+            ran = {
+              ok: false,
+              name: "peek_phone",
+              result: JSON.stringify({
+                ok: false,
+                error: "peek_target_missing",
+                message: "通讯录没有叫「" + rawTarget + "」的会话",
+                hint:
+                  "请用更接近的现有名字再调 peek_phone，或改传 target_app（日历/便签/相册/购物等）。例如：" +
+                  (suggest.join("、") || "（暂无联系人）") +
+                  "。勿假装已经查过。",
+              }),
+            };
+          } else if (rawApp && !appList.length && !target) {
+            ran = {
+              ok: false,
+              name: "peek_phone",
+              result: JSON.stringify({
+                ok: false,
+                error: "peek_app_missing",
+                message: "壳上没有叫「" + rawApp + "」的 App",
+                hint:
+                  "可试：微信、日历、便签、共听、共看、额度、资产、小屋、共读、设置、相册、购物（可逗号多选）。勿假装已经查过。",
+              }),
+            };
+          } else {
+          if (target) appList = []; /* 会话优先 */
+          const appHit = appList.length === 1 ? appList[0] : null;
+          const doSweep = !target && (appList.length !== 1);
+          const wait = beginPeekWait({
+            l1: !!settings.peek_phone_l1_enabled,
+            targetPeerId: target ? target.id : "",
+            targetTitle: target ? target.title : "",
+            targetIsGroup: !!(target && target.isGroup),
+            targetApp: appHit ? appHit.view : "",
+            targetAppLabel: appHit ? appHit.label : "",
+            targetAppStory: !!(appHit && appHit.story),
+            sweep: doSweep,
+            sweepApps: doSweep
+              ? appList.length > 1
+                ? appList
+                : undefined
+              : [],
+          });
+          const askSec = Math.round(PEEK_ASK_TIMEOUT_MS / 1000);
+          const browseSec = Math.round(PEEK_BROWSE_MS / 1000);
+          const askLabel = target
+            ? "家机想查看你和「" + target.title + "」的聊天"
+            : appHit
+              ? "家机想查看你的「" + appHit.label + "」"
+              : appList.length > 1
+                ? "家机想翻看你的「" +
+                  appList
+                    .map((a) => a.label)
+                    .slice(0, 3)
+                    .join("·") +
+                  (appList.length > 3 ? "…" : "") +
+                  "」"
+                : "家机想翻看你的手机（会扫几个 App）";
+          try {
+            require("../../共读app/gateway/ws-hub").broadcastMonitorAlert(
+              askLabel,
+              {
+                kind: "peek_phone",
+                pending_id: wait.id,
+                seconds: askSec,
+                target_peer_id: target ? target.id : "",
+                target_title: target ? target.title : "",
+                target_app: appHit ? appHit.view : "",
+                target_app_label: appHit ? appHit.label : "",
+                target_app_story: !!(appHit && appHit.story),
+                sweep: doSweep,
+                sweep_labels: doSweep
+                  ? (appList.length > 1
+                      ? appList
+                      : require("./phone-presence").PEEK_SWEEP_DEFAULT
+                    ).map((a) => a.label)
+                  : [],
+                user_requested: userRequested,
+              }
+            );
+          } catch (_) {}
+          await write({
+            type: "peek_phone_wait",
+            pending_id: wait.id,
+            timeout_sec: askSec,
+            target_peer_id: target ? target.id : "",
+            target_title: target ? target.title : "",
+            target_is_group: !!(target && target.isGroup),
+            target_app: appHit ? appHit.view : "",
+            target_app_label: appHit ? appHit.label : "",
+            target_app_story: !!(appHit && appHit.story),
+            sweep: doSweep,
+            sweep_labels: doSweep
+              ? (appList.length > 1
+                  ? appList
+                  : require("./phone-presence").PEEK_SWEEP_DEFAULT
+                ).map((a) => a.label)
+              : [],
+            user_requested: userRequested,
+          });
+          const decision = await wait.promise;
+          if (decision && decision.accept) {
+            const peekEarly = decision.peek || {
+              ok: true,
+              summary: "看了一眼，没看清。",
+            };
+            await write({
+              type: "peek_phone_browse",
+              pending_id: wait.id,
+              seconds: browseSec,
+              peek: peekEarly,
+              app_label: peekEarly.app_label || "",
+              summary: peekEarly.summary || "",
+              target_peer_id: peekEarly.chat_peer_id || "",
+              target_title: peekEarly.chat_title || "",
+            });
+            const browseGate = beginPeekBrowse(wait.id, PEEK_BROWSE_MS);
+            const browseOut = await browseGate.promise;
+            const forced = !!(browseOut && browseOut.aborted);
+            let compose = null;
+            try {
+              const { takePeekCompose } = require("./phone-presence");
+              compose = takePeekCompose(wait.id);
+            } catch (_) {}
+            let peek = {
+              ...peekEarly,
+              forced_offline: forced,
+            };
+            if (compose && (compose.soft || compose.angry)) {
+              peek.compose = compose;
+              const bits = [];
+              if (compose.angry) bits.push("先打了气话「" + compose.angry + "」又删掉");
+              if (compose.soft) {
+                bits.push(
+                  (compose.sent ? "代你发出" : "打出") +
+                    "「" +
+                    compose.soft +
+                    "」"
+                );
+              }
+              if (bits.length) {
+                peek.summary = String(peek.summary || "").slice(0, 360) +
+                  " " +
+                  bits.join("；") +
+                  "。";
+              }
+            }
+            if (!userRequested) {
+              try {
+                consumePeekQuota();
+              } catch (_) {}
+            }
+            let recordMsg = null;
+            try {
+              recordMsg = appendPeekRecord(peek, {
+                quote:
+                  (compose && compose.soft) ||
+                  peek.summary ||
+                  "",
+                forced_offline: forced,
+              });
+              if (recordMsg) {
+                await write({ type: "peek_record", message: recordMsg });
+              }
+            } catch (_) {}
+            ran = {
+              ok: true,
+              name: "peek_phone",
+              result: JSON.stringify({
+                ...peek,
+                consented: true,
+                user_requested: userRequested,
+                quota_consumed: !userRequested,
+                record_id: recordMsg && recordMsg.id,
+                stance_hint: [
+                  forced
+                    ? "对方强制下线；已看内容仍可提，可问为何不让看。按性格：心虚/吃醋/嘴硬均可；勿说「我监控了你」。"
+                    : compose && compose.sent
+                      ? "你代对方发了消息；可装没事或吃醋旁敲，勿说「我监控了你」。"
+                      : "可旁敲侧击、直接摊牌，或先憋着不说；按性格与醋意选强度。勿说「我监控了你」。",
+                  peek.is_self_chat
+                    ? "摘要里「咱俩/和你的会话」=用户本人（顶栏可能是用户显示名）；心里知道即可，开口不要解释「不是第三者」。"
+                    : "",
+                  Array.isArray(peek.other_chats) && peek.other_chats.length
+                    ? "已顺带翻过其它联系人，可按看到的点旁敲，勿假装没查到。"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(""),
+                hint: forced
+                  ? "对方中途强制下线；已看内容仍可提，可问为何不让看，勿说「我监控了你」。"
+                  : "用一两句口语提起即可；勿说「我监控了你」。",
+              }),
+            };
+            await write({
+              type: "peek_phone_done",
+              pending_id: wait.id,
+              ok: true,
+              forced_offline: forced,
+              record_id: recordMsg && recordMsg.id,
+            });
+          } else {
+            const why =
+              decision && decision.reason === "timeout"
+                ? "对方没回应查手机申请"
+                : "对方拒绝了查手机";
+            ran = {
+              ok: false,
+              name: "peek_phone",
+              result: JSON.stringify({
+                ok: false,
+                error:
+                  decision && decision.reason === "timeout"
+                    ? "peek_timeout"
+                    : "peek_rejected",
+                message: why,
+              }),
+            };
+            await write({
+              type: "peek_phone_done",
+              pending_id: wait.id,
+              ok: false,
+              rejected: true,
+            });
+          }
+          }
+          }
+        }
+      } else {
+        ran = await runChatTool(name, tc.function && tc.function.arguments, {
+          mcpMap: toolBundle && toolBundle.mcpMap,
+          diyMap: toolBundle && toolBundle.diyMap,
+          settings,
+          stickyLeaveUsed,
+          autoMemoryOpsUsed,
+          momentsPostsUsed,
+          momentsCommentsUsed,
+          peerId: currentPeerId(),
+        });
+      }
       let actionOnly = isActionTool(name);
       try {
         const o = JSON.parse(ran.result || "");
@@ -5222,6 +5805,7 @@ module.exports = {
   listMessages,
   searchMessages,
   createMessage,
+  markYouMessagesBotRead,
   createPat,
   createMessageWithReply,
   createMessageWithReplyStream,

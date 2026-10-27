@@ -530,6 +530,27 @@
  .wx-row.me {
    flex-direction: row-reverse;
  }
+ /* 已读：气泡左侧垂直居中；抵消 row gap + 气泡上下 margin 不对称 */
+ .wx-row.me > .wx-read-rcpt {
+   flex-shrink: 0;
+   align-self: center;
+   margin: 0;
+   padding: 0;
+   font-size: 11px;
+   line-height: 1.2;
+   color: rgba(110, 88, 79, 0.55);
+   user-select: none;
+   pointer-events: none;
+   white-space: nowrap;
+   /* 右移贴气泡、略下移对齐气泡正文（气泡 margin-top:10 / bottom:6） */
+   transform: translate(8px, 2px);
+ }
+ .wx-row.me > .wx-read-rcpt.is-unread {
+   color: var(--mint-focus, #7eb8a8);
+ }
+ .wx-row.me > .wx-read-rcpt.is-read {
+   color: rgba(110, 88, 79, 0.48);
+ }
  /* 拉黑未送达：深可可底 + 薄荷感叹号；与气泡垂直居中 */
  .wx-send-fail {
    flex-shrink: 0;
@@ -4285,6 +4306,47 @@
    border-radius: 20px;
    box-shadow: 0 4px 12px rgba(181,161,152,.15);
    overflow: visible;
+   width: calc(100% - 24px);
+   box-sizing: border-box;
+   text-align: left;
+   font: inherit;
+   color: inherit;
+   cursor: pointer;
+ }
+ #view-chat .chat-me-head:active {
+   filter: brightness(0.97);
+ }
+ #view-chat .chat-me-av-btn {
+   border: 0;
+   padding: 0;
+   background: transparent;
+   cursor: pointer;
+ }
+ #view-chat .chat-me-av-presets {
+   display: flex;
+   flex-wrap: wrap;
+   gap: 10px;
+   margin: 4px 0 14px;
+ }
+ #view-chat .chat-me-av-presets button {
+   width: 52px;
+   height: 52px;
+   padding: 0;
+   border-radius: 50%;
+   border: 2px solid rgba(181, 161, 152, 0.45);
+   background: #f8fcfb;
+   overflow: hidden;
+   cursor: pointer;
+ }
+ #view-chat .chat-me-av-presets button.on {
+   border-color: var(--choco-brown);
+   box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.55);
+ }
+ #view-chat .chat-me-av-presets button img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   display: block;
  }
  #view-chat .chat-me-head .av {
    width: 64px;
@@ -5343,4 +5405,52 @@
    text-align: center;
  }
  #view-chat .chat-toast[hidden] { display: none; }
+
+ /* 查手机演出：当前注视的气泡 */
+ #chatThread .wx-row.is-peek-focus > .bubble,
+ #chatThread .wx-row.is-peek-focus .wx-col > .bubble,
+ #chatThread .wx-row.is-peek-focus .wx-voice-line > .bubble {
+   outline: 2.5px solid #5c4033;
+   box-shadow: 0 0 0 4px rgba(126, 184, 168, 0.4);
+   position: relative;
+   z-index: 2;
+ }
+
+ /* 反向查手机记录卡 */
+ #chatThread .wx-peek-record-card {
+   min-width: 200px;
+   max-width: 260px;
+   padding: 10px 12px;
+   border-radius: 12px;
+   border: 2px solid #5c4033;
+   background: linear-gradient(180deg, #fffaf5 0%, #f3ebe3 100%);
+   color: #5c4033;
+   cursor: pointer;
+   text-align: left;
+ }
+ #chatThread .wx-peek-record-card .head {
+   font-size: 13px;
+   font-weight: 800;
+   margin-bottom: 6px;
+ }
+ #chatThread .wx-peek-record-card .quote {
+   font-size: 12px;
+   line-height: 1.4;
+   color: rgba(92, 64, 51, 0.85);
+   margin-bottom: 6px;
+   display: -webkit-box;
+   -webkit-line-clamp: 3;
+   -webkit-box-orient: vertical;
+   overflow: hidden;
+ }
+ #chatThread .wx-peek-record-card .meta {
+   font-size: 11px;
+   color: rgba(92, 64, 51, 0.6);
+   margin-bottom: 6px;
+ }
+ #chatThread .wx-peek-record-card .more {
+   font-size: 11px;
+   font-weight: 700;
+   color: #3d7a6c;
+ }
 

@@ -2,7 +2,8 @@
 
 > 2026-10-01 · 阶段 E。谁生成内容、模型谁调。对齐 [`PRD.md`](./PRD.md) · [`Tech-Design.md`](./Tech-Design.md)。  
 > 共读三角色细节见 `apps/共读app/Agents.md`；本文不重写，只定**小手机扩展角色**与边界。  
-> **2026-10-11 补丁**：小手机日常聊天已接网关工具循环（内置日历 + 可选外接 MCP）；≠ Chatbox 移动端工作模式 MCP。实现勾选见 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md)。
+> **2026-10-11 补丁**：小手机日常聊天已接网关工具循环（内置日历 + 可选外接 MCP）；≠ Chatbox 移动端工作模式 MCP。实现勾选见 [`apps/聊天app/落地进度.md`](./apps/聊天app/落地进度.md)。  
+> **2026-10-27 补丁**：`[NOW]`/`[TODAY]`/`[NEW]` 已接（日历 C6 + 聊天 H1.18）；工具另含 `peek_phone` / `phone_device` / 便笺留笺 / Auto Memory / moments_* / geo·weather / DIY HTTP 等——**以聊天落地为准**，本文不枚举全表。
 
 ---
 
@@ -59,8 +60,8 @@ PWA 里家机头像 = **A-daily / A-watch 的皮**，不是又一个 Chatbox 账
 ### 4.2 输入
 
 - 用户在「聊天」App 的气泡  
-- 可选：注入的今日日历摘要（`[TODAY]` 等；**现行未接**）  
-- 工具：内置 `calendar_*`（`chat-tools.js`）；若设定开启外接 MCP 则并入工具表  
+- 注入：`[NOW]` / `[TODAY]` / 改历后短暂 `[NEW]`（已接；见日历落地 C6、聊天 H1.18）  
+- 工具：内置 `calendar_*`、查手机 `peek_phone`/`phone_device` 等（`chat-tools.js` + 开关）；若设定开启外接 MCP / DIY HTTP 则并入工具表  
 - 可读经期等完整信息（D12）——口吻谨慎，不公网外泄设定
 
 ### 4.3 输出格式

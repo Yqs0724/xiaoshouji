@@ -3608,6 +3608,181 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  /* 查手机：翻看中代发演出结果 */
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/phone/peek/") &&
+    urlPath.endsWith("/compose")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/phone/peek/".length, -"/compose".length)
+      );
+      const raw = await readBody(req);
+      let body = {};
+      try {
+        body = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        body = {};
+      }
+      const { setPeekCompose } = require("../../聊天app/gateway/phone-presence");
+      sendJson(res, 200, setPeekCompose(id, body));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "peek_compose_failed",
+        message: e.message || "代发记录失败",
+      });
+    }
+    return;
+  }
+
+  /* 查手机：翻看中强制下线 */
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/phone/peek/") &&
+    urlPath.endsWith("/abort")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/phone/peek/".length, -"/abort".length)
+      );
+      const { abortPeekBrowse } = require("../../聊天app/gateway/phone-presence");
+      const out = abortPeekBrowse(id);
+      if (!out.ok) {
+        sendJson(res, 404, out);
+        return;
+      }
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "peek_abort_failed",
+        message: e.message || "强制下线失败",
+      });
+    }
+    return;
+  }
+
+  /* 查手机申请：同意 / 拒绝（同意可附带当前 presence） */
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/phone/peek/") &&
+    (urlPath.endsWith("/accept") || urlPath.endsWith("/reject"))
+  ) {
+    try {
+      const accept = urlPath.endsWith("/accept");
+      const id = decodeURIComponent(
+        urlPath.slice(
+          "/api/v1/phone/peek/".length,
+          -(accept ? "/accept".length : "/reject".length)
+        )
+      );
+      const raw = await readBody(req);
+      let body = {};
+      try {
+        body = raw ? JSON.parse(raw) : {};
+      } catch (_) {
+        body = {};
+      }
+      const { answerPeekWait } = require("../../聊天app/gateway/phone-presence");
+      const out = answerPeekWait(
+        id,
+        accept,
+        accept && body && body.presence ? body.presence : null
+      );
+      if (!out.ok) {
+        sendJson(res, 404, out);
+        return;
+      }
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "peek_answer_failed",
+        message: e.message || "查手机应答失败",
+      });
+    }
+    return;
+  }
+
+  /* 反查：家机的虚拟手机 */
+  if (req.method === "GET" && urlPath === "/api/v1/bot-phone") {
+    try {
+      const { getOverview } = require("../../聊天app/gateway/bot-phone");
+      const s = readSettings();
+      sendJson(res, 200, getOverview((s && s.name_bot) || "家机"));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "bot_phone_failed",
+        message: e.message || "读取对方手机失败",
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && urlPath === "/api/v1/bot-phone/open") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { openApp } = require("../../聊天app/gateway/bot-phone");
+      const s = readSettings();
+      sendJson(
+        res,
+        200,
+        openApp((body && body.app) || "home", (s && s.name_bot) || "家机")
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "bot_phone_open_failed",
+        message: e.message || "打开失败",
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && urlPath === "/api/v1/bot-phone/chat") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { openChat } = require("../../聊天app/gateway/bot-phone");
+      const s = readSettings();
+      const out = openChat(
+        (body && body.chat_id) || "",
+        (s && s.name_bot) || "家机"
+      );
+      sendJson(res, out.ok ? 200 : 404, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "bot_phone_chat_failed",
+        message: e.message || "打开会话失败",
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && urlPath === "/api/v1/bot-phone/memo") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { updateMemo } = require("../../聊天app/gateway/bot-phone");
+      const s = readSettings();
+      const out = updateMemo(
+        (body && body.id) || "",
+        (body && body.body) || "",
+        (s && s.name_bot) || "家机"
+      );
+      sendJson(res, out.ok ? 200 : 404, out);
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "bot_phone_memo_failed",
+        message: e.message || "改备忘失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/chat/geo") {
     try {
       const { readGeo } = require("../../聊天app/gateway/weather");

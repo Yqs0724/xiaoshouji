@@ -14,6 +14,20 @@
     getAvatarBot: function () {
       return "/assets/cafe/avatar-bot.png";
     },
+    getNameUser: function () {
+      return "你";
+    },
+    getNickUser: function () {
+      return "";
+    },
+    onAvatarChanged: function () {},
+    onYouProfileChanged: function () {},
+    onPeekPhoneWait: function () {},
+    onPeekPhoneBrowse: function () {},
+    onPeekPhoneDone: function () {},
+    onPeekRecordOpen: function () {},
+    showBotPhone: function () {},
+    onBotNameChanged: function () {},
     onUnreadChange: function () {},
     reportPhonePresence: function () {},
   };
@@ -26,6 +40,21 @@
         );
       }
     } catch (_) {}
+  }
+  /** 查手机同意瞬间：把当前会话态交给壳一并上报 */
+  function getPresenceExtra() {
+    const pid = activePeerId || "daily";
+    const peer = peerById(pid);
+    const inThread = threadLayerOpen();
+    return {
+      view: "chat",
+      app: "chat",
+      locked: false,
+      chat_layer: inThread ? "thread" : "list",
+      chat_peer_id: inThread ? pid : "",
+      chat_title: inThread ? peerDisplayName(pid) : "",
+      chat_is_group: !!(peer && peer.kind === "group"),
+    };
   }
 
   let bound = false;
@@ -839,10 +868,10 @@
     if (kind === "call") {
       bubble.classList.add("is-call");
       const p = msg.payload || {};
+      const age = Date.now() - (Number(msg.ts) || 0);
+      const staleInvite = p.phase === "invite" && age >= 90000;
       const inviteLive =
-        p.phase === "invite" &&
-        p.dir !== "out" &&
-        Date.now() - (Number(msg.ts) || 0) < 90000;
+        p.phase === "invite" && p.dir !== "out" && !staleInvite;
       const line = document.createElement("div");
       line.className = "wx-call-line" + (inviteLive ? " is-tap" : "");
       const ico = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -860,7 +889,10 @@
       ico.append(path);
       const txt = document.createElement("span");
       txt.className = "wx-call-txt";
-      txt.textContent = callBubbleLabel(msg);
+      /* 超时未接：展示未接听（落库由 listMessages 过期） */
+      txt.textContent = staleInvite
+        ? "未接听"
+        : callBubbleLabel(msg);
       line.append(ico, txt);
       bubble.append(line);
       if (inviteLive) {
@@ -955,6 +987,47 @@
       finish();
       return;
     }
+    if (kind === "peek_record") {
+      bubble.classList.add("is-card");
+      const p = msg.payload || {};
+      const card = document.createElement("div");
+      card.className = "wx-peek-record-card";
+      const head = document.createElement("div");
+      head.className = "head";
+      head.textContent = "反向查手机记录";
+      const quote = document.createElement("div");
+      quote.className = "quote";
+      quote.textContent =
+        String(p.quote || p.summary || "").trim() || "看了一眼。";
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent =
+        (p.scanned || 0) +
+        " 条抽查 · " +
+        (p.highlights || 0) +
+        " 高亮 · " +
+        (p.keys || 0) +
+        " 重点" +
+        (p.forced_offline ? " · 已终止" : "");
+      const more = document.createElement("div");
+      more.className = "more";
+      more.textContent = "查看完整记录 >";
+      card.append(head, quote, meta, more);
+      card.setAttribute("role", "button");
+      card.tabIndex = 0;
+      card.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          if (typeof deps.onPeekRecordOpen === "function") {
+            deps.onPeekRecordOpen(p, msg);
+          }
+        } catch (_) {}
+      });
+      bubble.append(card);
+      finish();
+      return;
+    }
     if (kind === "pat") {
       const t = document.createElement("span");
       t.className = "wx-bubble-text";
@@ -1042,6 +1115,133 @@
       });
     }
   }
+
+  function shouldShowSendFail(msg) {
+    if (!msg || msg.from !== "you") return false;
+    if (msg.blocked_send || isPeerBlocked(activePeerId || "daily")) return true;
+    return peerBlocksYouActive();
+  }
+
+  /** @param {object} msg @param {object[]|null} [msgs] */
+  function isMsgBotRead(msg, msgs) {
+    if (!msg || msg.from !== "you" || msg.blocked_send) return null;
+    if (msg.bot_read === true) return true;
+    if (Array.isArray(msgs) && msg.id) {
+      const i = msgs.findIndex((m) => m && m.id === msg.id);
+      if (i >= 0) {
+        for (let j = i + 1; j < msgs.length; j++) {
+          const n = msgs[j];
+          if (n && n.from === "bot" && !n.recalled) return true;
+        }
+      }
+    }
+    if (msg.bot_read === false) return false;
+    return false;
+  }
+
+  /** 只有「你拉黑对方·未送达」藏已读；对方拉黑你仍可读，保留已读 */
+  function hideReadReceipt(msg) {
+    if (!msg || msg.from !== "you" || msg.recalled || msg.kind === "sys") return true;
+    return !!(msg.blocked_send || isPeerBlocked(activePeerId || "daily"));
+  }
+
+  /** 拆掉曾包过气泡的 wx-you-stack，恢复原生 .bubble 直挂 row */
+  function unwrapYouStack(row) {
+    if (!row) return null;
+    const stack = row.querySelector(":scope > .wx-you-stack");
+    if (!stack) return row.querySelector(":scope > .bubble");
+    const bubble = stack.querySelector(".bubble");
+    if (bubble) {
+      stack.replaceWith(bubble);
+      return bubble;
+    }
+    stack.remove();
+    return row.querySelector(":scope > .bubble");
+  }
+
+  /**
+   * 已读紧贴气泡左侧（参考微信：row-reverse 下 DOM 为 av → bubble → 已读）。
+   * 不包 stack，气泡样式与加已读前一致。
+   */
+  function paintReadReceipt(row, msg) {
+    if (!row) return;
+    const bubble = unwrapYouStack(row);
+    let el = row.querySelector(":scope > .wx-read-rcpt");
+    if (!bubble || hideReadReceipt(msg)) {
+      if (el) el.remove();
+      return;
+    }
+    const read = isMsgBotRead(msg, threadMsgsCache);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "wx-read-rcpt";
+    }
+    el.textContent = read ? "已读" : "未读";
+    el.classList.toggle("is-unread", !read);
+    el.classList.toggle("is-read", !!read);
+    /* DOM: av → bubble → 已读 → fail；视觉: fail · 已读 · 气泡 · 头像 */
+    const fail = row.querySelector(":scope > .wx-send-fail");
+    if (fail) row.insertBefore(el, fail);
+    else row.appendChild(el);
+  }
+
+  function applyBotReadIds(ids) {
+    const set = new Set(
+      (Array.isArray(ids) ? ids : []).map((x) => String(x || "")).filter(Boolean)
+    );
+    if (!set.size) return;
+    if (Array.isArray(threadMsgsCache)) {
+      for (const m of threadMsgsCache) {
+        if (m && set.has(String(m.id))) m.bot_read = true;
+      }
+    }
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    box.querySelectorAll(".wx-row.me[data-msg-id]").forEach((row) => {
+      const id = row.dataset.msgId;
+      if (!set.has(String(id))) return;
+      if (row._chatMsg) row._chatMsg.bot_read = true;
+      paintReadReceipt(row, row._chatMsg || { from: "you", id, bot_read: true });
+    });
+  }
+
+  function refreshSendFailMarks() {
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    box.querySelectorAll(".wx-row.me").forEach((row) => {
+      const msg = row._chatMsg;
+      if (!msg) return;
+      unwrapYouStack(row);
+      const want = shouldShowSendFail(msg);
+      let fail = row.querySelector(":scope > .wx-send-fail");
+      if (want && !fail) {
+        fail = document.createElement("button");
+        fail.type = "button";
+        fail.className = "wx-send-fail";
+        fail.textContent = "!";
+        const byPeer =
+          peerBlocksYouActive() &&
+          !msg.blocked_send &&
+          !isPeerBlocked(activePeerId || "daily");
+        fail.title = byPeer ? "对方已拉黑你" : "已拉黑，对方收不到";
+        fail.setAttribute("aria-label", fail.title);
+        fail.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          shellToast(
+            byPeer
+              ? "对方已拉黑你；消息对方仍可能看到，但暂时不会回"
+              : "已拉黑对方，消息未送达；可在 ··· 里解除拉黑"
+          );
+        });
+        row.append(fail);
+      } else if (!want && fail) {
+        fail.remove();
+      }
+      paintReadReceipt(row, msg);
+    });
+  }
+
+  let threadMsgsCache = null;
 
   function appendChatMessage(msg) {
     const box = document.getElementById("chatThread");
@@ -1133,29 +1333,36 @@
       syncVariantBar(col, msg);
       row.append(av, col);
     } else {
-      /* 落库 blocked_send，或当前仍拉黑对方：显示感叹号 */
-      const showFail =
-        msg.from === "you" &&
-        (!!msg.blocked_send || isPeerBlocked(activePeerId || "daily"));
+      /* 气泡直挂 row（与加已读前相同）；已读紧贴左侧；感叹号再左 */
+      const showFail = shouldShowSendFail(msg);
+      row.append(av, bubble);
       if (showFail) {
         const fail = document.createElement("button");
         fail.type = "button";
         fail.className = "wx-send-fail";
-        fail.title = "已拉黑，对方收不到";
-        fail.setAttribute("aria-label", "已拉黑，对方收不到");
+        const byPeer = peerBlocksYouActive() && !msg.blocked_send && !isPeerBlocked(activePeerId || "daily");
+        fail.title = byPeer ? "对方已拉黑你" : "已拉黑，对方收不到";
+        fail.setAttribute("aria-label", fail.title);
         fail.textContent = "!";
         fail.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          shellToast("已拉黑对方，消息未送达；可在 ··· 里解除拉黑");
+          shellToast(
+            byPeer
+              ? "对方已拉黑你；消息对方仍可能看到，但暂时不会回"
+              : "已拉黑对方，消息未送达；可在 ··· 里解除拉黑"
+          );
         });
-        /* me 为 row-reverse：av → bubble → fail → 视觉 ! · 气泡 · 头像 */
-        row.append(av, bubble, fail);
-      } else {
-        row.append(av, bubble);
+        row.append(fail);
       }
+      paintReadReceipt(row, msg);
     }
     row._chatMsg = msg;
     box.append(row);
+    if (Array.isArray(threadMsgsCache) && msg && msg.id) {
+      if (!threadMsgsCache.some((m) => m && m.id === msg.id)) {
+        threadMsgsCache.push(msg);
+      }
+    }
     paintVoiceAsr(row, msg);
     bindBubbleCtx(bubble, msg);
     bindPatAvatar(row, msg);
@@ -1750,6 +1957,17 @@
         await fetchStickers();
       } catch (_) {}
       const msgs = await fetchChatMessages();
+      /* 旧消息无 bot_read 时：后面有家机回复的一律当已读 */
+      let seenBot = false;
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        const m = msgs[i];
+        if (!m) continue;
+        if (m.from === "bot" && !m.recalled) seenBot = true;
+        if (m.from === "you" && !m.blocked_send && m.bot_read == null && seenBot) {
+          m.bot_read = true;
+        }
+      }
+      threadMsgsCache = msgs;
       const firstUnread = msgs.find((m) => m && m.from === "bot" && m.read === false);
       const unreadFromId = firstUnread ? String(firstUnread.id) : "";
       if (lsGet(LS.clearRead, "1") !== "0") {
@@ -2297,6 +2515,27 @@
       } else if (ev.type === "cam_check_wait") {
         onCamCheckWait(ev);
         await paintFrame();
+      } else if (ev.type === "peek_phone_wait") {
+        try {
+          if (typeof deps.onPeekPhoneWait === "function") deps.onPeekPhoneWait(ev);
+        } catch (_) {}
+        await paintFrame();
+      } else if (ev.type === "peek_phone_browse") {
+        try {
+          if (typeof deps.onPeekPhoneBrowse === "function") deps.onPeekPhoneBrowse(ev);
+        } catch (_) {}
+        await paintFrame();
+      } else if (ev.type === "peek_record" && ev.message) {
+        appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "peek_phone_done") {
+        try {
+          if (typeof deps.onPeekPhoneDone === "function") deps.onPeekPhoneDone(ev);
+        } catch (_) {}
+        await paintFrame();
+      } else if (ev.type === "bot_read") {
+        applyBotReadIds(ev.ids);
+        await paintFrame();
       } else if (ev.type === "bot_tool_done") {
         const row = finishToolChip(pendingToolRow, ev);
         if (row && ev.message && ev.message.id) row.dataset.msgId = ev.message.id;
@@ -2430,10 +2669,17 @@
             if (hit) hit.blocks_you = true;
           }
           paintBlockBanner();
+          refreshSendFailMarks();
         } else {
           fetchPeers()
-            .then(() => paintBlockBanner())
-            .catch(() => paintBlockBanner());
+            .then(() => {
+              paintBlockBanner();
+              refreshSendFailMarks();
+            })
+            .catch(() => {
+              paintBlockBanner();
+              refreshSendFailMarks();
+            });
         }
       }
     };
@@ -3621,6 +3867,9 @@
     const el = document.getElementById("chatBlockBanner");
     if (!el) return;
     el.hidden = !peerBlocksYouActive();
+    try {
+      refreshSendFailMarks();
+    } catch (_) {}
   }
   function shellToast(msg) {
     const el = document.getElementById("chatShellToast");
@@ -3703,7 +3952,10 @@
     document.querySelectorAll("#view-chat .chat-dock [data-chat-go]").forEach((b) => {
       b.classList.toggle("on", b.getAttribute("data-chat-go") === name);
     });
-    if (name === "me") refreshDrawerWeather();
+    if (name === "me") {
+      refreshDrawerWeather();
+      paintMeHead();
+    }
     if (name === "moments") {
       refreshMoments();
       lsSet(LS.momSeenTs, String(Date.now()));
@@ -4151,11 +4403,13 @@
       ["chatProfileAv", bot],
       ["chatMomYouAv", you],
       ["chatMeAv", you],
+      ["chatMeProfileAv", you],
     ].forEach(([id, src]) => {
       const el = document.getElementById(id);
       if (el) el.src = src;
     });
     refreshPeerLabels();
+    paintMeHead();
   }
   function paintSessPreview(preview, fallback) {
     if (!preview) return;
@@ -4457,7 +4711,14 @@
         .forEach((img) => {
           img.src = url;
         });
+    } else {
+      document
+        .querySelectorAll("#chatThreadLayer .wx-row.me .av img")
+        .forEach((img) => {
+          img.src = url;
+        });
     }
+    paintMeHead();
   }
   /** 解锁 poke 带下来电时，立刻弹出接听层（不依赖先进会话） */
   function handlePoke(data) {
@@ -5747,6 +6008,22 @@
           );
         } else if (ev.type === "cam_check_wait") {
           onCamCheckWait(ev);
+        } else if (ev.type === "peek_phone_wait") {
+          try {
+            if (typeof deps.onPeekPhoneWait === "function") deps.onPeekPhoneWait(ev);
+          } catch (_) {}
+        } else if (ev.type === "peek_phone_browse") {
+          try {
+            if (typeof deps.onPeekPhoneBrowse === "function") deps.onPeekPhoneBrowse(ev);
+          } catch (_) {}
+        } else if (ev.type === "peek_record" && ev.message) {
+          appendChatMessage(ev.message);
+        } else if (ev.type === "peek_phone_done") {
+          try {
+            if (typeof deps.onPeekPhoneDone === "function") deps.onPeekPhoneDone(ev);
+          } catch (_) {}
+        } else if (ev.type === "bot_read") {
+          applyBotReadIds(ev.ids);
         } else if (ev.type === "bot_tool_done") {
           finishToolChip(pendingToolRow, ev);
           pendingToolRow = null;
@@ -7076,7 +7353,11 @@
       return;
     }
     const inherit = !useCb || useCb.checked;
-    const body = { persona_use_hut: { chat: inherit } };
+    const body = {
+      persona_use_hut: { chat: inherit },
+      /* 资料名与小屋称呼对齐，避免查手机仍自称「熊」 */
+      name_bot: newName,
+    };
     if (inherit) {
       body.persona_card = persona_card;
       body.persona = "";
@@ -7093,6 +7374,11 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "保存失败");
+      try {
+        if (typeof deps.onBotNameChanged === "function") {
+          deps.onBotNameChanged(newName);
+        }
+      } catch (_) {}
       refreshPeerLabels();
       shellToast("已保存");
       backFromProfile();
@@ -7111,6 +7397,171 @@
     if (ret === "peer") {
       openPeerPage();
       return;
+    }
+    closeShellOverlays();
+  }
+
+  let meAvatarDraft = "";
+  const ME_AV_PRESETS = [
+    { src: "/assets/cafe/avatar-you.png", label: "猫" },
+    { src: "/assets/cafe/avatar-bot.png", label: "熊" },
+    { src: "/assets/cafe/decor-bear.png", label: "摆件熊" },
+  ];
+  function displayYouName() {
+    const nick = String(
+      (typeof deps.getNickUser === "function" && deps.getNickUser()) || ""
+    ).trim();
+    const formal = String(
+      (typeof deps.getNameUser === "function" && deps.getNameUser()) || "你"
+    ).trim() || "你";
+    return nick || formal;
+  }
+  function paintMeHead() {
+    const you = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
+    const nm = displayYouName();
+    const av = document.getElementById("chatMeAv");
+    if (av) av.src = you;
+    const nmEl = document.getElementById("chatMeNm");
+    if (nmEl) nmEl.textContent = nm;
+    const idEl = document.getElementById("chatMeId");
+    if (idEl) {
+      const formal =
+        String(
+          (typeof deps.getNameUser === "function" && deps.getNameUser()) || ""
+        ).trim() || "你";
+      idEl.textContent = nickShown() ? "正式名 · " + formal : "点头像改资料";
+    }
+  }
+  function nickShown() {
+    return !!String(
+      (typeof deps.getNickUser === "function" && deps.getNickUser()) || ""
+    ).trim();
+  }
+  function paintMeAvPresets(selected) {
+    const box = document.getElementById("chatMeAvPresets");
+    if (!box) return;
+    const list = ME_AV_PRESETS.slice();
+    if (selected && !list.some((a) => a.src === selected)) {
+      list.unshift({ src: selected, label: "当前" });
+    }
+    box.replaceChildren();
+    for (const a of list) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.title = a.label;
+      if (a.src === selected) btn.classList.add("on");
+      const img = document.createElement("img");
+      img.src = a.src;
+      img.alt = a.label;
+      btn.append(img);
+      btn.addEventListener("click", () => {
+        meAvatarDraft = a.src;
+        const av = document.getElementById("chatMeProfileAv");
+        if (av) av.src = a.src;
+        paintMeAvPresets(a.src);
+      });
+      box.append(btn);
+    }
+  }
+  async function openMeProfilePage() {
+    const el = document.getElementById("chatOvMeProfile");
+    if (!el) return;
+    meAvatarDraft = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
+    const av = document.getElementById("chatMeProfileAv");
+    if (av) av.src = meAvatarDraft;
+    paintMeAvPresets(meAvatarDraft);
+    const title = document.getElementById("chatMeProfileTitle");
+    if (title) title.textContent = displayYouName();
+    const nickInp = document.getElementById("chatMeNickInput");
+    const nameInp = document.getElementById("chatMeNameInput");
+    try {
+      const res = await fetch("/api/v1/settings", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      meAvatarDraft =
+        String(data.avatar_user || "").trim() || meAvatarDraft;
+      if (av) av.src = meAvatarDraft;
+      paintMeAvPresets(meAvatarDraft);
+      if (nickInp) nickInp.value = String(data.nick_user || "");
+      if (nameInp) nameInp.value = String(data.name_user || "你");
+      if (title) {
+        title.textContent =
+          String(data.nick_user || "").trim() ||
+          String(data.name_user || "你").trim() ||
+          "你";
+      }
+    } catch (err) {
+      if (nickInp) {
+        nickInp.value = String(
+          (typeof deps.getNickUser === "function" && deps.getNickUser()) || ""
+        );
+      }
+      if (nameInp) {
+        nameInp.value = String(
+          (typeof deps.getNameUser === "function" && deps.getNameUser()) || "你"
+        );
+      }
+      shellToast((err && err.message) || "读取资料失败");
+    }
+    showChatOverlay("chatOvMeProfile");
+  }
+  async function saveMeProfilePage() {
+    const nickInp = document.getElementById("chatMeNickInput");
+    const nameInp = document.getElementById("chatMeNameInput");
+    const name_user = String((nameInp && nameInp.value) || "").trim().slice(0, 32);
+    if (!name_user) {
+      shellToast("请填写正式名");
+      if (nameInp) nameInp.focus();
+      return;
+    }
+    const nick_user = String((nickInp && nickInp.value) || "").trim().slice(0, 32);
+    const avatar_user =
+      String(meAvatarDraft || "").trim() ||
+      deps.getAvatarYou() ||
+      "/assets/cafe/avatar-you.png";
+    try {
+      const res = await fetch("/api/v1/settings", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name_user, nick_user, avatar_user }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "保存失败");
+      const nextAv = data.avatar_user || avatar_user;
+      const nextName = data.name_user || name_user;
+      const nextNick = String(data.nick_user || nick_user || "");
+      try {
+        if (typeof deps.onYouProfileChanged === "function") {
+          deps.onYouProfileChanged({
+            name_user: nextName,
+            nick_user: nextNick,
+            avatar_user: nextAv,
+          });
+        }
+      } catch (_) {}
+      applyAvatarChanged({ who: "you", url: nextAv });
+      shellToast("已保存");
+      const el = document.getElementById("chatOvMeProfile");
+      if (el) {
+        el.classList.remove("active");
+        el.hidden = true;
+      }
+      closeShellOverlays();
+      goChatTab("me");
+      paintMeHead();
+    } catch (err) {
+      shellToast((err && err.message) || "保存失败");
+    }
+  }
+  function backFromMeProfile() {
+    const el = document.getElementById("chatOvMeProfile");
+    if (el) {
+      el.classList.remove("active");
+      el.hidden = true;
     }
     closeShellOverlays();
   }
@@ -7138,6 +7589,8 @@
       blockVal.textContent = blocked ? "已拉黑" : "";
     }
     if (delLab) delLab.textContent = isGroup ? "删除群聊" : "删除联系人";
+    const botPhoneBtn = document.getElementById("btnChatPeerBotPhone");
+    if (botPhoneBtn) botPhoneBtn.hidden = !isDaily;
     paintChatBgLabs();
     refreshPeerLabels();
     paintPeerMemCount();
@@ -7248,6 +7701,17 @@
   function runPeerAct(act) {
     if (act === "profile") {
       openProfilePage("peer");
+      return;
+    }
+    if (act === "bot-phone") {
+      if ((activePeerId || "daily") !== "daily") {
+        shellToast("只能反查家机的手机");
+        return;
+      }
+      closePeerPage();
+      try {
+        if (typeof deps.showBotPhone === "function") deps.showBotPhone();
+      } catch (_) {}
       return;
     }
     if (act === "world") {
@@ -8981,7 +9445,7 @@
       case "ended":
         return Number(p.durationSec) > 0 ? "通话时长 " + clock : media + "通话";
       case "missed":
-        return "未接" + media + "通话";
+        return "未接听";
       default:
         return media + "通话";
     }
@@ -10275,8 +10739,36 @@
       return;
     }
     if (callSession && callSession.id && msg && msg.id && callSession.id !== msg.id) {
-      shellToast("通话进行中");
-      return;
+      const old = callSession;
+      const canBump =
+        old.phase === "invite" &&
+        p.phase === "invite" &&
+        p.dir !== "out";
+      if (!canBump) {
+        shellToast("通话进行中");
+        return;
+      }
+      /* 新来电顶掉未接旧邀请 → 旧条落未接听 */
+      const oldId = old.id;
+      clearCallTimers();
+      stopCallRing();
+      callSession = null;
+      if (oldId) {
+        fetch(
+          "/api/v1/chat/call/" + encodeURIComponent(oldId) + "/phase?" + peerQuery(),
+          {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phase: "missed", durationSec: 0 }),
+          }
+        )
+          .then((r) => r.json().catch(() => ({})))
+          .then((data) => {
+            if (data && data.message) patchMessageBubble(data.message);
+          })
+          .catch(() => {});
+      }
     }
     clearCallTimers();
     stopCallRing();
@@ -10554,7 +11046,7 @@
       callBubbleLabel({
         body: "",
         payload: { media: "video", dir: "in", phase: "missed", durationSec: 0 },
-      }) !== "未接视频通话"
+      }) !== "未接听"
     )
       throw new Error("call missed");
   })();
@@ -10663,14 +11155,35 @@
     }
   }
   function bindPatAvatar(row, msg) {
-    if (!row || !msg || msg.from !== "bot") return;
+    if (!row || !msg) return;
     const av = row.querySelector(".av");
     if (!av || av.dataset.patBound) return;
     av.dataset.patBound = "1";
-    av.addEventListener("dblclick", (e) => {
+    let clickTimer = null;
+    av.addEventListener("click", (e) => {
       e.preventDefault();
-      sendPat();
+      e.stopPropagation();
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        return;
+      }
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        if (msg.from === "you") openMeProfilePage();
+        else openProfilePage("thread");
+      }, 280);
     });
+    if (msg.from === "bot") {
+      av.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        if (clickTimer) {
+          clearTimeout(clickTimer);
+          clickTimer = null;
+        }
+        sendPat();
+      });
+    }
   }
 
   /* ========== Shell search helpers done; patch appendChatMessage hook via wrap ========== */
@@ -10700,6 +11213,31 @@
     const useHut = document.getElementById("chatPersonaUseHut");
     if (useHut) {
       useHut.addEventListener("change", () => paintProfileInheritUi(!!useHut.checked));
+    }
+    const meHead = document.getElementById("btnChatMeHead");
+    if (meHead) meHead.addEventListener("click", () => openMeProfilePage());
+    const meBack = document.getElementById("btnChatMeProfileBack");
+    if (meBack) meBack.addEventListener("click", () => backFromMeProfile());
+    const meSave = document.getElementById("btnChatMeProfileSave");
+    if (meSave) meSave.addEventListener("click", () => saveMeProfilePage());
+    const meAvPick = document.getElementById("btnChatMeAvPick");
+    const meAvFile = document.getElementById("chatMeAvFile");
+    if (meAvPick && meAvFile) {
+      meAvPick.addEventListener("click", () => meAvFile.click());
+      meAvFile.addEventListener("change", async () => {
+        const f = meAvFile.files && meAvFile.files[0];
+        meAvFile.value = "";
+        if (!f) return;
+        try {
+          const url = await uploadChatImage(f);
+          meAvatarDraft = url;
+          const av = document.getElementById("chatMeProfileAv");
+          if (av) av.src = url;
+          paintMeAvPresets(url);
+        } catch (err) {
+          shellToast((err && err.message) || "上传失败");
+        }
+      });
     }
     const openSearch = document.getElementById("btnChatShellSearch");
     if (openSearch) {
@@ -11723,6 +12261,132 @@
     } catch (_) {}
   }
 
+  /** 查手机演出：打开目标会话（空 peer 则停在列表） */
+  function openForPeek(peerId) {
+    const id = String(peerId || "").trim();
+    if (id) {
+      openThreadLayer(id);
+      return;
+    }
+    if (threadLayerOpen()) return;
+    /* 列表页：确保会话层关着 */
+    try {
+      closeThreadLayer();
+    } catch (_) {}
+  }
+
+  /** 桌面进聊天 / 查手机结束：回到会话列表主界面 */
+  function showSessionList() {
+    try {
+      clearPeekHighlights();
+    } catch (_) {}
+    try {
+      goChatTab("chat");
+    } catch (_) {
+      try {
+        closeThreadLayer();
+      } catch (_) {}
+      try {
+        refreshSessionList();
+      } catch (_) {}
+    }
+  }
+
+  function clearPeekHighlights() {
+    document
+      .querySelectorAll("#chatThread .wx-row.is-peek-focus")
+      .forEach((el) => el.classList.remove("is-peek-focus"));
+  }
+
+  const PEEK_WEIGHT_RE =
+    /暧昧|喜欢|爱你|想你|宝贝|亲爱|么么|抱抱|见面|秘密|别告诉|转账|红包|钱|约会|今晚|想见|吃醋|对不起|喜欢你/;
+
+  function peekTextWeight(text) {
+    const t = String(text || "");
+    if (!t) return 0;
+    if (PEEK_WEIGHT_RE.test(t)) return 2;
+    if (/[?？]|哈哈|嘿嘿|嗯嗯|好呀|想/.test(t)) return 1;
+    return 0;
+  }
+
+  /**
+   * 假光标按段扫最近气泡；暧昧句停顿更久。
+   * @param {{ stepMs?: number, maxRows?: number, onFocus?: Function, onDone?: Function }} [opts]
+   */
+  function runPeekScan(opts) {
+    const o = opts && typeof opts === "object" ? opts : {};
+    clearPeekHighlights();
+    const box = document.getElementById("chatThread");
+    if (!box) {
+      if (typeof o.onDone === "function") {
+        o.onDone({ count: 0, highlights: 0, keys: 0 });
+      }
+      return { stop: function () {}, count: 0 };
+    }
+    const take = Math.max(3, Math.min(10, Number(o.maxRows) || 8));
+    const rows = Array.from(
+      box.querySelectorAll(".wx-row[data-msg-id]")
+    ).slice(-take);
+    let i = 0;
+    let timer = 0;
+    let stopped = false;
+    let highlights = 0;
+    let keys = 0;
+    const baseMs = Math.max(600, Math.min(2000, Number(o.stepMs) || 1000));
+    function stop() {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      timer = 0;
+      clearPeekHighlights();
+    }
+    function tick() {
+      if (stopped) return;
+      clearPeekHighlights();
+      if (i >= rows.length) {
+        if (typeof o.onDone === "function") {
+          o.onDone({ count: rows.length, highlights: highlights, keys: keys });
+        }
+        return;
+      }
+      const row = rows[i++];
+      row.classList.add("is-peek-focus");
+      try {
+        row.scrollIntoView({ block: "center", behavior: "smooth" });
+      } catch (_) {}
+      const bubble = rowBubble(row);
+      const target = bubble || row;
+      const rect = target.getBoundingClientRect();
+      let text = "";
+      try {
+        const t = bubble && bubble.querySelector(".wx-bubble-text");
+        text = t ? String(t.textContent || "").trim().slice(0, 48) : "";
+      } catch (_) {}
+      const weight = peekTextWeight(text);
+      highlights += 1;
+      if (weight >= 2) keys += 1;
+      if (typeof o.onFocus === "function") {
+        o.onFocus({
+          index: i,
+          total: rows.length,
+          text,
+          weight,
+          key: weight >= 2,
+          rect: {
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+          },
+        });
+      }
+      const wait =
+        weight >= 2 ? baseMs * 1.7 : weight === 1 ? baseMs * 1.25 : baseMs;
+      timer = setTimeout(tick, wait);
+    }
+    tick();
+    return { stop: stop, count: rows.length };
+  }
+
   global.ChatApp = {
     mount: mount,
     onShow: onShowChatShell,
@@ -11731,5 +12395,13 @@
     noteBotPing: noteBotPing,
     handlePoke: handlePoke,
     onWs: onCallWsMessage,
+    getPresenceExtra: getPresenceExtra,
+    openForPeek: openForPeek,
+    showSessionList: showSessionList,
+    clearPeekHighlights: clearPeekHighlights,
+    runPeekScan: runPeekScan,
+    dailyDisplayName: function () {
+      return peerDisplayName("daily") || peerTrueName("daily") || "";
+    },
   };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -404,15 +404,31 @@ const TOOL_DEFS = [
     function: {
       name: "peek_phone",
       description:
-        "偷看对方小手机虚拟壳：在哪个 App、是否在微信、跟谁聊（会话名）。" +
-        "吃醋/关心/找人/怀疑在跟谁聊时用；不要每轮都查、不要说「我监控了你」。" +
-        "这不是电脑截屏；电脑请用 view_activity / cam_check。",
+        "申请查看对方小手机虚拟壳：会先弹出征询，对方同意后才能翻看。" +
+        "对方明确让你查时必须传 user_requested=true（不占主动额度）；自己吃醋/关心主动查才占额度，一天最多主动成功 3 次。" +
+        "用户点名某人（如「查薄巧测试」「看看冒烟改名」）时 target_peer 必填通讯录会话名，且不要再传 target_app、不要空着去扫全机；" +
+        "只查 App 时传 target_app（可逗号多选）；都不点名才空参一次扫多个。" +
+        "不要每轮都查；对方拒绝时用口语接住，勿纠缠。不是电脑截屏；电脑用 view_activity / cam_check。",
       parameters: {
         type: "object",
         properties: {
           why: {
             type: "string",
             description: "为什么要查（短中文）",
+          },
+          user_requested: {
+            type: "boolean",
+            description:
+              "对方主动让你查手机时为 true（不占每天 3 次主动额度）；自己突然想查则为 false/不传",
+          },
+          target_peer: {
+            type: "string",
+            description: "想翻看的微信会话名或 peer id；可空",
+          },
+          target_app: {
+            type: "string",
+            description:
+              "单个或逗号分隔多个 App：微信/日历/便签/共听/共看/额度/资产/小屋/共读/设置/相册/购物；空=默认扫几个",
           },
         },
       },
@@ -1911,7 +1927,10 @@ function runPeekPhone(settings) {
         }),
       };
     }
-    const out = summarizePeek({ l1: !!s.peek_phone_l1_enabled });
+    const out = summarizePeek({
+      l1: !!s.peek_phone_l1_enabled,
+      sweep: true,
+    });
     return {
       ok: true,
       name: "peek_phone",
@@ -2201,19 +2220,48 @@ if (require.main === module) {
       console.assert(summarizeToolResult("start_call", dial.result, true) === "已拨语音");
     }
     {
-      const { saveChatMedia, appendMessage, applyChatAvatar } = require("./daily-chat");
+      /* 自检不得冲掉用户真头像 / 往会话塞废图：快照→测→还原 */
+      const {
+        saveChatMedia,
+        applyChatAvatar,
+        listPeers,
+        DEFAULT_PEER_ID,
+      } = require("./daily-chat");
+      const { readSettings } = require("../../共读app/gateway/settings");
+      const prevBot = String((readSettings().avatar_bot || "").trim());
+      const prevPeer = (() => {
+        try {
+          const listed = listPeers();
+          const peers = (listed && listed.peers) || [];
+          const hit = peers.find((p) => p && p.id === DEFAULT_PEER_ID);
+          return hit && hit.avatar ? String(hit.avatar) : "";
+        } catch (_) {
+          return "";
+        }
+      })();
       const png = Buffer.from(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
         "base64"
       );
       const media = saveChatMedia(png, "image/png");
-      appendMessage("you", media.url, "image");
-      const av = await runChatTool("set_avatar", { pick: 1 });
+      const av = await runChatTool("set_avatar", { url: media.url });
       console.assert(av.ok, "set_avatar ok");
       const ao = JSON.parse(av.result);
       console.assert(ao.url === media.url);
-      console.assert(summarizeToolResult("set_avatar", av.result, true) === "已换#1");
-      applyChatAvatar({ url: "/assets/cafe/avatar-bot.png", who: "bot" });
+      console.assert(
+        summarizeToolResult("set_avatar", av.result, true) === "已换头像"
+      );
+      const restore = prevBot || prevPeer || "/assets/cafe/avatar-bot.png";
+      applyChatAvatar({ url: restore, who: "bot" });
+      try {
+        const id = String(media.url || "").split("/").pop();
+        if (id) {
+          const fs = require("fs");
+          const path = require("path");
+          const p = path.join(__dirname, "..", "data", "chat-media", id);
+          if (fs.existsSync(p)) fs.unlinkSync(p);
+        }
+      } catch (_) {}
     }
     console.assert(
       summarizeToolResult(

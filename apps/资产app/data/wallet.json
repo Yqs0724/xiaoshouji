@@ -1,6 +1,6 @@
 {
-  "you_balance": 284.65,
-  "bot_balance": 1715.35,
+  "you_balance": 359.45,
+  "bot_balance": 1640.55,
   "cards": [],
   "ledger": [
     {
@@ -232,6 +232,46 @@
       "amount": 5.2,
       "note": "赏你的",
       "msg_id": "2900e1ef-64b6-4cf3-b3d1-8af5fbab1053"
+    },
+    {
+      "id": "0d71ac9b-0b27-4953-92f1-564931780af9",
+      "ts": 1793095496111,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 8.8,
+      "note": "恭喜发财",
+      "msg_id": "858ad721-98cd-4fd4-89d0-50c27bd8eb3e"
+    },
+    {
+      "id": "457d91c5-789c-4e38-9f5f-d53a962bd7f3",
+      "ts": 1793096923080,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 8.8,
+      "note": "开心收着",
+      "msg_id": "d1f877fe-3022-4324-a0aa-cf165b3b9594"
+    },
+    {
+      "id": "23c41186-fe3d-4a84-971e-655fb1049041",
+      "ts": 1793101184472,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 52,
+      "note": "赏你的",
+      "msg_id": "c2ab130f-04f6-45b0-9505-6764521a1b46"
+    },
+    {
+      "id": "9bc10ef6-48b8-420b-a75f-d5185759f36d",
+      "ts": 1793102585325,
+      "kind": "redpacket",
+      "from": "bot",
+      "to": "you",
+      "amount": 5.2,
+      "note": "开心收着",
+      "msg_id": "2b2190c1-b2d5-4bdb-bc52-3467849bd35d"
     }
   ]
 }

@@ -442,7 +442,7 @@
       color: var(--bq-choco);
       font-weight: 700;
     }
-    #view-phone-settings .settings .field input,
+    #view-phone-settings .settings .field input:not([type="checkbox"]):not([type="range"]),
     #view-phone-settings .settings .field textarea,
     #view-phone-settings .settings .field select {
       border: 2px solid var(--bq-choco);
@@ -450,12 +450,28 @@
       background: #fffaf5;
       color: var(--bq-choco);
       font-weight: 600;
+      height: 40px;
+      padding: 0 14px;
+      box-sizing: border-box;
+      line-height: 1.2;
+    }
+    #view-phone-settings .settings .field select {
+      padding-right: 34px;
+      background-color: #fffaf5;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%235c4033' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 14px center;
     }
     #view-phone-settings .settings .field textarea {
       border-radius: 16px;
+      height: auto;
+      min-height: 72px;
+      padding: 10px 14px;
+      line-height: 1.45;
     }
-    #view-phone-settings .settings .field input:focus,
-    #view-phone-settings .settings .field textarea:focus {
+    #view-phone-settings .settings .field input:not([type="checkbox"]):not([type="range"]):focus,
+    #view-phone-settings .settings .field textarea:focus,
+    #view-phone-settings .settings .field select:focus {
       border-color: var(--bq-choco);
       box-shadow: 0 0 0 3px rgba(165, 239, 217, .45);
     }
@@ -513,16 +529,37 @@
       font-size: 11px;
       margin-top: 2px;
     }
-    .settings .field input {
+    .settings .field input,
+    .settings .field select {
       border: 1px solid rgba(200, 180, 160, .7);
       border-radius: 10px;
-      padding: 8px 10px;
+      padding: 0 12px;
+      height: 40px;
+      box-sizing: border-box;
       font-size: 13px;
+      line-height: 1.2;
       background: #fff;
       color: var(--ink);
       outline: none;
+      font-family: inherit;
     }
-    .settings .field input:focus {
+    .settings .field select {
+      appearance: none;
+      -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%235c4033' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      padding-right: 32px;
+    }
+    .settings .field input[type="range"] {
+      height: auto;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .settings .field input:focus,
+    .settings .field select:focus {
       border-color: rgba(139, 90, 60, .45);
     }
     .settings .field textarea {
@@ -1194,6 +1231,584 @@
     #homeFloat.is-left .hf-tip {
       right: auto;
       left: calc(100% + 8px);
+    }
+    .phone-peek-ask {
+      position: fixed;
+      inset: 0;
+      z-index: 9200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(110, 88, 79, 0.38);
+      backdrop-filter: blur(6px);
+    }
+    .phone-peek-ask[hidden],
+    .phone-peek-pin[hidden],
+    .phone-peek-chrome[hidden],
+    .phone-peek-result[hidden] { display: none !important; }
+    .phone-peek-ask-card {
+      width: min(320px, 100%);
+      background: linear-gradient(180deg, #fffaf5 0%, #f3ebe3 100%);
+      border: 2.5px solid #5c4033;
+      border-radius: 24px;
+      padding: 22px 20px 18px;
+      box-shadow: 0 12px 32px rgba(92, 64, 51, 0.22);
+      text-align: center;
+    }
+    .phone-peek-ask-av {
+      width: 56px;
+      height: 56px;
+      margin: 0 auto 10px;
+      border-radius: 50%;
+      border: 2.5px solid #5c4033;
+      object-fit: cover;
+      background: #e8dfd4;
+      display: block;
+    }
+    .phone-peek-ask-eyebrow {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      color: rgba(92, 64, 51, 0.55);
+      margin-bottom: 6px;
+    }
+    .phone-peek-ask-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: #5c4033;
+      margin-bottom: 8px;
+      line-height: 1.35;
+    }
+    .phone-peek-ask-sub {
+      font-size: 12px;
+      color: rgba(92, 64, 51, 0.68);
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+    .phone-peek-target-chip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      max-width: 100%;
+      margin: 0 auto 16px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      border: 2px solid #5c4033;
+      background: rgba(126, 184, 168, 0.22);
+      color: #5c4033;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: default;
+    }
+    .phone-peek-target-chip[hidden] { display: none !important; }
+    .phone-peek-ask-acts {
+      display: flex;
+      gap: 10px;
+    }
+    .phone-peek-ask-acts button {
+      flex: 1;
+      border-radius: 999px;
+      border: 2px solid #5c4033;
+      padding: 11px 0;
+      font: inherit;
+      font-weight: 750;
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .phone-peek-no { background: #fffaf5; color: #5c4033; }
+    .phone-peek-yes {
+      background: linear-gradient(180deg, #a5efd9, #7ed9c4);
+      color: #5c4033;
+    }
+    .phone-peek-pin {
+      position: fixed;
+      inset: 0;
+      z-index: 9300;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 20px calc(24px + var(--safe-bottom, 0px));
+      background: linear-gradient(180deg, #e8f7f2 0%, #f7f1ea 55%, #efe4d8 100%);
+      color: #5c4033;
+      user-select: none;
+    }
+    .phone-peek-pin-av {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2.5px solid #5c4033;
+      object-fit: cover;
+      margin-bottom: 10px;
+      background: #e8dfd4;
+    }
+    .phone-peek-pin-name {
+      font-size: 16px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .phone-peek-pin-sub {
+      font-size: 13px;
+      color: rgba(92, 64, 51, 0.7);
+      margin-bottom: 22px;
+    }
+    .phone-peek-pin-dots {
+      display: flex;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .phone-peek-pin-dots span {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid #5c4033;
+      background: transparent;
+      transition: background 0.15s;
+    }
+    .phone-peek-pin-dots span.on {
+      background: #5c4033;
+    }
+    .phone-peek-pin-pad {
+      display: grid;
+      grid-template-columns: repeat(3, 64px);
+      gap: 14px 18px;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+    .phone-peek-pin-pad span {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2px solid rgba(92, 64, 51, 0.28);
+      background: rgba(255, 250, 245, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: #5c4033;
+      box-shadow: 0 2px 0 rgba(92, 64, 51, 0.12);
+    }
+    .phone-peek-pin-pad span.hit {
+      background: linear-gradient(180deg, #a5efd9, #7ed9c4);
+      border-color: #5c4033;
+      transform: scale(0.94);
+    }
+    .phone-peek-stop {
+      border-radius: 999px;
+      border: 2px solid #5c4033;
+      background: #fffaf5;
+      color: #5c4033;
+      font: inherit;
+      font-weight: 750;
+      font-size: 13px;
+      padding: 8px 18px;
+      cursor: pointer;
+      z-index: 2;
+    }
+    .phone-peek-chrome {
+      position: fixed;
+      inset: 0;
+      z-index: 9350;
+      pointer-events: none;
+    }
+    .phone-peek-blocker {
+      position: absolute;
+      inset: 0;
+      background: rgba(92, 64, 51, 0.08);
+      pointer-events: all;
+      touch-action: none;
+    }
+    .phone-peek-pill {
+      position: absolute;
+      top: calc(10px + var(--safe-top, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: min(92%, 340px);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      border: 2px solid #5c4033;
+      background: rgba(255, 250, 245, 0.94);
+      box-shadow: 0 6px 18px rgba(92, 64, 51, 0.16);
+      pointer-events: none;
+      z-index: 2;
+    }
+    .phone-peek-pill img {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1.5px solid #5c4033;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .phone-peek-pill span {
+      font-size: 12px;
+      font-weight: 700;
+      color: #5c4033;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .phone-peek-cursor {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      margin-left: -4px;
+      margin-top: -2px;
+      border-left: 3px solid #3d7a6c;
+      border-bottom: 3px solid #3d7a6c;
+      transform: rotate(-45deg);
+      filter: drop-shadow(0 1px 0 #5c4033);
+      z-index: 3;
+      transition: left 0.35s ease, top 0.35s ease;
+      pointer-events: none;
+      opacity: 0;
+    }
+    .phone-peek-cursor.on { opacity: 1; }
+    .phone-peek-thought {
+      position: absolute;
+      right: 12px;
+      bottom: calc(72px + var(--safe-bottom, 0px));
+      width: min(220px, 70vw);
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 2px solid #5c4033;
+      background: #fffaf5;
+      box-shadow: 0 8px 20px rgba(92, 64, 51, 0.14);
+      pointer-events: none;
+      z-index: 3;
+      opacity: 0;
+      transform: translateY(6px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .phone-peek-thought.on {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .phone-peek-thought-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #5c4033;
+    }
+    .phone-peek-thought-head img {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 1.5px solid #5c4033;
+      object-fit: cover;
+    }
+    .phone-peek-thought p {
+      margin: 0;
+      font-size: 12px;
+      line-height: 1.4;
+      color: rgba(92, 64, 51, 0.85);
+    }
+    .phone-peek-chrome .phone-peek-stop {
+      position: absolute;
+      left: 50%;
+      bottom: calc(18px + var(--safe-bottom, 0px));
+      transform: translateX(-50%);
+      pointer-events: all;
+    }
+    .phone-peek-compose {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: calc(56px + var(--safe-bottom, 0px));
+      z-index: 4;
+      pointer-events: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .phone-peek-compose.on {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .phone-peek-compose[hidden] { display: none !important; }
+    .phone-peek-compose-bar {
+      border: 2px solid #5c4033;
+      border-radius: 16px;
+      background: rgba(255, 250, 245, 0.96);
+      padding: 10px 12px;
+      min-height: 44px;
+      font-size: 14px;
+      line-height: 1.4;
+      color: #5c4033;
+      box-shadow: 0 8px 20px rgba(92, 64, 51, 0.14);
+    }
+    .phone-peek-compose-bar .caret {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      margin-left: 1px;
+      background: #3d7a6c;
+      vertical-align: text-bottom;
+      animation: peek-caret 0.8s step-end infinite;
+    }
+    @keyframes peek-caret {
+      50% { opacity: 0; }
+    }
+    .phone-peek-compose-status {
+      margin-top: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(92, 64, 51, 0.65);
+      text-align: center;
+    }
+    .phone-peek-result {
+      position: fixed;
+      inset: 0;
+      z-index: 9400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(110, 88, 79, 0.4);
+      backdrop-filter: blur(5px);
+    }
+    .phone-peek-result-card {
+      width: min(320px, 100%);
+      background: linear-gradient(180deg, #fffaf5 0%, #f3ebe3 100%);
+      border: 2.5px solid #5c4033;
+      border-radius: 22px;
+      padding: 18px 16px 14px;
+      box-shadow: 0 12px 32px rgba(92, 64, 51, 0.22);
+      color: #5c4033;
+    }
+    .phone-peek-result-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .phone-peek-result-head strong {
+      font-size: 15px;
+    }
+    .phone-peek-result-x {
+      border: 0;
+      background: transparent;
+      font-size: 18px;
+      color: #5c4033;
+      cursor: pointer;
+      line-height: 1;
+      padding: 2px 6px;
+    }
+    .phone-peek-result-avrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .phone-peek-result-avrow img {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      border: 2px solid #5c4033;
+      object-fit: cover;
+    }
+    .phone-peek-result-status {
+      font-size: 12px;
+      color: rgba(92, 64, 51, 0.7);
+      margin-bottom: 10px;
+    }
+    .phone-peek-result-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .phone-peek-result-stats div {
+      font-size: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(126, 184, 168, 0.18);
+      border: 1px solid rgba(92, 64, 51, 0.16);
+    }
+    .phone-peek-result-quote {
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 10px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(92, 64, 51, 0.18);
+      margin-bottom: 8px;
+    }
+    .phone-peek-result-hint {
+      font-size: 11px;
+      color: rgba(92, 64, 51, 0.55);
+      line-height: 1.4;
+    }
+    /* 反查：家机的手机 */
+    .bot-phone {
+      position: fixed;
+      inset: 0;
+      z-index: 9100;
+      display: flex;
+      flex-direction: column;
+      background: linear-gradient(165deg, #e8f7f2 0%, #f7f1ea 50%, #efe4d8 100%);
+      color: #5c4033;
+    }
+    .bot-phone[hidden] { display: none !important; }
+    .bot-phone-top {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: calc(10px + var(--safe-top, 0px)) 14px 10px;
+      border-bottom: 2px solid rgba(92, 64, 51, 0.18);
+      background: rgba(255, 250, 245, 0.92);
+    }
+    .bot-phone-top button {
+      border: 2px solid #5c4033;
+      border-radius: 999px;
+      background: #fffaf5;
+      color: #5c4033;
+      font: inherit;
+      font-weight: 700;
+      font-size: 13px;
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .bot-phone-top .ttl {
+      flex: 1;
+      font-weight: 800;
+      font-size: 15px;
+      text-align: center;
+    }
+    .bot-phone-body {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 16px 14px calc(20px + var(--safe-bottom, 0px));
+    }
+    .bot-phone-hint {
+      font-size: 11px;
+      color: rgba(92, 64, 51, 0.55);
+      text-align: center;
+      margin: 0 0 14px;
+    }
+    .bot-phone-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 14px 10px;
+    }
+    .bot-phone-app {
+      border: 0;
+      background: transparent;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0;
+    }
+    .bot-phone-app .ico {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      border: 2px solid #5c4033;
+      background: linear-gradient(160deg, #a5efd9, #7ed9c4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .bot-phone-app .lab {
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .bot-phone-row {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: 2px solid rgba(92, 64, 51, 0.2);
+      border-radius: 14px;
+      background: rgba(255, 250, 245, 0.94);
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      font: inherit;
+      color: #5c4033;
+      cursor: pointer;
+    }
+    .bot-phone-row .t {
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .bot-phone-row .p {
+      font-size: 12px;
+      color: rgba(92, 64, 51, 0.65);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .bot-phone-msg {
+      max-width: 78%;
+      margin: 8px 0;
+      padding: 8px 12px;
+      border-radius: 14px;
+      border: 1.5px solid rgba(92, 64, 51, 0.2);
+      font-size: 13px;
+      line-height: 1.4;
+      clear: both;
+    }
+    .bot-phone-msg.me {
+      float: right;
+      background: linear-gradient(180deg, #a5efd9, #7ed9c4);
+      border-color: #5c4033;
+    }
+    .bot-phone-msg.them {
+      float: left;
+      background: #fffaf5;
+    }
+    .bot-phone-thread::after {
+      content: "";
+      display: table;
+      clear: both;
+    }
+    .bot-phone-memo textarea {
+      width: 100%;
+      min-height: 120px;
+      border: 2px solid #5c4033;
+      border-radius: 12px;
+      padding: 10px;
+      font: inherit;
+      color: #5c4033;
+      background: #fffaf5;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .bot-phone-memo .save {
+      margin-top: 8px;
+      border-radius: 999px;
+      border: 2px solid #5c4033;
+      background: linear-gradient(180deg, #a5efd9, #7ed9c4);
+      color: #5c4033;
+      font: inherit;
+      font-weight: 750;
+      padding: 8px 16px;
+      cursor: pointer;
+    }
+    .bot-phone-locked {
+      text-align: center;
+      padding: 40px 16px;
+      border: 2px dashed rgba(92, 64, 51, 0.35);
+      border-radius: 18px;
+      background: rgba(255, 250, 245, 0.7);
     }
     .home-wid {
       background: rgba(255, 252, 247, .94);
@@ -3409,7 +4024,7 @@
   </style>
   <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css?v=7" />
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx184" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx186" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css?v=b5" />
   <link rel="stylesheet" href="/app-ui/备忘录app/pwa/memo.css?v=m10" />
@@ -3458,6 +4073,84 @@
     <span class="hf-orb" aria-hidden="true">机</span>
     <span class="hf-tip" id="homeFloatTip" hidden>在</span>
   </button>
+
+  <!-- 查手机 P1：申请 / 输密码 / 真界面翻看 chrome / 查阅记录 -->
+  <div id="phonePeekAsk" class="phone-peek-ask" hidden>
+    <div class="phone-peek-ask-card" role="dialog" aria-labelledby="phonePeekAskTitle">
+      <img id="phonePeekAskAv" class="phone-peek-ask-av" alt="" />
+      <div class="phone-peek-ask-eyebrow" id="phonePeekAskEyebrow">反向查手机申请</div>
+      <div class="phone-peek-ask-title" id="phonePeekAskTitle">家机想查看你的手机</div>
+      <p class="phone-peek-ask-sub" id="phonePeekAskSub">同意后会短暂接管屏幕翻看；你也可以拒绝或中途终止。</p>
+      <div class="phone-peek-target-chip" id="phonePeekTargetChip" hidden></div>
+      <div class="phone-peek-ask-acts">
+        <button type="button" class="phone-peek-no" id="btnPhonePeekReject">拒绝</button>
+        <button type="button" class="phone-peek-yes" id="btnPhonePeekAccept">允许查看</button>
+      </div>
+    </div>
+  </div>
+  <div id="phonePeekPin" class="phone-peek-pin" hidden aria-live="polite">
+    <img id="phonePeekPinAv" class="phone-peek-pin-av" alt="" />
+    <div class="phone-peek-pin-name" id="phonePeekPinName">家机</div>
+    <div class="phone-peek-pin-sub">正在输入你的手机密码</div>
+    <div class="phone-peek-pin-dots" id="phonePeekPinDots" aria-hidden="true">
+      <span></span><span></span><span></span><span></span>
+    </div>
+    <div class="phone-peek-pin-pad" id="phonePeekPinPad" aria-hidden="true">
+      <span data-k="1">1</span><span data-k="2">2</span><span data-k="3">3</span>
+      <span data-k="4">4</span><span data-k="5">5</span><span data-k="6">6</span>
+      <span data-k="7">7</span><span data-k="8">8</span><span data-k="9">9</span>
+      <span></span><span data-k="0">0</span><span></span>
+    </div>
+    <button type="button" class="phone-peek-stop" id="btnPhonePeekAbortPin">终止</button>
+  </div>
+  <div id="phonePeekChrome" class="phone-peek-chrome" hidden aria-live="polite">
+    <div class="phone-peek-blocker" aria-hidden="true"></div>
+    <div class="phone-peek-pill">
+      <img id="phonePeekPillAv" alt="" />
+      <span id="phonePeekPillText">家机正在翻看…</span>
+    </div>
+    <div id="phonePeekCursor" class="phone-peek-cursor" aria-hidden="true"></div>
+    <div id="phonePeekThought" class="phone-peek-thought" hidden>
+      <div class="phone-peek-thought-head">
+        <img id="phonePeekThoughtAv" alt="" />
+        <span id="phonePeekThoughtName">家机</span>
+      </div>
+      <p id="phonePeekThoughtText"></p>
+    </div>
+    <div id="phonePeekCompose" class="phone-peek-compose" hidden>
+      <div class="phone-peek-compose-bar">
+        <span id="phonePeekComposeText"></span><span class="caret" aria-hidden="true"></span>
+      </div>
+      <div class="phone-peek-compose-status" id="phonePeekComposeStatus"></div>
+    </div>
+    <button type="button" class="phone-peek-stop" id="btnPhonePeekAbortBrowse">终止</button>
+  </div>
+  <div id="phonePeekResult" class="phone-peek-result" hidden>
+    <div class="phone-peek-result-card" role="dialog" aria-labelledby="phonePeekResultTitle">
+      <div class="phone-peek-result-head">
+        <strong id="phonePeekResultTitle">查阅记录</strong>
+        <button type="button" class="phone-peek-result-x" id="btnPhonePeekResultClose" aria-label="关闭">×</button>
+      </div>
+      <div class="phone-peek-result-avrow">
+        <img id="phonePeekResultAv" alt="" />
+        <span id="phonePeekResultName">家机</span>
+      </div>
+      <div class="phone-peek-result-status" id="phonePeekResultStatus"></div>
+      <div class="phone-peek-result-stats" id="phonePeekResultStats"></div>
+      <div class="phone-peek-result-quote" id="phonePeekResultQuote"></div>
+      <p class="phone-peek-result-hint">高亮与心声会进入 TA 的记忆，之后可能旁敲侧击或摊牌。</p>
+    </div>
+  </div>
+  <!-- 反查：家机的手机 -->
+  <div id="botPhone" class="bot-phone" hidden>
+    <div class="bot-phone-top">
+      <button type="button" id="btnBotPhoneBack">返回</button>
+      <div class="ttl" id="botPhoneTitle">TA 的手机</div>
+      <button type="button" id="btnBotPhoneClose">退出</button>
+    </div>
+    <div class="bot-phone-body" id="botPhoneBody"></div>
+  </div>
+
   <div class="view active" id="view-standby">
     <div class="lock-top" id="lockTop" aria-hidden="true">
       <div class="lock-status" id="lockStatusLead">
@@ -4579,7 +5272,7 @@
   <script src="/assets-colisten/cove-player.js"></script>
   <script src="/assets-colisten/colisten.js?v=8"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx191"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx196"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js?v=b5"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
@@ -4827,22 +5520,33 @@
 
     function paintAvatarPick(el, selected, onPick) {
       if (!el) return;
-      el.innerHTML = AVATAR_PRESETS.map((a) => {
-        const on = a.src === selected ? " on" : "";
-        return (
-          '<button type="button" class="' +
-          on.trim() +
-          '" data-src="' +
-          escapeAttr(a.src) +
-          '" title="' +
-          escapeAttr(a.label) +
-          '"><img src="' +
-          escapeAttr(a.src) +
-          '" alt="' +
-          escapeAttr(a.label) +
-          '" /></button>'
-        );
-      }).join("");
+      const list = AVATAR_PRESETS.slice();
+      /* 自定义（MCP/上传）头像也要出现在选盘，避免误点预设盖掉 */
+      if (
+        selected &&
+        !list.some((a) => a.src === selected) &&
+        String(selected).trim()
+      ) {
+        list.unshift({ src: selected, label: "当前" });
+      }
+      el.innerHTML = list
+        .map((a) => {
+          const on = a.src === selected ? " on" : "";
+          return (
+            '<button type="button" class="' +
+            on.trim() +
+            '" data-src="' +
+            escapeAttr(a.src) +
+            '" title="' +
+            escapeAttr(a.label) +
+            '"><img src="' +
+            escapeAttr(a.src) +
+            '" alt="' +
+            escapeAttr(a.label) +
+            '" /></button>'
+          );
+        })
+        .join("");
       el.querySelectorAll("button").forEach((btn) => {
         btn.addEventListener("click", () => {
           const src = btn.getAttribute("data-src");
@@ -4854,6 +5558,7 @@
 
     let hutAvatarUser = "/assets/cafe/avatar-you.png";
     let hutAvatarBot = "/assets/cafe/avatar-bot.png";
+    let hutNickUser = "";
     let dlgAvatarUser = "";
     let dlgAvatarBot = "";
 
@@ -5233,6 +5938,7 @@
         updateLoreVal(s.lore_summary || "");
         hutAvatarUser = normalizeAvatarLocal(s.avatar_user, "/assets/cafe/avatar-you.png");
         hutAvatarBot = normalizeAvatarLocal(s.avatar_bot, "/assets/cafe/avatar-bot.png");
+        hutNickUser = String(s.nick_user || "").trim().slice(0, 32);
         paintHutAvatarPicks();
         applyHutDialogue(s);
         updatePersonaVal(hutCard);
@@ -5684,8 +6390,29 @@
       if (!msg || !msg.type) return;
       if (msg.type === "monitor_alert") {
         window.__ariadneMonitorAlertAt = Date.now();
-        playShellMonitorChime();
         const d = msg.data || {};
+        if (d.kind === "peek_phone" && d.pending_id) {
+          showPhonePeekAsk(
+            d.pending_id,
+            d.target_peer_id
+              ? {
+                  id: d.target_peer_id,
+                  title: d.target_title || d.target_peer_id,
+                  isGroup: !!d.target_is_group,
+                }
+              : null,
+            d.target_app
+              ? {
+                  view: d.target_app,
+                  label: d.target_app_label || d.target_app,
+                  story: !!d.target_app_story,
+                }
+              : null,
+            d.sweep ? d.sweep_labels || ["微信", "便签", "日历", "购物", "相册"] : null
+          );
+          return;
+        }
+        playShellMonitorChime();
         const sec = Number(d.seconds) || 0;
         const line =
           String(d.content || "即将查看屏幕").trim() +
@@ -7973,7 +8700,1137 @@
     let lastBattCharging = false;
     let phonePresenceTimer = 0;
 
+    let phonePeekPendingId = "";
+    let phonePeekBrowseTimer = 0;
+    let phonePeekPinTimer = 0;
+    let phonePeekLastInfo = null;
+    let phonePeekAborted = false;
+    let phonePeekTheaterOn = false;
+    let phonePeekScanCtl = null;
+    let phonePeekScanCount = 0;
+    let phonePeekScanHighlights = 0;
+    let phonePeekScanKeys = 0;
+    let phonePeekThoughtLine = "";
+    let phonePeekTarget = null;
+    let phonePeekApp = null;
+    let phonePeekSweep = null;
+    let phonePeekSweepTimer = null;
+    let phonePeekComposeNote = null;
+    let phonePeekComposeBusy = false;
+    const SHELL_VIEW_LAB = {
+      standby: "锁屏",
+      home: "桌面",
+      chat: "微信",
+      cal: "日历",
+      "cal-agenda": "日历",
+      "cal-anniv": "日历",
+      "cal-propose": "日历",
+      colisten: "共听",
+      cowatch: "共看",
+      "cowatch-play": "共看",
+      budget: "额度",
+      wallet: "资产",
+      memo: "便签",
+      cabin: "小屋",
+      coread: "共读",
+      "phone-settings": "设置",
+      profile: "资料",
+    };
+    const PEEK_THOUGHTS = [
+      "……先看一眼。",
+      "这句是什么意思？",
+      "嗯？",
+      "记一下。",
+      "有点在意。",
+    ];
+
+    function peekBotName() {
+      try {
+        if (window.ChatApp && typeof ChatApp.dailyDisplayName === "function") {
+          const n = String(ChatApp.dailyDisplayName() || "").trim();
+          if (n) return n;
+        }
+      } catch (_) {}
+      return (
+        (typeof hutDialogue !== "undefined" &&
+          hutDialogue &&
+          hutDialogue.name_bot) ||
+        "家机"
+      );
+    }
+    function peekBotAvatar() {
+      return (
+        (typeof hutAvatarBot === "string" && hutAvatarBot) ||
+        "/assets/cafe/avatar-bot.png"
+      );
+    }
+    function paintPeekAvatars() {
+      const name = peekBotName();
+      const src = peekBotAvatar();
+      [
+        ["phonePeekAskAv", null],
+        ["phonePeekPinAv", "phonePeekPinName"],
+        ["phonePeekPillAv", null],
+        ["phonePeekThoughtAv", "phonePeekThoughtName"],
+        ["phonePeekResultAv", "phonePeekResultName"],
+      ].forEach(([imgId, nameId]) => {
+        const img = document.getElementById(imgId);
+        if (img) {
+          img.src = src;
+          img.alt = name;
+        }
+        if (nameId) {
+          const el = document.getElementById(nameId);
+          if (el) el.textContent = name;
+        }
+      });
+      const askTitle = document.getElementById("phonePeekAskTitle");
+      if (askTitle) askTitle.textContent = name + " 想申请查看你的手机";
+    }
+
+    function hidePhonePeekAsk() {
+      const el = document.getElementById("phonePeekAsk");
+      if (el) el.hidden = true;
+    }
+    function hidePhonePeekPin() {
+      const el = document.getElementById("phonePeekPin");
+      if (el) el.hidden = true;
+      if (phonePeekPinTimer) {
+        clearTimeout(phonePeekPinTimer);
+        phonePeekPinTimer = 0;
+      }
+    }
+    function hidePhonePeekChrome() {
+      const el = document.getElementById("phonePeekChrome");
+      if (el) el.hidden = true;
+      if (phonePeekBrowseTimer) {
+        clearTimeout(phonePeekBrowseTimer);
+        phonePeekBrowseTimer = 0;
+      }
+      if (phonePeekScanCtl && typeof phonePeekScanCtl.stop === "function") {
+        try {
+          phonePeekScanCtl.stop();
+        } catch (_) {}
+      }
+      phonePeekScanCtl = null;
+      try {
+        if (window.ChatApp && typeof ChatApp.clearPeekHighlights === "function") {
+          ChatApp.clearPeekHighlights();
+        }
+      } catch (_) {}
+      const cur = document.getElementById("phonePeekCursor");
+      if (cur) cur.classList.remove("on");
+      const th = document.getElementById("phonePeekThought");
+      if (th) {
+        th.hidden = true;
+        th.classList.remove("on");
+      }
+      const compose = document.getElementById("phonePeekCompose");
+      if (compose) {
+        compose.hidden = true;
+        compose.classList.remove("on");
+      }
+      document.body.classList.remove("is-phone-peek-locked");
+    }
+
+    function sleepPeek(ms) {
+      return new Promise((r) => setTimeout(r, ms));
+    }
+
+    async function typePeekCompose(text, perMs) {
+      const el = document.getElementById("phonePeekComposeText");
+      if (!el) return;
+      el.textContent = "";
+      const s = String(text || "");
+      const step = Math.max(28, Math.min(90, Number(perMs) || 48));
+      for (let i = 0; i < s.length; i++) {
+        if (phonePeekAborted) return;
+        el.textContent = s.slice(0, i + 1);
+        await sleepPeek(step);
+      }
+    }
+
+    async function deletePeekCompose(perMs) {
+      const el = document.getElementById("phonePeekComposeText");
+      if (!el) return;
+      const step = Math.max(18, Math.min(60, Number(perMs) || 28));
+      while (el.textContent && !phonePeekAborted) {
+        el.textContent = el.textContent.slice(0, -1);
+        await sleepPeek(step);
+      }
+    }
+
+    async function runPeekComposeTheater(peerId, title) {
+      if (phonePeekComposeBusy || phonePeekAborted) return null;
+      const pid = String(peerId || "").trim();
+      if (!pid || pid === "daily") return null;
+      phonePeekComposeBusy = true;
+      const box = document.getElementById("phonePeekCompose");
+      const status = document.getElementById("phonePeekComposeStatus");
+      const textEl = document.getElementById("phonePeekComposeText");
+      const who = String(title || "对方").slice(0, 12);
+      const angry =
+        "你跟" + who + "聊这么开心？有意思是吧。";
+      const soft = "刚才手滑了，当我没说～你先忙。";
+      try {
+        if (box) {
+          box.hidden = false;
+          box.classList.add("on");
+        }
+        if (status) status.textContent = peekBotName() + " 正在输入…";
+        if (textEl) textEl.textContent = "";
+        phonePeekThoughtLine = "气死了……";
+        const th = document.getElementById("phonePeekThoughtText");
+        const thought = document.getElementById("phonePeekThought");
+        if (th) th.textContent = phonePeekThoughtLine;
+        if (thought) {
+          thought.hidden = false;
+          thought.classList.add("on");
+        }
+        await typePeekCompose(angry, 42);
+        if (phonePeekAborted) return null;
+        if (status) status.textContent = "又删掉了…";
+        await sleepPeek(350);
+        await deletePeekCompose(22);
+        if (phonePeekAborted) return null;
+        phonePeekThoughtLine = "算了，换个说法。";
+        if (th) th.textContent = phonePeekThoughtLine;
+        if (status) status.textContent = peekBotName() + " 重新组织语言…";
+        await typePeekCompose(soft, 50);
+        if (phonePeekAborted) return null;
+        if (status) status.textContent = "已发送";
+        let sent = false;
+        try {
+          const res = await fetch("/api/v1/chat/messages", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              peer: pid,
+              body: soft,
+              noreply: true,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          sent = !!(res.ok && data && data.message);
+          if (sent && window.ChatApp && typeof ChatApp.refreshThread === "function") {
+            try {
+              ChatApp.refreshThread();
+            } catch (_) {}
+          }
+        } catch (_) {}
+        const note = { angry: angry, soft: soft, sent: sent };
+        phonePeekComposeNote = note;
+        const peekId = phonePeekPendingId;
+        if (peekId) {
+          try {
+            await fetch(
+              "/api/v1/phone/peek/" + encodeURIComponent(peekId) + "/compose",
+              {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(note),
+              }
+            );
+          } catch (_) {}
+        }
+        phonePeekThoughtLine = sent
+          ? "发出去了。装作无事。"
+          : "打完了。";
+        if (th) th.textContent = phonePeekThoughtLine;
+        await sleepPeek(600);
+        return note;
+      } finally {
+        phonePeekComposeBusy = false;
+      }
+    }
+    function hidePhonePeekResult() {
+      const el = document.getElementById("phonePeekResult");
+      if (el) el.hidden = true;
+    }
+    function hideAllPhonePeekUi() {
+      hidePhonePeekAsk();
+      hidePhonePeekPin();
+      hidePhonePeekChrome();
+      hidePhonePeekResult();
+      phonePeekTheaterOn = false;
+    }
+
+    function showPhonePeekAsk(pendingId, target, app, sweepLabels) {
+      const id = String(pendingId || "").trim();
+      if (!id) return;
+      phonePeekPendingId = id;
+      phonePeekAborted = false;
+      phonePeekTheaterOn = false;
+      phonePeekScanCount = 0;
+      phonePeekScanHighlights = 0;
+      phonePeekScanKeys = 0;
+      phonePeekThoughtLine = "";
+      phonePeekComposeNote = null;
+      phonePeekComposeBusy = false;
+      if (phonePeekSweepTimer) {
+        clearTimeout(phonePeekSweepTimer);
+        phonePeekSweepTimer = null;
+      }
+      phonePeekTarget =
+        target && target.id
+          ? {
+              id: String(target.id || "").trim(),
+              title: String(target.title || target.id || "").trim(),
+              isGroup: !!target.isGroup,
+            }
+          : null;
+      phonePeekApp =
+        app && (app.view || app.label)
+          ? {
+              view: String(app.view || "").trim(),
+              label: String(app.label || app.view || "").trim(),
+              story: !!app.story,
+            }
+          : null;
+      phonePeekSweep = Array.isArray(sweepLabels)
+        ? sweepLabels.map((s) => String(s || "").trim()).filter(Boolean)
+        : null;
+      hidePhonePeekPin();
+      hidePhonePeekChrome();
+      hidePhonePeekResult();
+      paintPeekAvatars();
+      const name = peekBotName();
+      const askTitle = document.getElementById("phonePeekAskTitle");
+      const askSub = document.getElementById("phonePeekAskSub");
+      const askEyebrow = document.getElementById("phonePeekAskEyebrow");
+      const chip = document.getElementById("phonePeekTargetChip");
+      const yesBtn = document.getElementById("btnPhonePeekAccept");
+      if (phonePeekTarget && phonePeekTarget.title) {
+        if (askEyebrow) askEyebrow.textContent = "申请查看聊天记录";
+        if (askTitle) {
+          askTitle.textContent =
+            name + " 想查看你和下列对象的聊天";
+        }
+        if (askSub) {
+          askSub.textContent =
+            "同意后会分段翻看当前可见内容；你也可以拒绝或中途终止。";
+        }
+        if (chip) {
+          chip.hidden = false;
+          chip.textContent = phonePeekTarget.title;
+        }
+        if (yesBtn) yesBtn.textContent = "允许查看";
+      } else if (phonePeekApp && phonePeekApp.label) {
+        if (askEyebrow) askEyebrow.textContent = "申请查看 App";
+        if (askTitle) {
+          askTitle.textContent = name + " 想查看你的下列 App";
+        }
+        if (askSub) {
+          askSub.textContent =
+            "同意后会打开该 App 翻看；你也可以拒绝或中途终止。";
+        }
+        if (chip) {
+          chip.hidden = false;
+          chip.textContent = phonePeekApp.label;
+        }
+        if (yesBtn) yesBtn.textContent = "允许查看";
+      } else if (phonePeekSweep && phonePeekSweep.length) {
+        if (askEyebrow) askEyebrow.textContent = "申请翻看手机";
+        if (askTitle) {
+          askTitle.textContent = name + " 想一次翻几个 App";
+        }
+        if (askSub) {
+          askSub.textContent =
+            "同意后会轮流扫过这些地方；你也可以拒绝或中途终止。";
+        }
+        if (chip) {
+          chip.hidden = false;
+          chip.textContent = phonePeekSweep.slice(0, 4).join(" · ");
+        }
+        if (yesBtn) yesBtn.textContent = "允许查看";
+      } else {
+        if (askEyebrow) askEyebrow.textContent = "反向查手机申请";
+        if (askTitle) askTitle.textContent = name + " 想申请查看你的手机";
+        if (askSub) {
+          askSub.textContent =
+            "同意后会短暂接管屏幕翻看；你也可以拒绝或中途终止。";
+        }
+        if (chip) {
+          chip.hidden = true;
+          chip.textContent = "";
+        }
+        if (yesBtn) yesBtn.textContent = "同意";
+      }
+      const el = document.getElementById("phonePeekAsk");
+      if (el) el.hidden = false;
+      try {
+        playShellMonitorChime();
+      } catch (_) {}
+    }
+
+    /** 同意瞬间拍当前界面；锁屏上点同意按「打开桌面给看」处理 */
+    function snapshotPhonePresenceForPeek() {
+      let view = typeof shellViewName === "string" ? shellViewName : "";
+      const online = !(typeof navigator !== "undefined" && navigator.onLine === false);
+      let net = online ? "online" : "offline";
+      try {
+        const c =
+          navigator.connection ||
+          navigator.mozConnection ||
+          navigator.webkitConnection;
+        if (c && c.effectiveType) net = String(c.effectiveType);
+      } catch (_) {}
+      /* ponytail: 同意=递给对方看；仍停在 standby 时抬成桌面，避免「同意了还锁屏」；真锁态留给拒绝/超时 */
+      let locked = view === "standby";
+      if (locked) {
+        view = "home";
+        locked = false;
+      }
+      const body = {
+        view,
+        app: view === "chat" ? "chat" : view,
+        locked,
+        online,
+        net,
+        pwa: !!(
+          window.matchMedia &&
+          window.matchMedia("(display-mode: standalone)").matches
+        ),
+        battery_level: lastBattLevel,
+        battery_charging: lastBattCharging,
+      };
+      if (
+        view === "chat" &&
+        window.ChatApp &&
+        typeof ChatApp.getPresenceExtra === "function"
+      ) {
+        try {
+          Object.assign(body, ChatApp.getPresenceExtra());
+        } catch (_) {}
+      }
+      return body;
+    }
+
+    function startPhonePeekTheater(peek, seconds) {
+      if (phonePeekTheaterOn) {
+        if (peek) phonePeekLastInfo = peek;
+        return;
+      }
+      phonePeekTheaterOn = true;
+      phonePeekAborted = false;
+      if (peek) phonePeekLastInfo = peek;
+      const sec = Math.max(4, Math.min(16, Math.floor(Number(seconds) || 10)));
+      showPhonePeekPin(() => {
+        if (phonePeekAborted) return;
+        enterPhonePeekBrowse(phonePeekLastInfo, sec);
+      });
+    }
+
+    function showPhonePeekPin(done) {
+      hidePhonePeekAsk();
+      paintPeekAvatars();
+      const el = document.getElementById("phonePeekPin");
+      const dots = document.querySelectorAll("#phonePeekPinDots span");
+      const keys = document.querySelectorAll("#phonePeekPinPad span[data-k]");
+      if (!el) {
+        if (typeof done === "function") done();
+        return;
+      }
+      el.hidden = false;
+      document.body.classList.add("is-phone-peek-locked");
+      dots.forEach((d) => d.classList.remove("on"));
+      keys.forEach((k) => k.classList.remove("hit"));
+      const seq = ["1", "4", "7", "2"];
+      let i = 0;
+      function step() {
+        if (phonePeekAborted) return;
+        if (i >= seq.length) {
+          phonePeekPinTimer = setTimeout(() => {
+            hidePhonePeekPin();
+            if (typeof done === "function") done();
+          }, 280);
+          return;
+        }
+        const digit = seq[i];
+        const key = document.querySelector(
+          '#phonePeekPinPad span[data-k="' + digit + '"]'
+        );
+        if (key) {
+          key.classList.add("hit");
+          setTimeout(() => key.classList.remove("hit"), 180);
+        }
+        if (dots[i]) dots[i].classList.add("on");
+        i += 1;
+        phonePeekPinTimer = setTimeout(step, 420);
+      }
+      phonePeekPinTimer = setTimeout(step, 350);
+    }
+
+    function peekThoughtFor(text, summary) {
+      const raw = String(text || "").trim();
+      if (raw.length >= 4) {
+        return "「" + raw.slice(0, 18) + (raw.length > 18 ? "…" : "") + "」……";
+      }
+      const sum = String(summary || "");
+      if (/群/.test(sum)) return "还在群里聊？";
+      if (/列表/.test(sum)) return "怎么还停在列表…";
+      return PEEK_THOUGHTS[Math.floor(Math.random() * PEEK_THOUGHTS.length)];
+    }
+
+    function enterPhonePeekBrowse(peek, seconds) {
+      hidePhonePeekAsk();
+      hidePhonePeekPin();
+      paintPeekAvatars();
+      const info = peek && typeof peek === "object" ? peek : phonePeekLastInfo;
+      if (info) phonePeekLastInfo = info;
+      const targetPeer =
+        (info && info.chat_peer_id) ||
+        (phonePeekTarget && phonePeekTarget.id) ||
+        "";
+      const isChat =
+        !!(info &&
+          (info.targeted ||
+            info.view === "chat" ||
+            info.app === "chat" ||
+            info.app_label === "微信" ||
+            info.chat_layer ||
+            targetPeer));
+      if (phonePeekSweepTimer) {
+        clearTimeout(phonePeekSweepTimer);
+        phonePeekSweepTimer = null;
+      }
+
+      function openPeekShellView(v, lab, peerId) {
+        const view = String(v || "");
+        const story =
+          view === "album" ||
+          view === "shop" ||
+          !!(lab && (String(lab).indexOf("相册") >= 0 || String(lab).indexOf("购物") >= 0));
+        if (story) {
+          showView("home");
+          try {
+            shellToastLite("正在翻「" + (lab || view) + "」…");
+          } catch (_) {}
+          return;
+        }
+        if (view === "chat") {
+          showView("chat");
+          if (window.ChatApp && typeof ChatApp.openForPeek === "function") {
+            ChatApp.openForPeek(
+              String(peerId || targetPeer || "").trim()
+            );
+          }
+          return;
+        }
+        if (view && SHELL_VIEW_LAB[view]) {
+          if (view.indexOf("cal") === 0) showView(view);
+          else if (
+            view === "home" ||
+            view === "colisten" ||
+            view === "cowatch" ||
+            view === "cabin" ||
+            view === "memo" ||
+            view === "budget" ||
+            view === "wallet" ||
+            view === "profile" ||
+            view === "phone-settings" ||
+            view === "coread"
+          ) {
+            showView(view);
+          } else {
+            showView("home");
+          }
+        } else {
+          showView("home");
+        }
+      }
+
+      try {
+        const sweepList =
+          (info && info.sweep && Array.isArray(info.sweep_apps) && info.sweep_apps.length
+            ? info.sweep_apps
+            : null) ||
+          (phonePeekSweep && phonePeekSweep.length
+            ? phonePeekSweep.map((lab) => ({ label: lab, view: "", story: true }))
+            : null);
+        if (sweepList && sweepList.length) {
+          let si = 0;
+          const tick = () => {
+            if (phonePeekAborted || !phonePeekTheaterOn) return;
+            const a = sweepList[si % sweepList.length];
+            openPeekShellView(
+              a.view || "home",
+              a.label,
+              a.peerId || a.peer_id || ""
+            );
+            const pillEl = document.getElementById("phonePeekPillText");
+            if (pillEl) {
+              pillEl.textContent =
+                peekBotName() +
+                " 正在查看「" +
+                (a.label || a.view || "手机") +
+                "」…";
+            }
+            si += 1;
+            if (si < sweepList.length) {
+              phonePeekSweepTimer = setTimeout(tick, 1500);
+            }
+          };
+          tick();
+        } else if (isChat) {
+          openPeekShellView("chat", "微信");
+        } else {
+          const storyApp =
+            (info && info.story_app) ||
+            (info && (info.target_app === "album" || info.target_app === "shop")) ||
+            (phonePeekApp && phonePeekApp.story);
+          const v = String(
+            (info && info.view) ||
+              (phonePeekApp && !phonePeekApp.story && phonePeekApp.view) ||
+              ""
+          );
+          if (storyApp) {
+            openPeekShellView(
+              (info && info.target_app) || (phonePeekApp && phonePeekApp.view) || "home",
+              (info && info.app_label) || (phonePeekApp && phonePeekApp.label) || "App"
+            );
+          } else {
+            openPeekShellView(v || "home", (info && info.app_label) || "");
+          }
+        }
+      } catch (_) {}
+
+      const chrome = document.getElementById("phonePeekChrome");
+      if (chrome) chrome.hidden = false;
+      document.body.classList.add("is-phone-peek-locked");
+
+      const title =
+        (info && info.chat_title) ||
+        (phonePeekTarget && phonePeekTarget.title) ||
+        (info && info.app_label) ||
+        (phonePeekApp && phonePeekApp.label) ||
+        (phonePeekSweep && phonePeekSweep[0]) ||
+        "手机";
+      const pill = document.getElementById("phonePeekPillText");
+      if (pill && !(info && info.sweep)) {
+        pill.textContent =
+          peekBotName() +
+          " 正在查看「" +
+          title +
+          "」…";
+      }
+
+      const thought = document.getElementById("phonePeekThought");
+      const thoughtText = document.getElementById("phonePeekThoughtText");
+      const cursor = document.getElementById("phonePeekCursor");
+      const canScan =
+        isChat &&
+        targetPeer &&
+        window.ChatApp &&
+        typeof ChatApp.runPeekScan === "function";
+
+      if (canScan) {
+        setTimeout(() => {
+          if (phonePeekAborted || !phonePeekTheaterOn) return;
+          phonePeekScanCtl = ChatApp.runPeekScan({
+            stepMs: 1000,
+            maxRows: info && info.targeted ? 8 : 6,
+            onFocus: (ev) => {
+              phonePeekScanCount = Math.max(
+                phonePeekScanCount,
+                (ev && ev.index) || 0
+              );
+              if (ev && ev.key) phonePeekScanKeys += 1;
+              phonePeekScanHighlights = phonePeekScanCount;
+              if (pill && title) {
+                pill.textContent =
+                  peekBotName() +
+                  " 正在查看「" +
+                  title +
+                  "」第 " +
+                  (ev.index || 1) +
+                  " 段…";
+              }
+              if (cursor && ev && ev.rect) {
+                cursor.style.left = ev.rect.left + ev.rect.width * 0.72 + "px";
+                cursor.style.top = ev.rect.top + ev.rect.height * 0.55 + "px";
+                cursor.classList.add("on");
+              }
+              phonePeekThoughtLine =
+                ev && ev.key
+                  ? "这句……有点在意。"
+                  : peekThoughtFor(ev && ev.text, info && info.summary);
+              if (thought && thoughtText) {
+                thoughtText.textContent = phonePeekThoughtLine;
+                thought.hidden = false;
+                thought.classList.add("on");
+              }
+            },
+            onDone: (r) => {
+              if (r && r.count) phonePeekScanCount = r.count;
+              if (r && r.highlights != null) phonePeekScanHighlights = r.highlights;
+              if (r && r.keys != null) phonePeekScanKeys = r.keys;
+              const keys = (r && r.keys) || phonePeekScanKeys || 0;
+              const scanned = (r && r.count) || phonePeekScanCount || 0;
+              const self =
+                !targetPeer ||
+                targetPeer === "daily" ||
+                !!(info && info.is_self_chat);
+              /* 第三者会话：有重点或扫了几条就演代发 */
+              if (
+                !self &&
+                (keys > 0 || scanned >= 3) &&
+                !phonePeekAborted &&
+                phonePeekTheaterOn
+              ) {
+                runPeekComposeTheater(targetPeer, title).catch(() => {});
+              }
+            },
+          });
+        }, 280);
+      } else {
+        phonePeekThoughtLine = peekThoughtFor("", info && info.summary);
+        if (thought && thoughtText) {
+          thoughtText.textContent = phonePeekThoughtLine;
+          thought.hidden = false;
+          thought.classList.add("on");
+        }
+      }
+
+      const sec = Math.max(6, Math.min(22, Math.floor(Number(seconds) || 18)));
+      if (phonePeekBrowseTimer) clearTimeout(phonePeekBrowseTimer);
+      /* 兜底：SSE done 丢了也关 */
+      phonePeekBrowseTimer = setTimeout(() => {
+        if (!phonePeekTheaterOn) return;
+        finishPhonePeekTheater(false);
+      }, sec * 1000 + 600);
+    }
+
+    function showPhonePeekResult(forced, fromPayload) {
+      paintPeekAvatars();
+      const info = phonePeekLastInfo || {};
+      const p = fromPayload && typeof fromPayload === "object" ? fromPayload : null;
+      const el = document.getElementById("phonePeekResult");
+      const status = document.getElementById("phonePeekResultStatus");
+      const stats = document.getElementById("phonePeekResultStats");
+      const quote = document.getElementById("phonePeekResultQuote");
+      const wasForced = p ? !!p.forced_offline : !!forced;
+      if (status) {
+        status.textContent = wasForced
+          ? "本次查阅已被你终止。"
+          : "本次查阅已结束。";
+      }
+      const scanned = p
+        ? p.scanned || 0
+        : phonePeekScanCount ||
+          (info.thread_excerpt || []).length ||
+          0;
+      const highlights = p
+        ? p.highlights || 0
+        : phonePeekScanHighlights ||
+          (scanned ? Math.min(scanned, Math.max(1, Math.ceil(scanned * 0.6))) : 0);
+      const keys = p
+        ? p.keys || 0
+        : phonePeekScanKeys ||
+          (highlights ? Math.min(highlights, Math.max(0, Math.floor(highlights * 0.35))) : 0);
+      if (stats) {
+        stats.innerHTML =
+          "<div>完整抽查内容 " +
+          (scanned || (info.summary || (p && p.summary) ? 1 : 0)) +
+          " 条</div>" +
+          "<div>全部高亮批注 " +
+          highlights +
+          "</div>" +
+          "<div>重点标记 " +
+          keys +
+          "</div>";
+      }
+      if (quote) {
+        const compose = phonePeekComposeNote;
+        quote.textContent =
+          (p && (p.quote || p.summary)) ||
+          (compose && compose.soft
+            ? (compose.sent ? "代发了「" : "打出「") +
+              compose.soft +
+              "」" +
+              (compose.angry ? "（气话已删）" : "")
+            : "") ||
+          phonePeekThoughtLine ||
+          info.summary ||
+          "看了一眼，没多说。";
+      }
+      if (el) el.hidden = false;
+    }
+
+    function onPeekRecordOpen(payload) {
+      showPhonePeekResult(!!(payload && payload.forced_offline), payload || null);
+    }
+
+    function finishPhonePeekTheater(forced) {
+      if (phonePeekSweepTimer) {
+        clearTimeout(phonePeekSweepTimer);
+        phonePeekSweepTimer = null;
+      }
+      hidePhonePeekPin();
+      hidePhonePeekChrome();
+      phonePeekTheaterOn = false;
+      try {
+        if (window.ChatApp && typeof ChatApp.clearPeekHighlights === "function") {
+          ChatApp.clearPeekHighlights();
+        }
+      } catch (_) {}
+      showPhonePeekResult(!!forced);
+    }
+
+    async function abortPhonePeek() {
+      if (phonePeekAborted) return;
+      phonePeekAborted = true;
+      if (phonePeekSweepTimer) {
+        clearTimeout(phonePeekSweepTimer);
+        phonePeekSweepTimer = null;
+      }
+      const id = phonePeekPendingId;
+      hidePhonePeekAsk();
+      hidePhonePeekPin();
+      hidePhonePeekChrome();
+      phonePeekTheaterOn = false;
+      try {
+        if (window.ChatApp && typeof ChatApp.clearPeekHighlights === "function") {
+          ChatApp.clearPeekHighlights();
+        }
+      } catch (_) {}
+      if (id) {
+        try {
+          await fetch(
+            "/api/v1/phone/peek/" + encodeURIComponent(id) + "/abort",
+            { method: "POST", credentials: "same-origin" }
+          );
+        } catch (_) {}
+      }
+      showPhonePeekResult(true);
+    }
+
+    async function answerPhonePeek(accept) {
+      const id = phonePeekPendingId;
+      if (!id) {
+        hidePhonePeekAsk();
+        return;
+      }
+      hidePhonePeekAsk();
+      try {
+        const payload = accept
+          ? { presence: snapshotPhonePresenceForPeek() }
+          : {};
+        const res = await fetch(
+          "/api/v1/phone/peek/" +
+            encodeURIComponent(id) +
+            (accept ? "/accept" : "/reject"),
+          {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "应答失败");
+        if (accept) {
+          startPhonePeekTheater(data.peek || null, 18);
+          try {
+            reportPhonePresence(payload.presence);
+          } catch (_) {}
+        } else {
+          shellToastLite("已拒绝查手机");
+          phonePeekPendingId = "";
+          phonePeekLastInfo = null;
+        }
+      } catch (err) {
+        shellToastLite((err && err.message) || "应答失败");
+        phonePeekPendingId = "";
+      }
+    }
+
+    function onPeekPhoneWait(ev) {
+      phonePeekLastInfo = null;
+      const tid = ev && ev.target_peer_id;
+      const appView = ev && ev.target_app;
+      showPhonePeekAsk(
+        ev && ev.pending_id,
+        tid
+          ? {
+              id: tid,
+              title: (ev && ev.target_title) || tid,
+              isGroup: !!(ev && ev.target_is_group),
+            }
+          : null,
+        appView && !(ev && ev.sweep)
+          ? {
+              view: appView,
+              label: (ev && ev.target_app_label) || appView,
+              story: !!(ev && ev.target_app_story),
+            }
+          : null,
+        ev && ev.sweep
+          ? ev.sweep_labels || ["微信", "便签", "日历", "购物", "相册"]
+          : null
+      );
+    }
+    function onPeekPhoneBrowse(ev) {
+      if (ev && ev.peek) phonePeekLastInfo = ev.peek;
+      if (phonePeekTheaterOn) return;
+      startPhonePeekTheater(
+        (ev && ev.peek) || phonePeekLastInfo,
+        (ev && ev.seconds) || 10
+      );
+    }
+    function onPeekPhoneDone(ev) {
+      const forced = !!(ev && ev.forced_offline) || phonePeekAborted;
+      if (phonePeekTheaterOn) {
+        finishPhonePeekTheater(forced);
+      } else if (!document.getElementById("phonePeekResult") || document.getElementById("phonePeekResult").hidden) {
+        showPhonePeekResult(forced);
+      }
+      phonePeekPendingId = "";
+    }
+
+    /* —— 反查：家机的手机 —— */
+    let botPhoneStack = ["home"];
+    let botPhoneCache = null;
+
+    function hideBotPhone() {
+      const el = document.getElementById("botPhone");
+      if (el) el.hidden = true;
+      botPhoneStack = ["home"];
+    }
+
+    async function showBotPhone() {
+      hideAllPhonePeekUi();
+      botPhoneStack = ["home"];
+      const el = document.getElementById("botPhone");
+      if (el) el.hidden = false;
+      await botPhoneRender();
+    }
+
+    async function botPhoneFetchOverview() {
+      const res = await fetch("/api/v1/bot-phone", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "打不开对方手机");
+      botPhoneCache = data;
+      return data;
+    }
+
+    function botPhoneSetTitle(t) {
+      const el = document.getElementById("botPhoneTitle");
+      if (el) el.textContent = t || "TA 的手机";
+    }
+
+    async function botPhoneRender() {
+      const body = document.getElementById("botPhoneBody");
+      const back = document.getElementById("btnBotPhoneBack");
+      if (!body) return;
+      const top = botPhoneStack[botPhoneStack.length - 1] || "home";
+      if (back) back.hidden = botPhoneStack.length <= 1;
+      try {
+        if (!botPhoneCache) await botPhoneFetchOverview();
+        const owner =
+          (botPhoneCache && botPhoneCache.owner_name) || peekBotName();
+        if (top === "home") {
+          botPhoneSetTitle(owner + " 的手机");
+          body.innerHTML =
+            '<p class="bot-phone-hint">翻看会留下痕迹，TA 之后可能发现。</p>' +
+            '<div class="bot-phone-grid" id="botPhoneGrid"></div>';
+          const grid = document.getElementById("botPhoneGrid");
+          const apps =
+            (botPhoneCache && botPhoneCache.apps) || [
+              { id: "wechat", label: "微信" },
+              { id: "memo", label: "备忘录" },
+              { id: "shop", label: "购物" },
+              { id: "album", label: "相册" },
+            ];
+          apps.forEach((a) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "bot-phone-app";
+            btn.innerHTML =
+              '<span class="ico">' +
+              String(a.label || "").slice(0, 2) +
+              '</span><span class="lab">' +
+              (a.label || "") +
+              "</span>";
+            btn.addEventListener("click", () => botPhoneOpenApp(a.id));
+            grid.appendChild(btn);
+          });
+          return;
+        }
+        if (top === "wechat") {
+          botPhoneSetTitle("微信");
+          const chats = (botPhoneCache && botPhoneCache.chats) || [];
+          body.innerHTML = chats.length
+            ? ""
+            : '<p class="bot-phone-hint">没有会话</p>';
+          chats.forEach((c) => {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "bot-phone-row";
+            btn.innerHTML =
+              '<div class="t"></div><div class="p"></div>';
+            btn.querySelector(".t").textContent = c.title || c.id;
+            btn.querySelector(".p").textContent = c.preview || "";
+            btn.addEventListener("click", () => botPhoneOpenChat(c.id));
+            body.appendChild(btn);
+          });
+          return;
+        }
+        if (top.indexOf("chat:") === 0) {
+          const chatId = top.slice(5);
+          const res = await fetch("/api/v1/bot-phone/chat", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: chatId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || "打不开会话");
+          const chat = data.chat || {};
+          botPhoneSetTitle(chat.title || "聊天");
+          const wrap = document.createElement("div");
+          wrap.className = "bot-phone-thread";
+          (chat.messages || []).forEach((m) => {
+            const bub = document.createElement("div");
+            bub.className =
+              "bot-phone-msg " + (m.from === "me" ? "me" : "them");
+            bub.textContent = m.text || "";
+            wrap.appendChild(bub);
+          });
+          body.replaceChildren(wrap);
+          return;
+        }
+        if (top === "memo") {
+          botPhoneSetTitle("备忘录");
+          const memos = (botPhoneCache && botPhoneCache.memos) || [];
+          body.replaceChildren();
+          memos.forEach((m) => {
+            const card = document.createElement("div");
+            card.className = "bot-phone-memo";
+            card.style.marginBottom = "14px";
+            const h = document.createElement("div");
+            h.className = "bot-phone-row";
+            h.style.cursor = "default";
+            h.innerHTML = '<div class="t"></div>';
+            h.querySelector(".t").textContent = m.title || "备忘";
+            const ta = document.createElement("textarea");
+            ta.value = m.body || "";
+            const save = document.createElement("button");
+            save.type = "button";
+            save.className = "save";
+            save.textContent = "保存修改";
+            save.addEventListener("click", async () => {
+              try {
+                const res = await fetch("/api/v1/bot-phone/memo", {
+                  method: "POST",
+                  credentials: "same-origin",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: m.id, body: ta.value }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.message || "保存失败");
+                botPhoneCache = null;
+                shellToastLite("已改备忘 · 会留痕");
+              } catch (err) {
+                shellToastLite((err && err.message) || "保存失败");
+              }
+            });
+            card.append(h, ta, save);
+            body.appendChild(card);
+          });
+          return;
+        }
+        if (top === "shop") {
+          botPhoneSetTitle("购物记录");
+          const res = await fetch("/api/v1/bot-phone/open", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ app: "shop" }),
+          });
+          const data = await res.json().catch(() => ({}));
+          const rows = (data && data.shop) || (botPhoneCache && botPhoneCache.shop) || [];
+          body.replaceChildren();
+          rows.forEach((s) => {
+            const btn = document.createElement("div");
+            btn.className = "bot-phone-row";
+            btn.style.cursor = "default";
+            btn.innerHTML =
+              '<div class="t"></div><div class="p"></div>';
+            btn.querySelector(".t").textContent =
+              (s.title || "") + " · " + (s.amount || "");
+            btn.querySelector(".p").textContent =
+              (s.status || "") +
+              (s.note ? " · " + s.note : "") +
+              (s.shop ? " · " + s.shop : "");
+            body.appendChild(btn);
+          });
+          return;
+        }
+        if (top === "album") {
+          botPhoneSetTitle("相册");
+          const res = await fetch("/api/v1/bot-phone/open", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ app: "album" }),
+          });
+          const data = await res.json().catch(() => ({}));
+          body.innerHTML =
+            '<div class="bot-phone-locked"><p style="font-weight:800;margin:0 0 8px">有密码</p><p style="margin:0;font-size:13px;opacity:.75">' +
+            (data.message || "解不开，先算了。") +
+            "</p></div>";
+          return;
+        }
+      } catch (err) {
+        body.innerHTML =
+          '<p class="bot-phone-hint">' +
+          ((err && err.message) || "加载失败") +
+          "</p>";
+      }
+    }
+
+    async function botPhoneOpenApp(appId) {
+      const id = String(appId || "").trim();
+      if (!id) return;
+      try {
+        if (id === "wechat" || id === "memo") {
+          await fetch("/api/v1/bot-phone/open", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ app: id }),
+          });
+          if (!botPhoneCache || id === "wechat") await botPhoneFetchOverview();
+        }
+        botPhoneStack.push(id);
+        await botPhoneRender();
+      } catch (err) {
+        shellToastLite((err && err.message) || "打不开");
+      }
+    }
+
+    async function botPhoneOpenChat(chatId) {
+      botPhoneStack.push("chat:" + chatId);
+      await botPhoneRender();
+    }
+
+    function botPhoneBack() {
+      if (botPhoneStack.length <= 1) {
+        hideBotPhone();
+        return;
+      }
+      botPhoneStack.pop();
+      botPhoneRender();
+    }
+
     function reportPhonePresence(extra) {
+      /* 翻看接管中仍上报真实界面，摘要在同意瞬间已拍好 */
       const view = typeof shellViewName === "string" ? shellViewName : "";
       const online = !(typeof navigator !== "undefined" && navigator.onLine === false);
       let net = online ? "online" : "offline";
@@ -8613,8 +10470,15 @@
       if (go === "coread") enterCabin();
       else if (go === "settings") showView("phone-settings");
       else if (go === "cal") showView("cal");
-      else if (go === "chat") showView("chat");
-      else if (go === "cowatch") showView("cowatch");
+      else if (go === "chat") {
+        /* 桌面入口固定进会话列表，别停在查手机留下的陌生会话 */
+        showView("chat");
+        try {
+          if (window.ChatApp && typeof ChatApp.showSessionList === "function") {
+            ChatApp.showSessionList();
+          }
+        } catch (_) {}
+      } else if (go === "cowatch") showView("cowatch");
       else if (go === "colisten") showView("colisten");
       else if (go === "budget") showView("budget");
       else if (go === "wallet") showView("wallet");
@@ -11854,10 +13718,84 @@
         getPeerName: () => (hutDialogue && hutDialogue.name_bot) || "家机",
         getAvatarYou: () => hutAvatarUser || "/assets/cafe/avatar-you.png",
         getAvatarBot: () => hutAvatarBot || "/assets/cafe/avatar-bot.png",
+        getNameUser: () =>
+          (hutDialogue && hutDialogue.name_user) || "你",
+        getNickUser: () => hutNickUser || "",
+        onBotNameChanged: (name) => {
+          const n = String(name || "").trim().slice(0, 32);
+          if (!n) return;
+          if (hutDialogue) hutDialogue.name_bot = n;
+          const inp = document.getElementById("inNameBot");
+          if (inp) inp.value = n;
+        },
+        onAvatarChanged: (who, url) => {
+          const u = normalizeAvatarLocal(
+            url,
+            who === "you"
+              ? "/assets/cafe/avatar-you.png"
+              : "/assets/cafe/avatar-bot.png"
+          );
+          if (who === "you") {
+            hutAvatarUser = u;
+            if (hutDialogue) hutDialogue.avatar_user = u;
+          } else {
+            hutAvatarBot = u;
+            if (hutDialogue) hutDialogue.avatar_bot = u;
+          }
+          paintHutAvatarPicks();
+        },
+        onYouProfileChanged: (patch) => {
+          const p = patch || {};
+          if (p.avatar_user) {
+            hutAvatarUser = normalizeAvatarLocal(
+              p.avatar_user,
+              hutAvatarUser
+            );
+            if (hutDialogue) hutDialogue.avatar_user = hutAvatarUser;
+          }
+          if (p.name_user != null) {
+            const n = String(p.name_user || "").trim() || "你";
+            if (hutDialogue) hutDialogue.name_user = n;
+            const inp = document.getElementById("inNameUser");
+            if (inp) inp.value = n;
+          }
+          if (p.nick_user != null) {
+            hutNickUser = String(p.nick_user || "").trim().slice(0, 32);
+          }
+          paintHutAvatarPicks();
+        },
+        onPeekPhoneWait,
+        onPeekPhoneBrowse,
+        onPeekPhoneDone,
+        onPeekRecordOpen,
+        showBotPhone,
         onUnreadChange: () => refreshChatUnread(),
         reportPhonePresence,
       });
     }
+
+    (function bindPhonePeekUi() {
+      const yes = document.getElementById("btnPhonePeekAccept");
+      const no = document.getElementById("btnPhonePeekReject");
+      const abortPin = document.getElementById("btnPhonePeekAbortPin");
+      const abortBrowse = document.getElementById("btnPhonePeekAbortBrowse");
+      const closeResult = document.getElementById("btnPhonePeekResultClose");
+      if (yes) yes.addEventListener("click", () => answerPhonePeek(true));
+      if (no) no.addEventListener("click", () => answerPhonePeek(false));
+      if (abortPin) abortPin.addEventListener("click", () => abortPhonePeek());
+      if (abortBrowse)
+        abortBrowse.addEventListener("click", () => abortPhonePeek());
+      if (closeResult)
+        closeResult.addEventListener("click", () => {
+          hidePhonePeekResult();
+          phonePeekLastInfo = null;
+          phonePeekPendingId = "";
+        });
+      const bpBack = document.getElementById("btnBotPhoneBack");
+      const bpClose = document.getElementById("btnBotPhoneClose");
+      if (bpBack) bpBack.addEventListener("click", () => botPhoneBack());
+      if (bpClose) bpClose.addEventListener("click", () => hideBotPhone());
+    })();
     if (window.ColistenApp) {
       ColistenApp.mount({
         showView,

@@ -3,6 +3,8 @@
 完整愿望清单（用户个人店同步）：Cursor Agent Store `ariadne-aionshome-wishlist.md`  
 源项目：https://github.com/death34018-hue/AionsHome
 
+> **2026-10-27**：IB 借鉴主线（查手机 P0～P0″、H1～H10、M3～M8、D1）已落在 [`落地进度.md`](./落地进度.md) / [`../../IB借鉴-能力计划.md`](../../IB借鉴-能力计划.md)，**勿与本备忘 V 轨混表重开**。本文件仍只管 AionsHome 对照的记忆库 / 在场感 V / Cove 点歌条。
+
 ## 记忆库切片
 
 | 刀 | 内容 | 状态 |
