@@ -143,6 +143,10 @@ const DEFAULTS = {
   weather_tool_enabled: false,
   /** H10：定位不可用时的手动城市兜底 */
   weather_city: "",
+  /** IB D1：DIY 外部 HTTP 工具总开关 */
+  diy_http_enabled: true,
+  /** IB D1：自定义 HTTP 工具列表（name/url/method/params/confirm） */
+  diy_http_tools: [],
   /** Cove 网易云：兼容 API 根地址（如 NeteaseCloudMusicApi :3000） */
   netease_api_base_url: "http://127.0.0.1:3000",
   /** 可选 Cookie / MUSIC_U=…；只存服务端，勿进 Git */
@@ -656,6 +660,15 @@ function readSettings() {
     weather_city: String(file.weather_city || "")
       .trim()
       .slice(0, 48),
+    diy_http_enabled: file.diy_http_enabled !== false,
+    diy_http_tools: (() => {
+      try {
+        const { normalizeDiyHttpTools } = require("../../聊天app/gateway/diy-http");
+        return normalizeDiyHttpTools(file.diy_http_tools);
+      } catch (_) {
+        return [];
+      }
+    })(),
     netease_api_base_url: String(
       file.netease_api_base_url != null
         ? file.netease_api_base_url
@@ -1107,6 +1120,23 @@ function patchSettings(patch) {
     file.weather_city = String(patch.weather_city || "")
       .trim()
       .slice(0, 48);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "diy_http_enabled")) {
+    const v = patch.diy_http_enabled;
+    if (typeof v === "boolean") file.diy_http_enabled = v;
+    else if (typeof v === "string") {
+      file.diy_http_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.diy_http_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "diy_http_tools")) {
+    try {
+      const { normalizeDiyHttpTools } = require("../../聊天app/gateway/diy-http");
+      file.diy_http_tools = normalizeDiyHttpTools(patch.diy_http_tools);
+    } catch (_) {
+      file.diy_http_tools = [];
+    }
   }
   if (Object.prototype.hasOwnProperty.call(patch, "voice_bar_lang")) {
     file.voice_bar_lang = normalizeVoiceBarLang(patch.voice_bar_lang);

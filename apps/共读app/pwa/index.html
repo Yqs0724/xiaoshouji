@@ -883,6 +883,7 @@
     .home-main > .home-desk,
     .home-main > .home-desk-dots,
     .home-main > .home-cal-remind,
+    .home-main > .home-notif-guide,
     .home-main > .home-desk-editbar {
       position: relative;
       z-index: 3;
@@ -1338,6 +1339,24 @@
       flex-shrink: 0;
     }
     .home-cal-remind[hidden] { display: none !important; }
+    /* S8.2 未授系统通知时引导 */
+    .home-notif-guide {
+      align-self: center;
+      max-width: 92%;
+      margin: 0;
+      padding: 5px 12px;
+      border: 1px dashed rgba(92, 64, 51, .28);
+      border-radius: 999px;
+      background: rgba(255, 248, 236, .92);
+      color: #5c4033;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .home-notif-guide[hidden] { display: none !important; }
     .home-avatars {
       display: flex;
       justify-content: center;
@@ -3466,6 +3485,7 @@
   <div class="view" id="view-home">
     <div class="home-main">
       <button type="button" class="home-cal-remind" id="homeCalRemind" hidden></button>
+      <button type="button" class="home-notif-guide" id="homeNotifGuide" hidden>开启通知 · 日程到点可弹</button>
       <div class="home-desk" id="homeDesk" aria-label="桌面">
         <div class="desk-item desk-peer" data-desk-id="wid-peer" data-desk-page="0" title="头像">
           <div class="home-avatars" id="homeAvatars">
@@ -3633,6 +3653,11 @@
             <span class="val" id="mcpToolsVal">开</span>
             <span class="chev">›</span>
           </div>
+          <div class="row tap" id="rowDiyHttp" role="button" tabindex="0">
+            <div>DIY 外部 HTTP<small>自定义接口 · 网关代发</small></div>
+            <span class="val" id="diyHttpVal">0</span>
+            <span class="chev">›</span>
+          </div>
           <div class="row tap" id="rowSentinel" role="button" tabindex="0">
             <div>双脑监控<small>截屏哨兵 · 必要时主动找你</small></div>
             <span class="val" id="sentinelVal">关</span>
@@ -3640,7 +3665,7 @@
           </div>
           <div class="row tap" id="rowAppleMusic" role="button" tabindex="0">
             <div>共听音源<small>网易云 · Apple</small></div>
-            <span class="val" id="appleMusicVal">搁置</span>
+            <span class="val" id="appleMusicVal">网易云</span>
             <span class="chev">›</span>
           </div>
           <div class="row tap" id="rowPersona" role="button" tabindex="0">
@@ -3671,6 +3696,7 @@
         <div class="ps-sub settings" id="phoneSettingsSub" aria-live="polite">
           <div class="conn-panel" id="connPanel">
             <div class="hint">编辑密钥与模型</div>
+            <div class="hint" id="lanBindHint">局域网：默认仅本机；手机访问请设 HOST=0.0.0.0 后用电脑局域网 IP 或 Tailscale IP 打开网关端口。</div>
             <div class="field">
               <label for="inWeread">微信读书 API Key<small>本机保存，不实测连通</small></label>
               <input id="inWeread" type="password" autocomplete="off" placeholder="粘贴 Key" />
@@ -3848,6 +3874,54 @@
               <button type="button" class="ghost" id="btnMcpPing">测连通</button>
               <button type="button" class="ghost" id="btnCloseMcpTools">返回</button>
               <span class="save-msg" id="mcpToolsMsg"></span>
+            </div>
+          </div>
+          <div class="conn-panel" id="diyHttpPanel">
+            <div class="hint">IB D1：给家机配 HTTP 接口（如 Home Assistant）。名称进工具表；URL 可用 {{参数}}；请求由网关代发。勾「调用前确认」时气泡里点同意才发。</div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inDiyHttpEnabled" type="checkbox" style="width:auto" checked />
+              <label for="inDiyHttpEnabled" style="font-weight:500;margin:0">启用 DIY HTTP<small>关则工具表无此项</small></label>
+            </div>
+            <div class="field">
+              <label>已配置<small>最多 20 条</small></label>
+              <div class="mcp-tool-list" id="diyHttpList">暂无</div>
+            </div>
+            <div class="hint">添加一条</div>
+            <div class="field">
+              <label for="inDiyLabel">显示名</label>
+              <input id="inDiyLabel" type="text" maxlength="32" placeholder="如 开灯" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="inDiyName">工具 name<small>英文；空则自动 diy_…</small></label>
+              <input id="inDiyName" type="text" maxlength="48" placeholder="ha_light" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="inDiyUrl">URL<small>可写 {{param}}</small></label>
+              <input id="inDiyUrl" type="url" maxlength="500" placeholder="http://127.0.0.1:8123/api/…" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="inDiyMethod">方法</label>
+              <select id="inDiyMethod">
+                <option value="GET">GET</option>
+                <option value="POST">POST</option>
+                <option value="PUT">PUT</option>
+                <option value="PATCH">PATCH</option>
+                <option value="DELETE">DELETE</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="inDiyParams">参数名<small>逗号分隔，都会进 schema（string）</small></label>
+              <input id="inDiyParams" type="text" maxlength="200" placeholder="entity_id, brightness" autocomplete="off" />
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inDiyConfirm" type="checkbox" style="width:auto" />
+              <label for="inDiyConfirm" style="font-weight:500;margin:0">调用前确认</label>
+            </div>
+            <div class="save-row">
+              <button type="button" class="ghost" id="btnDiyHttpAdd">添加</button>
+              <button type="button" class="primary" id="btnSaveDiyHttp">保存</button>
+              <button type="button" class="ghost" id="btnCloseDiyHttp">返回</button>
+              <span class="save-msg" id="diyHttpMsg"></span>
             </div>
           </div>
           <div class="conn-panel" id="appleMusicPanel">
@@ -4503,7 +4577,7 @@
   </div>
 
   <script src="/assets-colisten/cove-player.js"></script>
-  <script src="/assets-colisten/colisten.js?v=7"></script>
+  <script src="/assets-colisten/colisten.js?v=8"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
   <script src="/app-ui/聊天app/pwa/chat.js?v=wx191"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
@@ -5032,6 +5106,23 @@
       });
     }
 
+    function paintLanBindHint(data) {
+      const el = document.getElementById("lanBindHint");
+      if (!el) return;
+      const port = data && data.bind_port != null ? data.bind_port : 8787;
+      if (data && data.lan_open) {
+        el.textContent =
+          "局域网已开（HOST=" +
+          (data.bind_host || "0.0.0.0") +
+          "）：手机浏览器打开 http://<电脑局域网IP或 Tailscale IP>:" +
+          port;
+      } else {
+        el.textContent =
+          "局域网：当前仅本机。手机要访问请重启网关并设 HOST=0.0.0.0，再打开 http://<电脑局域网IP或 Tailscale IP>:" +
+          port;
+      }
+    }
+
     async function checkHealth() {
       try {
         const res = await fetch("/api/v1/health", { cache: "no-store" });
@@ -5039,6 +5130,7 @@
         const data = await res.json();
         const up = !!data.ok && data.gateway === "up";
         applyHealth(up, healthDetail(data));
+        paintLanBindHint(data);
         updateHomeShellHint({
           gatewayDown: !up,
           llmMissing: data.llm !== "configured",
@@ -5187,6 +5279,12 @@
         const mcpTok = document.getElementById("inMcpToken");
         if (mcpTok) mcpTok.value = s.mcp_token || "";
         updateMcpToolsVal(s.chat_tools_enabled !== false, !!s.mcp_enabled);
+        diyHttpDraft = Array.isArray(s.diy_http_tools)
+          ? s.diy_http_tools.map((t) => ({ ...t }))
+          : [];
+        const diyEn = document.getElementById("inDiyHttpEnabled");
+        if (diyEn) diyEn.checked = s.diy_http_enabled !== false;
+        updateDiyHttpVal(s.diy_http_enabled !== false, diyHttpDraft.length);
       } catch (_) {
         const msg = document.getElementById("saveMsg");
         msg.textContent = "读取设定失败";
@@ -5249,6 +5347,182 @@
 
     function collapseMcpTools() {
       if (phoneSettingsSubKey === "mcp") closeSettingsSub();
+    }
+
+    /** @type {object[]} */
+    let diyHttpDraft = [];
+
+    function updateDiyHttpVal(enabled, count) {
+      const el = document.getElementById("diyHttpVal");
+      if (!el) return;
+      const n = Number(count) || 0;
+      if (!enabled) el.textContent = "关";
+      else el.textContent = n > 0 ? String(n) : "0";
+    }
+
+    function paintDiyHttpList() {
+      const box = document.getElementById("diyHttpList");
+      if (!box) return;
+      box.replaceChildren();
+      if (!diyHttpDraft.length) {
+        box.textContent = "暂无";
+        return;
+      }
+      diyHttpDraft.forEach((t, i) => {
+        const row = document.createElement("div");
+        row.className = "mcp-tool-item";
+        const lab = document.createElement("div");
+        lab.className = "label-row";
+        lab.textContent =
+          (t.label || t.name || "工具") +
+          " · " +
+          (t.method || "GET") +
+          (t.confirm ? " · 确认" : "");
+        const sub = document.createElement("code");
+        sub.textContent =
+          (t.name || "") + " · " + String(t.url || "").slice(0, 48);
+        const del = document.createElement("button");
+        del.type = "button";
+        del.className = "ghost";
+        del.textContent = "删";
+        del.addEventListener("click", (e) => {
+          e.preventDefault();
+          diyHttpDraft.splice(i, 1);
+          paintDiyHttpList();
+        });
+        row.append(lab, sub, del);
+        box.append(row);
+      });
+    }
+
+    function expandDiyHttp() {
+      const msg = document.getElementById("diyHttpMsg");
+      if (msg) {
+        msg.textContent = "";
+        msg.className = "save-msg";
+      }
+      openSettingsSub("diyHttp", "DIY 外部 HTTP", "diyHttpPanel", async () => {
+        await loadSettings();
+        paintDiyHttpList();
+      });
+    }
+
+    function collapseDiyHttp() {
+      if (phoneSettingsSubKey === "diyHttp") closeSettingsSub();
+    }
+
+    function toggleDiyHttp() {
+      const p = document.getElementById("diyHttpPanel");
+      if (p && p.classList.contains("open")) collapseDiyHttp();
+      else expandDiyHttp();
+    }
+
+    function addDiyHttpDraft() {
+      const msg = document.getElementById("diyHttpMsg");
+      const label = String(
+        (document.getElementById("inDiyLabel") || {}).value || ""
+      ).trim();
+      const name = String(
+        (document.getElementById("inDiyName") || {}).value || ""
+      ).trim();
+      const url = String(
+        (document.getElementById("inDiyUrl") || {}).value || ""
+      ).trim();
+      const method = String(
+        (document.getElementById("inDiyMethod") || {}).value || "GET"
+      ).trim();
+      const paramsRaw = String(
+        (document.getElementById("inDiyParams") || {}).value || ""
+      ).trim();
+      const confirm = !!(document.getElementById("inDiyConfirm") || {}).checked;
+      if (!url) {
+        if (msg) {
+          msg.textContent = "先填 URL";
+          msg.className = "save-msg bad";
+        }
+        return;
+      }
+      if (diyHttpDraft.length >= 20) {
+        if (msg) {
+          msg.textContent = "最多 20 条";
+          msg.className = "save-msg bad";
+        }
+        return;
+      }
+      const params = paramsRaw
+        ? paramsRaw
+            .split(/[,，\s]+/)
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .slice(0, 16)
+            .map((p) => ({ name: p, type: "string", required: false }))
+        : [];
+      diyHttpDraft.push({
+        label: label || name || "外部工具",
+        name: name || label || "",
+        url,
+        method,
+        params,
+        confirm,
+        enabled: true,
+      });
+      const clear = (id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      };
+      clear("inDiyLabel");
+      clear("inDiyName");
+      clear("inDiyUrl");
+      clear("inDiyParams");
+      const conf = document.getElementById("inDiyConfirm");
+      if (conf) conf.checked = false;
+      const meth = document.getElementById("inDiyMethod");
+      if (meth) meth.value = "GET";
+      paintDiyHttpList();
+      if (msg) {
+        msg.textContent = "已加入列表 · 点保存写入";
+        msg.className = "save-msg ok";
+      }
+    }
+
+    async function saveDiyHttp() {
+      const msg = document.getElementById("diyHttpMsg");
+      if (msg) {
+        msg.textContent = "保存中…";
+        msg.className = "save-msg";
+      }
+      const enabled = !!(document.getElementById("inDiyHttpEnabled") || {})
+        .checked;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            diy_http_enabled: enabled,
+            diy_http_tools: diyHttpDraft,
+          }),
+        });
+        if (!res.ok) throw new Error("http " + res.status);
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data.diy_http_tools)) {
+          diyHttpDraft = data.diy_http_tools.map((t) => ({ ...t }));
+        }
+        paintDiyHttpList();
+        updateDiyHttpVal(
+          data.diy_http_enabled !== false && enabled,
+          diyHttpDraft.length
+        );
+        if (msg) {
+          msg.textContent = "已保存";
+          msg.className = "save-msg ok";
+        }
+        collapseDiyHttp();
+      } catch (_) {
+        if (msg) {
+          msg.textContent = "保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
     }
 
     async function paintChatToolsList() {
@@ -7512,6 +7786,53 @@
       }
     }
 
+    let notifGuideDismissed = false;
+
+    function paintHomeNotifGuide(hit) {
+      const el = document.getElementById("homeNotifGuide");
+      if (!el) return;
+      const need =
+        !!hit &&
+        !notifGuideDismissed &&
+        typeof Notification !== "undefined" &&
+        Notification.permission === "default";
+      el.hidden = !need;
+    }
+
+    async function onHomeNotifGuideClick() {
+      const el = document.getElementById("homeNotifGuide");
+      try {
+        if (typeof Notification === "undefined") {
+          notifGuideDismissed = true;
+          if (el) el.hidden = true;
+          return;
+        }
+        if (Notification.permission === "granted") {
+          if (el) el.hidden = true;
+          return;
+        }
+        if (Notification.permission === "denied") {
+          notifGuideDismissed = true;
+          if (el) {
+            el.textContent = "系统已关通知 · 请在浏览器站点设置里开";
+            el.hidden = false;
+          }
+          return;
+        }
+        const r = await Notification.requestPermission();
+        if (r === "granted") {
+          if (el) el.hidden = true;
+          refreshCalRemind();
+        } else {
+          notifGuideDismissed = true;
+          if (el) el.hidden = true;
+        }
+      } catch (_) {
+        notifGuideDismissed = true;
+        if (el) el.hidden = true;
+      }
+    }
+
     function paintHomeCalRemind(hit) {
       const el = document.getElementById("homeCalRemind");
       if (!el) return;
@@ -7519,12 +7840,14 @@
         el.hidden = true;
         el.textContent = "";
         delete el.dataset.date;
+        paintHomeNotifGuide(null);
         return;
       }
       el.textContent = calRemindLabel(hit);
       el.dataset.date = hit.ev.date || "";
       el.hidden = false;
       maybeNotifyCalRemind(hit);
+      paintHomeNotifGuide(hit);
     }
 
     async function refreshCalRemind() {
@@ -11487,6 +11810,10 @@
         } else showView("cal");
       });
     }
+    const btnHomeNotifGuide = document.getElementById("homeNotifGuide");
+    if (btnHomeNotifGuide) {
+      btnHomeNotifGuide.addEventListener("click", onHomeNotifGuideClick);
+    }
     document.getElementById("btnAppStubBack").addEventListener("click", () => showView("home"));
     document.getElementById("btnProfileBack").addEventListener("click", () => showView("home"));
     document.getElementById("btnPhoneSettingsBack").addEventListener("click", () => {
@@ -11804,6 +12131,11 @@
     document.getElementById("btnCloseConn").addEventListener("click", collapseConn);
     document.getElementById("rowConn").addEventListener("click", toggleConn);
     document.getElementById("rowMcpTools").addEventListener("click", toggleMcpTools);
+    document.getElementById("rowDiyHttp").addEventListener("click", toggleDiyHttp);
+    document.getElementById("btnDiyHttpAdd").addEventListener("click", addDiyHttpDraft);
+    document.getElementById("btnSaveDiyHttp").addEventListener("click", saveDiyHttp);
+    document.getElementById("btnCloseDiyHttp").addEventListener("click", collapseDiyHttp);
+    document.getElementById("diyHttpPanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("rowSentinel").addEventListener("click", toggleSentinel);
     document.getElementById("btnSaveSentinel").addEventListener("click", saveSentinel);
     document

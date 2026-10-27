@@ -513,6 +513,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && urlPath === "/api/v1/health") {
     const flags = healthFlags();
+    const lanOpen = HOST === "0.0.0.0" || HOST === "::";
     sendJson(res, 200, {
       ok: true,
       gateway: "up",
@@ -520,6 +521,9 @@ const server = http.createServer(async (req, res) => {
       apple_music: appleMusicHealth(),
       gate_enabled: gateEnabled(),
       gate_unlocked: isGateUnlocked(req),
+      bind_host: HOST,
+      bind_port: PORT,
+      lan_open: lanOpen,
     });
     return;
   }
@@ -1626,6 +1630,46 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && urlPath === "/api/v1/cal/auto-sync") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { syncAutoEvents } = require("../../日历app/gateway/calendar");
+      sendJson(res, 200, syncAutoEvents(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_cal_date" ? 400 : 500, {
+        ok: false,
+        error: e.code || "cal_auto_sync_failed",
+        message: e.message || "同步节日失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/cal/scan-chat") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { scanChatPropose } = require("../../日历app/gateway/calendar");
+      sendJson(res, 200, await scanChatPropose(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_cal_date" ? 400 : 500, {
+        ok: false,
+        error: e.code || "cal_scan_failed",
+        message: e.message || "扫近聊失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/cal/notes") {
     try {
       const q = new URL(req.url, "http://127.0.0.1").searchParams;
@@ -1812,6 +1856,32 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "moments_reject_failed",
         message: e.message || "拒绝失败",
+      });
+    }
+    return;
+  }
+
+  /* IB D1：DIY HTTP 调用前确认 */
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/chat/diy-http/pending/") &&
+    (urlPath.endsWith("/confirm") || urlPath.endsWith("/reject"))
+  ) {
+    try {
+      const accept = urlPath.endsWith("/confirm");
+      const id = decodeURIComponent(
+        urlPath.slice(
+          "/api/v1/chat/diy-http/pending/".length,
+          accept ? -"/confirm".length : -"/reject".length
+        )
+      );
+      const { confirmDiyPending } = require("../../聊天app/gateway/diy-http");
+      sendJson(res, 200, await confirmDiyPending(id, accept));
+    } catch (e) {
+      sendJson(res, e.code === "diy_pending_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "diy_confirm_failed",
+        message: e.message || "确认失败",
       });
     }
     return;

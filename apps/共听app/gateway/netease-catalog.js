@@ -95,13 +95,23 @@ function httpGetJson(urlStr, headers = {}) {
   });
 }
 
-function apiGet(pathnameAndQuery) {
+/**
+ * @param {string} pathnameAndQuery
+ * @param {{ skipCookie?: boolean }} [opts]
+ * 扫码/登录接口勿带旧 Cookie：会干扰 unikey，且 /login/qr/check 确认时常 502。
+ */
+function apiGet(pathnameAndQuery, opts = {}) {
   const { base, cookie } = readMusicConfig();
   let path = pathnameAndQuery.startsWith("/")
     ? pathnameAndQuery
     : "/" + pathnameAndQuery;
+  const pathOnly = path.split("?")[0] || "";
+  const skipCookie =
+    !!opts.skipCookie ||
+    /^\/login(\/|$)/i.test(pathOnly) ||
+    /^\/register\//i.test(pathOnly);
   /* NeteaseCloudMusicApi 习惯：cookie 既可 Header 也可 query（教程 §6.1 完整 Cookie） */
-  if (cookie && !/[?&]cookie=/.test(path)) {
+  if (!skipCookie && cookie && !/[?&]cookie=/.test(path)) {
     path +=
       (path.includes("?") ? "&" : "?") +
       "cookie=" +
@@ -109,7 +119,7 @@ function apiGet(pathnameAndQuery) {
   }
   const url = base + path;
   const headers = {};
-  if (cookie) headers.Cookie = cookie;
+  if (!skipCookie && cookie) headers.Cookie = cookie;
   return httpGetJson(url, headers);
 }
 
@@ -489,7 +499,8 @@ async function pingApi() {
 /** 扫码登录：生成二维码（需兼容 API 支持 /login/qr/*） */
 async function startQrLogin() {
   const keyData = await apiGet(
-    "/login/qr/key?timestamp=" + Date.now()
+    "/login/qr/key?timestamp=" + Date.now(),
+    { skipCookie: true }
   );
   const unikey =
     (keyData && keyData.data && keyData.data.unikey) ||
@@ -499,14 +510,15 @@ async function startQrLogin() {
     return {
       ok: false,
       error: "qr_key_failed",
-      message: "拿不到二维码 key，请确认兼容 API 已起",
+      message: "拿不到二维码 key，请确认兼容 API 已起（本机 :3000）",
     };
   }
   const qrData = await apiGet(
     "/login/qr/create?key=" +
       encodeURIComponent(unikey) +
       "&qrimg=true&timestamp=" +
-      Date.now()
+      Date.now(),
+    { skipCookie: true }
   );
   const qrimg =
     (qrData && qrData.data && qrData.data.qrimg) ||
@@ -540,12 +552,28 @@ async function checkQrLogin(key) {
   if (!k) {
     return { ok: false, error: "need_key", message: "缺少二维码 key" };
   }
-  const data = await apiGet(
-    "/login/qr/check?key=" +
-      encodeURIComponent(k) +
-      "&timestamp=" +
-      Date.now()
-  );
+  let data;
+  try {
+    /* noCookie=true：确认登录时避免兼容 API 把 Set-Cookie 写进响应头导致 502 */
+    data = await apiGet(
+      "/login/qr/check?key=" +
+        encodeURIComponent(k) +
+        "&timestamp=" +
+        Date.now() +
+        "&noCookie=true",
+      { skipCookie: true }
+    );
+  } catch (e) {
+    if (e && e.code === "netease_http") {
+      return {
+        ok: false,
+        status: "error",
+        message:
+          "扫码确认失败（兼容 API HTTP 错）。请更新 NeteaseCloudMusicApi 后重试，或手动粘贴 Cookie",
+      };
+    }
+    throw e;
+  }
   const code = Number(data && data.code);
   /* 800 过期 · 801 待扫 · 802 待确认 · 803 成功 */
   if (code === 800) {
@@ -623,6 +651,9 @@ if (require.main === module) {
     console.assert(typeof getHotComments === "function", "getHotComments");
     console.assert(typeof getUserListenProfile === "function", "profile");
     console.assert(typeof getMvUrl === "function", "mv deferred hook");
+    /* 登录路径默认跳过 Cookie，避免污染扫码 */
+    const apiGetSrc = String(apiGet);
+    console.assert(apiGetSrc.includes("skipCookie"), "apiGet skipCookie");
     const ping = await pingApi();
     console.log("ping", ping);
     if (!ping.ok) {

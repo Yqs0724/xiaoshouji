@@ -344,6 +344,23 @@ function buildToolsSystemHint(toolNames) {
   return parts.join("");
 }
 
+/** C6：[NOW] 本机此刻 */
+function buildNowPrompt() {
+  const d = new Date();
+  const pad = (n) => (n < 10 ? "0" + n : "" + n);
+  const iso =
+    d.getFullYear() +
+    "-" +
+    pad(d.getMonth() + 1) +
+    "-" +
+    pad(d.getDate());
+  const hm = pad(d.getHours()) + ":" + pad(d.getMinutes());
+  const week = ["日", "一", "二", "三", "四", "五", "六"][d.getDay()] || "";
+  return (
+    "[NOW] 现在是 " + iso + " 周" + week + " " + hm + "（本机时区）。"
+  );
+}
+
 /** 接话前塞进 system：今日日历摘要（有则列标题，无则写无行程） */
 function buildTodayPrompt() {
   try {
@@ -372,6 +389,16 @@ function buildTodayPrompt() {
     return line;
   } catch (_) {
     return "[TODAY] 今日行程暂不可读；问到日程请调 calendar_*。";
+  }
+}
+
+/** C6：用户刚改历时短暂一行；无则空串 */
+function buildNewCalPrompt() {
+  try {
+    const { buildNewPrompt } = require("../../日历app/gateway/calendar");
+    return String(buildNewPrompt() || "");
+  } catch (_) {
+    return "";
   }
 }
 
@@ -4299,10 +4326,20 @@ async function streamBotReply(write, priorIn, opts) {
   if (!toolsOn) {
     system +=
       "\n（工具已关闭：不要声称已查手机、已改日历、已看屏幕或已拨电话；可请对方自己去对应 App 看。）";
-  } else if (toolBundle && toolBundle.mcpMap.size) {
-    system += "\n（另有外接 MCP 工具可用，名称见工具表。）";
-  } else if (toolBundle && toolBundle.mcpError) {
-    system += "\n（外接 MCP 暂不可用：" + String(toolBundle.mcpError).slice(0, 80) + "）";
+  } else if (toolBundle) {
+    const bits = [];
+    if (toolBundle.diyMap && toolBundle.diyMap.size) {
+      bits.push("DIY 外部 HTTP");
+    }
+    if (toolBundle.mcpMap && toolBundle.mcpMap.size) bits.push("外接 MCP");
+    if (bits.length) {
+      system += "\n（另有" + bits.join(" / ") + "工具可用，名称见工具表。）";
+    } else if (toolBundle.mcpError) {
+      system +=
+        "\n（外接 MCP 暂不可用：" +
+        String(toolBundle.mcpError).slice(0, 80) +
+        "）";
+    }
   }
   /* 非家机会话优先用 peer.persona；家机 / 未填仍走小屋聊天人设 */
   const card = peerPersona
@@ -4363,7 +4400,12 @@ async function streamBotReply(write, priorIn, opts) {
   } catch (_) {
     /* 档案模块异常不挡接话 */
   }
+  system += "\n" + buildNowPrompt();
   system += "\n" + buildTodayPrompt();
+  {
+    const neu = buildNewCalPrompt();
+    if (neu) system += "\n" + neu;
+  }
   try {
     const {
       buildMusicContextPrompt,
@@ -4440,8 +4482,6 @@ async function streamBotReply(write, priorIn, opts) {
     for (const tc of calls) {
       const name = (tc.function && tc.function.name) || "";
       const label = resolveToolLabel(name, toolLabels);
-      const actionOnly = isActionTool(name);
-      if (!actionOnly) roundHadFetch = true;
       await write({ type: "bot_tool", name, label });
       if (name === "cam_check") {
         const sec = CAM_CHECK_DELAY_SEC;
@@ -4456,6 +4496,7 @@ async function streamBotReply(write, priorIn, opts) {
       }
       const ran = await runChatTool(name, tc.function && tc.function.arguments, {
         mcpMap: toolBundle && toolBundle.mcpMap,
+        diyMap: toolBundle && toolBundle.diyMap,
         settings,
         stickyLeaveUsed,
         autoMemoryOpsUsed,
@@ -4463,6 +4504,12 @@ async function streamBotReply(write, priorIn, opts) {
         momentsCommentsUsed,
         peerId: currentPeerId(),
       });
+      let actionOnly = isActionTool(name);
+      try {
+        const o = JSON.parse(ran.result || "");
+        if (o && o.needs_confirm) actionOnly = true;
+      } catch (_) {}
+      if (!actionOnly) roundHadFetch = true;
       if (name === "sticky_leave_note" && ran.ok) stickyLeaveUsed += 1;
       if (
         (name === "auto_memory_upsert" || name === "auto_memory_delete") &&
@@ -5011,6 +5058,7 @@ if (require.main === module) {
   console.assert(!messageWaitsForCoalesce({ kind: "transfer" }));
   const todayP = buildTodayPrompt();
   console.assert(/^\[TODAY\]/.test(todayP) && /今天是/.test(todayP));
+  console.assert(/^\[NOW\]/.test(buildNowPrompt()) && /现在是/.test(buildNowPrompt()));
   for (let i = 0; i < 30; i++) {
     const w = coalesceWaitMs({ slow_reply: true });
     console.assert(w >= 1000 && w <= 12000);
@@ -5215,6 +5263,8 @@ module.exports = {
   setArchiveAtMessage,
   buildChatPrior,
   buildTodayPrompt,
+  buildNowPrompt,
+  buildNewCalPrompt,
   coalesceWaitMs,
   hasNewerYouMessage,
   decideRecallSight,

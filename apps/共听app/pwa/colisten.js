@@ -1530,10 +1530,18 @@
       qrKey = data.key || "";
       if (box) box.style.display = "block";
       if (img) {
-        img.src = data.qrimg || "";
-        img.alt = data.qrurl || "网易云登录二维码";
+        const rawImg = String(data.qrimg || "").trim();
+        if (rawImg) img.src = rawImg;
+        else img.removeAttribute("src");
+        img.alt = String(data.qrurl || "网易云登录二维码");
       }
-      if (st) st.textContent = "请用网易云 App 扫码";
+      if (st) {
+        st.textContent = data.qrimg
+          ? "请用网易云 App 扫码"
+          : data.qrurl
+            ? "API 未出图；可换新版 NeteaseCloudMusicApi 或手动 Cookie"
+            : "请用网易云 App 扫码";
+      }
       if (msg) {
         msg.textContent = "请扫码";
         msg.className = "save-msg";
@@ -1553,12 +1561,16 @@
               msg.textContent = "已登录并保存";
               msg.className = "save-msg ok";
             }
+            if (box) box.style.display = "none";
             loadMusicSettings();
-          } else if (cd.status === "expired" || (!cd.ok && cd.status === "error")) {
+          } else if (
+            cd.status === "expired" ||
+            (!cd.ok && (cd.status === "error" || cd.status === "unknown"))
+          ) {
             stopQrPoll();
             if (msg) {
               msg.textContent = cd.message || "已过期";
-              msg.className = "save-msg err";
+              msg.className = "save-msg bad";
             }
           }
         } catch (_) {}
@@ -1566,7 +1578,7 @@
     } catch (e) {
       if (msg) {
         msg.textContent = (e && e.message) || "扫码失败";
-        msg.className = "save-msg err";
+        msg.className = "save-msg bad";
       }
     }
   }

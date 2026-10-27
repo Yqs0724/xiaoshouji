@@ -60,6 +60,15 @@ const {
   sessionLinks,
   getRecentCoreadContext,
 } = require("./sessions.js");
+const {
+  listEvents,
+  createEvent,
+  updateEvent,
+  deleteEvent,
+  listNotes,
+  createNote,
+  localDateISO,
+} = require("../../日历app/gateway/calendar.js");
 
 function sessionCard(session) {
   if (!session) return null;
@@ -153,7 +162,7 @@ function requireDoorOpen() {
 function createServer() {
   const server = new McpServer({
     name: "coread-cabin",
-    version: "0.2.10",
+    version: "0.2.11",
   });
 
   server.registerTool(
@@ -660,6 +669,169 @@ function createServer() {
           })),
           ...slim,
         });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  /* —— C5 现实日历（≠ 共读笔记 list_notes；门锁不挡） —— */
+  server.registerTool(
+    "cal_list",
+    {
+      description:
+        "查现实日历行程（小手机日历）。可按单日 date 或 from～to。" +
+        "单日时默认附带当日便签 notes。不等于共读划线笔记。",
+      inputSchema: {
+        date: z.string().optional().describe("YYYY-MM-DD 单日；皆空则今日"),
+        from: z.string().optional().describe("YYYY-MM-DD 起"),
+        to: z.string().optional().describe("YYYY-MM-DD 止"),
+        include_notes: z
+          .boolean()
+          .optional()
+          .describe("单日是否带便签；默认 true；范围查询忽略"),
+      },
+    },
+    async ({ date, from, to, include_notes }) => {
+      try {
+        const q = {};
+        if (date) q.date = String(date).trim();
+        if (from) q.from = String(from).trim();
+        if (to) q.to = String(to).trim();
+        if (!q.date && !q.from && !q.to) q.date = localDateISO(new Date());
+        const r = listEvents(q);
+        const events = (r.events || []).map((e) => ({
+          id: e.id,
+          title: e.title,
+          date: e.date,
+          time: e.time || "",
+          owner: e.owner,
+        }));
+        const out = {
+          ok: true,
+          today: localDateISO(new Date()),
+          query: q,
+          events,
+        };
+        const day = q.date || "";
+        if (day && include_notes !== false) {
+          const notes = (listNotes({ date: day }).notes || []).map((n) => ({
+            id: n.id,
+            date: n.date,
+            body: n.body,
+            owner: n.owner,
+            liked: !!n.liked,
+            event_id: n.event_id || undefined,
+            event_title: n.event_title || undefined,
+          }));
+          out.notes = notes;
+        }
+        return jsonText(out);
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "cal_create",
+    {
+      description:
+        "在现实日历新建行程。owner: you|companion|both（默认 companion）。time 空=全日。",
+      inputSchema: {
+        title: z.string().describe("标题"),
+        date: z.string().describe("YYYY-MM-DD"),
+        time: z.string().optional().describe("HH:MM，空=全日"),
+        owner: z
+          .enum(["you", "companion", "both"])
+          .optional()
+          .describe("归属，默认 companion"),
+      },
+    },
+    async ({ title, date, time, owner }) => {
+      try {
+        const r = createEvent({
+          title,
+          date,
+          time: time || "",
+          owner: owner || "companion",
+        });
+        return jsonText({ ok: true, event: r.event });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "cal_update",
+    {
+      description: "按 id 改现实日历行程（标题 / 日期 / 时刻）",
+      inputSchema: {
+        id: z.string().describe("行程 id"),
+        title: z.string().optional(),
+        date: z.string().optional().describe("YYYY-MM-DD"),
+        time: z.string().optional().describe("HH:MM；传空串可清成全日"),
+      },
+    },
+    async ({ id, title, date, time }) => {
+      try {
+        const patch = {};
+        if (title != null) patch.title = title;
+        if (date != null) patch.date = date;
+        if (time != null) patch.time = time;
+        const r = updateEvent(id, patch);
+        return jsonText({ ok: true, event: r.event });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "cal_delete",
+    {
+      description: "按 id 删除现实日历行程",
+      inputSchema: {
+        id: z.string().describe("行程 id"),
+      },
+    },
+    async ({ id }) => {
+      try {
+        const r = deleteEvent(id);
+        return jsonText({ ok: true, deleted: r.deleted });
+      } catch (e) {
+        return jsonError(e);
+      }
+    }
+  );
+
+  server.registerTool(
+    "cal_comment",
+    {
+      description:
+        "在现实日历某日贴便签（comment）。默认署名 companion。" +
+        "可挂 event_id。不等于共读划线。",
+      inputSchema: {
+        body: z.string().describe("便签正文，短句"),
+        date: z.string().optional().describe("YYYY-MM-DD；省略则今日"),
+        event_id: z.string().optional().describe("关联行程 id"),
+        owner: z
+          .enum(["you", "companion", "both"])
+          .optional()
+          .describe("默认 companion"),
+      },
+    },
+    async ({ body, date, event_id, owner }) => {
+      try {
+        const day = date ? String(date).trim() : localDateISO(new Date());
+        const r = createNote({
+          body,
+          date: day,
+          owner: owner || "companion",
+          event_id,
+        });
+        return jsonText({ ok: true, note: r.note });
       } catch (e) {
         return jsonError(e);
       }

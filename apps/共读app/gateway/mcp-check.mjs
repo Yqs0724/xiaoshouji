@@ -34,6 +34,11 @@ async function main() {
   const names = tools.map((t) => t.name).sort();
   const need = [
     "ask_idle_read",
+    "cal_comment",
+    "cal_create",
+    "cal_delete",
+    "cal_list",
+    "cal_update",
     "end_coread",
     "get_last_session",
     "get_progress",
@@ -68,6 +73,63 @@ async function main() {
     for (const name of ["list_bookshelf", "get_last_session", "list_notes"]) {
       const data = parseTool(await client.callTool({ name, arguments: {} }));
       if (!data.ok) throw new Error(name + " not ok: " + JSON.stringify(data));
+    }
+
+    {
+      /* C5 日历：门锁不挡；造一条再清掉 */
+      const stamp = "mcp-cal-" + Date.now();
+      const day = "2026-10-05";
+      const created = parseTool(
+        await client.callTool({
+          name: "cal_create",
+          arguments: { title: stamp, date: day, time: "09:30", owner: "companion" },
+        })
+      );
+      if (!created.ok || !created.event || created.event.title !== stamp) {
+        throw new Error("cal_create: " + JSON.stringify(created));
+      }
+      const listed = parseTool(
+        await client.callTool({ name: "cal_list", arguments: { date: day } })
+      );
+      if (!listed.ok || !(listed.events || []).some((e) => e.id === created.event.id)) {
+        throw new Error("cal_list: " + JSON.stringify(listed));
+      }
+      const updated = parseTool(
+        await client.callTool({
+          name: "cal_update",
+          arguments: { id: created.event.id, title: stamp + "-u" },
+        })
+      );
+      if (!updated.ok || !String(updated.event.title || "").endsWith("-u")) {
+        throw new Error("cal_update: " + JSON.stringify(updated));
+      }
+      const noted = parseTool(
+        await client.callTool({
+          name: "cal_comment",
+          arguments: {
+            body: "便签-" + stamp,
+            date: day,
+            event_id: created.event.id,
+          },
+        })
+      );
+      if (!noted.ok || !noted.note || noted.note.event_id !== created.event.id) {
+        throw new Error("cal_comment: " + JSON.stringify(noted));
+      }
+      const deleted = parseTool(
+        await client.callTool({
+          name: "cal_delete",
+          arguments: { id: created.event.id },
+        })
+      );
+      if (!deleted.ok || deleted.deleted !== created.event.id) {
+        throw new Error("cal_delete: " + JSON.stringify(deleted));
+      }
+      /* 便签无 MCP 删刀；自检直清，免脏数据 */
+      try {
+        const { deleteNote } = require("../../日历app/gateway/calendar.js");
+        if (noted.note && noted.note.id) deleteNote(noted.note.id);
+      } catch (_) {}
     }
 
     {

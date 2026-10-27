@@ -20,6 +20,10 @@ const {
   sanitizeToolName,
   clearMcpToolsCache,
 } = require("../../共读app/gateway/mcp-remote");
+const {
+  buildDiyToolDefs,
+  runDiyHttpTool,
+} = require("./diy-http");
 
 const MAX_TOOL_ROUNDS = 4;
 /** 同轮留笺上限（对齐 IB 日历写入量级） */
@@ -770,6 +774,9 @@ function summarizeToolResult(name, result, ok) {
       }
       return "已翻朋友圈";
     }
+    if (o && o.needs_confirm && o.kind === "diy_http") {
+      return "待你同意调用外部工具";
+    }
     if (n === "moments_post") {
       if (o && o.needs_confirm) return "待你同意发动态";
       if (o && o.post && o.post.txt) {
@@ -1040,6 +1047,7 @@ function runBuiltinTool(name, argsRaw, opts) {
  * @returns {Promise<{
  *   defs: object[],
  *   mcpMap: Map<string, string>,
+ *   diyMap: Map<string, object>,
  *   catalog: { name: string, label: string, description: string, source: string }[],
  *   mcpError: string|null,
  * }>}
@@ -1085,6 +1093,8 @@ async function getToolBundle(settings = {}) {
   );
   /** @type {Map<string, string>} llmName -> remote MCP name */
   const mcpMap = new Map();
+  /** @type {Map<string, object>} llmName -> diy tool row */
+  const diyMap = new Map();
   const catalog = defs.map((t) => {
     const name = t.function.name;
     return {
@@ -1096,6 +1106,36 @@ async function getToolBundle(settings = {}) {
     };
   });
   let mcpError = null;
+
+  const diyBundle = buildDiyToolDefs(settings);
+  for (const d of diyBundle.defs) {
+    let llmName = d.function.name;
+    if (used.has(llmName)) llmName = sanitizeToolName(llmName + "_x");
+    let n = 2;
+    while (used.has(llmName)) {
+      llmName = sanitizeToolName(d.function.name + "_" + n);
+      n += 1;
+    }
+    used.add(llmName);
+    const toolRow = diyBundle.map.get(d.function.name);
+    if (toolRow) diyMap.set(llmName, toolRow);
+    defs.push({
+      type: "function",
+      function: {
+        name: llmName,
+        description: d.function.description,
+        parameters: d.function.parameters,
+      },
+    });
+    catalog.push({
+      name: llmName,
+      label: resolveToolLabel(llmName, labels) || (toolRow && toolRow.label) || llmName,
+      description: d.function.description || "",
+      source: "diy",
+      enabled: true,
+      confirm: !!(toolRow && toolRow.confirm),
+    });
+  }
 
   const mcpOn = !!settings.mcp_enabled;
   const mcpEndpoints = endpointsFromSettings(settings);
@@ -1139,7 +1179,7 @@ async function getToolBundle(settings = {}) {
     }
   }
 
-  return { defs, mcpMap, catalog, mcpError };
+  return { defs, mcpMap, diyMap, catalog, mcpError };
 }
 
 /**
@@ -2067,6 +2107,13 @@ async function runChatTool(name, argsRaw, ctx = {}) {
   const builtin = runBuiltinTool(n, argsRaw, ctx);
   if (builtin) return builtin;
 
+  const diyMap = ctx.diyMap;
+  const diyTool =
+    diyMap && typeof diyMap.get === "function" ? diyMap.get(n) : null;
+  if (diyTool) {
+    return runDiyHttpTool(diyTool, argsRaw);
+  }
+
   const mcpMap = ctx.mcpMap;
   const settings = ctx.settings || {};
   const remoteName =
@@ -2254,6 +2301,26 @@ if (require.main === module) {
       const o = JSON.parse(camOk.result);
       console.assert(o.scene && String(o.scene).includes("自检"));
     }
+    const diyOn = await getToolBundle({
+      diy_http_enabled: true,
+      diy_http_tools: [
+        {
+          name: "echo",
+          label: "回声",
+          url: "https://example.com/{{q}}",
+          method: "GET",
+          params: [{ name: "q", type: "string", required: true }],
+        },
+      ],
+    });
+    console.assert(diyOn.defs.some((t) => String(t.function.name).startsWith("diy_")));
+    console.assert(diyOn.diyMap && diyOn.diyMap.size >= 1);
+    const diyOff = await getToolBundle({
+      diy_http_enabled: false,
+      diy_http_tools: [{ name: "echo", url: "https://example.com", method: "GET" }],
+    });
+    console.assert(!diyOff.diyMap.size);
+
     const hiddenBundle = await getToolBundle({ mcp_tool_hidden: ["never_real_mcp_x"] });
     console.assert(hiddenBundle.defs.length >= 4);
     console.assert(hiddenBundle.catalog.every((t) => t.source !== "mcp" || t.enabled !== false));

@@ -63,8 +63,8 @@ function normalizeEvent(raw) {
     return null;
   }
   const time = normalizeTime(raw.time);
-  return {
-    id,
+  const out = {
+    id: id.slice(0, 80),
     title: title.slice(0, 120),
     date,
     time,
@@ -73,6 +73,8 @@ function normalizeEvent(raw) {
     created_at: Number(raw.created_at) || Date.now(),
     updated_at: Number(raw.updated_at) || Date.now(),
   };
+  if (raw.source === "auto") out.source = "auto";
+  return out;
 }
 
 function normalizeNote(raw) {
@@ -118,13 +120,20 @@ function readAll() {
     notes.sort((a, b) =>
       a.date < b.date ? -1 : a.date > b.date ? 1 : a.updated_at - b.updated_at
     );
+    const auto_dismissed = Array.isArray(raw.auto_dismissed)
+      ? raw.auto_dismissed
+          .map((x) => String(x || "").trim().slice(0, 80))
+          .filter(Boolean)
+          .slice(0, 500)
+      : [];
     return {
       events,
       notes,
       tokens_used: Math.max(0, Math.floor(Number(raw.tokens_used) || 0)),
+      auto_dismissed,
     };
   } catch {
-    return { events: [], notes: [], tokens_used: 0 };
+    return { events: [], notes: [], tokens_used: 0, auto_dismissed: [] };
   }
 }
 
@@ -143,12 +152,21 @@ function writeAll(data) {
     data && Object.prototype.hasOwnProperty.call(data, "tokens_used")
       ? Math.max(0, Math.floor(Number(data.tokens_used) || 0))
       : prev.tokens_used;
+  const auto_dismissed = Object.prototype.hasOwnProperty.call(
+    data || {},
+    "auto_dismissed"
+  )
+    ? (data.auto_dismissed || [])
+        .map((x) => String(x || "").trim().slice(0, 80))
+        .filter(Boolean)
+        .slice(0, 500)
+    : prev.auto_dismissed || [];
   fs.writeFileSync(
     CAL_PATH,
-    JSON.stringify({ events, notes, tokens_used }, null, 2),
+    JSON.stringify({ events, notes, tokens_used, auto_dismissed }, null, 2),
     "utf8"
   );
-  return { events, notes, tokens_used };
+  return { events, notes, tokens_used, auto_dismissed };
 }
 
 /** 按日列便签（可多条；你/家机各写各的） */
@@ -302,6 +320,31 @@ function listEvents({ date, from, to } = {}) {
   return { ok: true, events };
 }
 
+/** C6：用户改历后短暂 [NEW]（进程内；约 10 分钟） */
+const NEW_TTL_MS = 10 * 60 * 1000;
+/** @type {{ at: number, summary: string } | null} */
+let lastCalChange = null;
+
+function markCalendarChanged(summary) {
+  const s = String(summary || "").trim().slice(0, 120);
+  if (!s) return;
+  lastCalChange = { at: Date.now(), summary: s };
+}
+
+/** @returns {string} 空或一行 [NEW] … */
+function buildNewPrompt() {
+  if (!lastCalChange) return "";
+  if (Date.now() - lastCalChange.at > NEW_TTL_MS) {
+    lastCalChange = null;
+    return "";
+  }
+  return (
+    "[NEW] 用户刚改过日历：" +
+    lastCalChange.summary +
+    "。请以最新为准，勿沿用旧行程。"
+  );
+}
+
 function createEvent(patch) {
   const title = String(patch && patch.title != null ? patch.title : "").trim();
   if (!title) {
@@ -312,18 +355,32 @@ function createEvent(patch) {
   const date = normalizeDate(patch && patch.date);
   const time = normalizeTime(patch && patch.time);
   const now = Date.now();
+  const idRaw = String((patch && patch.id) || "").trim();
   const ev = normalizeEvent({
-    id: randomUUID(),
+    id: idRaw || randomUUID(),
     title,
     date,
     time,
     owner: normalizeOwner(patch && patch.owner),
+    source: patch && patch.source === "auto" ? "auto" : undefined,
     created_at: now,
     updated_at: now,
   });
   const all = readAll();
+  if (all.events.some((e) => e.id === ev.id)) {
+    const err = new Error("日程 id 已存在");
+    err.code = "cal_id_exists";
+    throw err;
+  }
   all.events.push(ev);
   writeAll(all);
+  markCalendarChanged(
+    "新增「" +
+      (title.length > 24 ? title.slice(0, 24) + "…" : title) +
+      "」· " +
+      date +
+      (time ? " " + time : "")
+  );
   return { ok: true, event: ev };
 }
 
@@ -360,19 +417,34 @@ function updateEvent(id, patch) {
   }
   all.events[i] = normalizeEvent(next);
   writeAll(all);
-  return { ok: true, event: all.events.find((e) => e.id === eid) };
+  const saved = all.events.find((e) => e.id === eid);
+  markCalendarChanged(
+    "改了「" +
+      String((saved && saved.title) || "").slice(0, 24) +
+      "」· " +
+      ((saved && saved.date) || "")
+  );
+  return { ok: true, event: saved };
 }
 
 function deleteEvent(id) {
   const eid = String(id || "").trim();
   const all = readAll();
+  const doomed = all.events.find((e) => e.id === eid);
   const next = all.events.filter((e) => e.id !== eid);
   if (next.length === all.events.length) {
     const err = new Error("找不到该日程");
     err.code = "cal_not_found";
     throw err;
   }
-  writeAll({ ...all, events: next });
+  let auto_dismissed = all.auto_dismissed || [];
+  if (doomed && doomed.source === "auto" && !auto_dismissed.includes(eid)) {
+    auto_dismissed = auto_dismissed.concat(eid).slice(-500);
+  }
+  writeAll({ ...all, events: next, auto_dismissed });
+  markCalendarChanged(
+    "删了「" + String((doomed && doomed.title) || "").slice(0, 24) + "」"
+  );
   return { ok: true, deleted: eid };
 }
 
@@ -389,6 +461,303 @@ function addDaysISO(iso, n) {
   const d = new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
   d.setDate(d.getDate() + n);
   return localDateISO(d);
+}
+
+/** C7：公历固定节日（不做农历换算） */
+const FIXED_HOLIDAYS = [
+  ["01-01", "元旦"],
+  ["02-14", "情人节"],
+  ["03-08", "妇女节"],
+  ["05-01", "劳动节"],
+  ["05-04", "青年节"],
+  ["06-01", "儿童节"],
+  ["10-01", "国庆节"],
+  ["12-25", "圣诞节"],
+];
+
+function autoEventId(kind, date, title) {
+  const t = String(title || "")
+    .replace(/[^\w\u4e00-\u9fff]+/g, "")
+    .slice(0, 20);
+  return ("auto-" + kind + "-" + date + "-" + (t || "x")).slice(0, 72);
+}
+
+function readAnnivsSafe() {
+  try {
+    const { readSettings } = require("../../共读app/gateway/settings");
+    const list = (readSettings().annivs || []).filter(
+      (a) => a && a.date && a.title
+    );
+    return list;
+  } catch (_) {
+    return [];
+  }
+}
+
+/** 生成 from～to 内的节日/纪念日候选（尚未写库） */
+function listAutoCandidates(from, to) {
+  const a = normalizeDate(from);
+  const b = normalizeDate(to);
+  const y0 = Number(a.slice(0, 4));
+  const y1 = Number(b.slice(0, 4));
+  const out = [];
+  for (let y = y0; y <= y1; y++) {
+    for (const [md, title] of FIXED_HOLIDAYS) {
+      const date = y + "-" + md;
+      if (date < a || date > b) continue;
+      out.push({
+        id: autoEventId("hol", date, title),
+        title,
+        date,
+        owner: "both",
+        source: "auto",
+        kind: "holiday",
+      });
+    }
+  }
+  for (const ann of readAnnivsSafe()) {
+    let md;
+    try {
+      md = normalizeDate(ann.date).slice(5);
+    } catch (_) {
+      continue;
+    }
+    const title = String(ann.title || "纪念日").trim().slice(0, 40) || "纪念日";
+    for (let y = y0; y <= y1; y++) {
+      const date = y + "-" + md;
+      if (date < a || date > b) continue;
+      out.push({
+        id: autoEventId("ann", date, title),
+        title: title,
+        date,
+        owner: "both",
+        source: "auto",
+        kind: "anniv",
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * C7：把范围内缺失的节日/纪念日写入日历（幂等 id；删过的进 auto_dismissed 不再补）。
+ */
+function syncAutoEvents(patch) {
+  const today = localDateISO(new Date());
+  let from;
+  let to;
+  try {
+    from = normalizeDate(
+      (patch && patch.from) || today.slice(0, 4) + "-01-01"
+    );
+  } catch {
+    from = today.slice(0, 4) + "-01-01";
+  }
+  try {
+    to = normalizeDate(
+      (patch && patch.to) || String(Number(today.slice(0, 4)) + 1) + "-12-31"
+    );
+  } catch {
+    to = String(Number(today.slice(0, 4)) + 1) + "-12-31";
+  }
+  if (to < from) {
+    const t = from;
+    from = to;
+    to = t;
+  }
+  const all = readAll();
+  const dismissed = new Set(all.auto_dismissed || []);
+  const haveId = new Set(all.events.map((e) => e.id));
+  const haveKey = new Set(
+    all.events.map((e) => e.date + "\0" + String(e.title || "").trim())
+  );
+  let added = 0;
+  const now = Date.now();
+  for (const c of listAutoCandidates(from, to)) {
+    if (dismissed.has(c.id) || haveId.has(c.id)) continue;
+    if (haveKey.has(c.date + "\0" + c.title)) continue;
+    const ev = normalizeEvent({
+      id: c.id,
+      title: c.title,
+      date: c.date,
+      time: "",
+      owner: c.owner,
+      source: "auto",
+      created_at: now,
+      updated_at: now,
+    });
+    if (!ev) continue;
+    all.events.push(ev);
+    haveId.add(ev.id);
+    haveKey.add(ev.date + "\0" + ev.title);
+    added += 1;
+  }
+  if (added) writeAll(all);
+  return { ok: true, added, from, to };
+}
+
+/** 近聊启发式扫出提议（无 LLM / 失败兜底） */
+function heuristicChatProposals(chatLines, baseDate) {
+  const base = normalizeDate(baseDate || localDateISO(new Date()));
+  const blob = (chatLines || []).join("\n");
+  const out = [];
+  const push = (title, date) => {
+    if (!title || !date || out.length >= 4) return;
+    if (out.some((p) => p.date === date && p.title === title)) return;
+    out.push({
+      id: randomUUID(),
+      kind: "event",
+      title: String(title).slice(0, 120),
+      date,
+      status: "proposed",
+      from_scan: true,
+    });
+  };
+  const act = /(约|见面|吃饭|开会|出发|看|陪|一起|安排)/;
+  if (/明天/.test(blob) && act.test(blob)) {
+    push("明天有约（近聊）", addDaysISO(base, 1));
+  }
+  if (/后天/.test(blob) && act.test(blob)) {
+    push("后天有约（近聊）", addDaysISO(base, 2));
+  }
+  const weekMap = { 天: 0, 日: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6 };
+  const wm = blob.match(/下周([一二三四五六日天])/);
+  if (wm && act.test(blob)) {
+    const wd = weekMap[wm[1]];
+    if (wd != null) {
+      const parts = base.split("-").map(Number);
+      const d = new Date(parts[0], parts[1] - 1, parts[2]);
+      d.setDate(d.getDate() + 7);
+      while (d.getDay() !== wd) d.setDate(d.getDate() + 1);
+      push("下周" + wm[1] + "有约（近聊）", localDateISO(d));
+    }
+  }
+  const md = blob.match(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/);
+  if (md && (act.test(blob) || /生日|纪念日/.test(blob))) {
+    const y = Number(base.slice(0, 4));
+    const m = String(Number(md[1])).padStart(2, "0");
+    const day = String(Number(md[2])).padStart(2, "0");
+    try {
+      push(
+        Number(md[1]) + "月" + Number(md[2]) + "日安排（近聊）",
+        normalizeDate(y + "-" + m + "-" + day)
+      );
+    } catch (_) {}
+  }
+  const iso = blob.match(/(20\d{2}-\d{2}-\d{2})/);
+  if (iso && act.test(blob)) {
+    try {
+      push("日程（近聊）", normalizeDate(iso[1]));
+    } catch (_) {}
+  }
+  return out;
+}
+
+/**
+ * C7：扫近聊 → 提议待确认（不静默落库）。
+ */
+async function scanChatPropose(patch) {
+  let baseDate;
+  try {
+    baseDate = normalizeDate(
+      (patch && patch.baseDate) || localDateISO(new Date())
+    );
+  } catch {
+    baseDate = localDateISO(new Date());
+  }
+  let chatBits = [];
+  try {
+    const { listMessages } = require("../../聊天app/gateway/daily-chat");
+    const msgs = (listMessages().messages || []).slice(-40);
+    chatBits = msgs.map((m) => {
+      const who = m.from === "bot" ? "家机" : "你";
+      return who + "：" + String(m.body || "").replace(/\s+/g, " ").slice(0, 100);
+    });
+  } catch (_) {
+    /* ignore */
+  }
+  if (!chatBits.length) {
+    return {
+      ok: true,
+      source: "empty",
+      proposals: [],
+      noteProposals: [],
+      message: "近聊为空，没什么可扫",
+    };
+  }
+
+  const forceMock = !!(patch && patch.mock);
+  if (forceMock) {
+    return {
+      ok: true,
+      source: "mock",
+      proposals: heuristicChatProposals(chatBits, baseDate),
+      noteProposals: [],
+    };
+  }
+
+  try {
+    const { chatCompletion, parseThinkBody } = require("../../共读app/gateway/llm");
+    const existing = listEvents({
+      from: baseDate,
+      to: addDaysISO(baseDate, 21),
+    }).events
+      .map((e) => e.date + " " + e.title)
+      .slice(0, 12);
+    const system =
+      "你从近聊里抽出**已经说定**的现实日程。只输出 JSON 对象，不要 markdown。" +
+      '{"events":[{"title":"短标题","date":"YYYY-MM-DD"}],"notes":[{"body":"短句","date":"YYYY-MM-DD"}]}。' +
+      "不确定、玩笑、已有日程重复的不要。最多 4 条行程、2 条便签。基准日 " +
+      baseDate +
+      "。" +
+      (existing.length ? "已有：" + existing.join("；") + "。" : "");
+    const raw = await chatCompletion({
+      system,
+      user: "近聊：\n" + chatBits.join("\n"),
+      think: false,
+      replyKind: "chat",
+    });
+    const parsedBody = parseThinkBody(raw.content, false);
+    const text = String((parsedBody && parsedBody.body) || raw.content || "").trim();
+    let { proposals, noteProposals } = parseProposePayload(text, baseDate);
+    proposals = (proposals || []).slice(0, 4).map((p) => ({
+      ...p,
+      from_scan: true,
+    }));
+    noteProposals = (noteProposals || []).slice(0, 2).map((p) => ({
+      ...p,
+      from_scan: true,
+    }));
+    let source = "llm";
+    let message;
+    if (!proposals.length && !noteProposals.length) {
+      proposals = heuristicChatProposals(chatBits, baseDate);
+      noteProposals = [];
+      source = "mock_fallback";
+      message = "模型未抽出事项，已用启发式";
+    }
+    let used = (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0);
+    if (used <= 0) used = 400;
+    addCalTokensUsed(used);
+    return { ok: true, source, proposals, noteProposals, message };
+  } catch (e) {
+    if (e && e.code === "llm_not_configured") {
+      return {
+        ok: true,
+        source: "mock",
+        proposals: heuristicChatProposals(chatBits, baseDate),
+        noteProposals: [],
+        message: "未配置 LLM，已用近聊启发式",
+      };
+    }
+    return {
+      ok: true,
+      source: "mock_fallback",
+      proposals: heuristicChatProposals(chatBits, baseDate),
+      noteProposals: [],
+      message: (e && e.message) || "扫聊失败，已用启发式",
+    };
+  }
 }
 
 const MOCK_IDEAS = [
@@ -697,6 +1066,27 @@ if (require.main === module) {
       "2026-10-10"
     );
     console.assert(packed.proposals.length === 1 && packed.noteProposals.length === 1);
+    const stamp2 = "newchk-" + Date.now();
+    const nEv = createEvent({ title: stamp2, date: "2026-10-04" });
+    console.assert(buildNewPrompt().includes("[NEW]") && buildNewPrompt().includes(stamp2));
+    deleteEvent(nEv.event.id);
+    const synced = syncAutoEvents({ from: "2026-01-01", to: "2026-01-05" });
+    console.assert(synced.ok && synced.added >= 1);
+    const again = syncAutoEvents({ from: "2026-01-01", to: "2026-01-05" });
+    console.assert(again.added === 0);
+    const hol = listEvents({ date: "2026-01-01" }).events.find(
+      (e) => e.source === "auto" && e.title === "元旦"
+    );
+    console.assert(hol && hol.id.startsWith("auto-"));
+    deleteEvent(hol.id);
+    console.assert(readAll().auto_dismissed.includes(hol.id));
+    const heu = heuristicChatProposals(
+      ["你：明天一起吃饭吧"],
+      "2026-10-10"
+    );
+    console.assert(heu.length >= 1 && heu[0].date === "2026-10-11");
+    const scanned = await scanChatPropose({ mock: true, baseDate: "2026-10-10" });
+    console.assert(scanned.ok && scanned.source === "mock");
     console.log("calendar ok");
   })().catch((e) => {
     console.error(e);
@@ -723,5 +1113,12 @@ module.exports = {
   parseProposalJson,
   parseProposePayload,
   addCalTokensUsed,
+  markCalendarChanged,
+  buildNewPrompt,
+  syncAutoEvents,
+  scanChatPropose,
+  heuristicChatProposals,
+  listAutoCandidates,
+  FIXED_HOLIDAYS,
   CAL_PATH,
 };

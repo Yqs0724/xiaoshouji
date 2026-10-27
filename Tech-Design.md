@@ -150,7 +150,7 @@ BackupManifest { modules[], media: metadata-only }
 
 | 工具 | 对齐 PRD |
 |------|----------|
-| `cal_list` / `cal_create` / …（共读 `mcp-server` 现名可能不同） | C5 |
+| `cal_list` / `cal_create` / `cal_update` / `cal_delete` / `cal_comment`（共读 `mcp-server.mjs`） | C5 · 2026-10-27（`see` 未做） |
 | `lore_*` / 共读既有 | X1 / 共读 |
 | 共看/共听只读或提议类 | 实现期按需；**播控真源在 PWA 你侧** |
 

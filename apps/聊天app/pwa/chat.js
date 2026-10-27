@@ -1270,6 +1270,7 @@
         if (o && o.needs_confirm && o.pending_id) {
           card.dataset.pendingId = String(o.pending_id);
           card.classList.add("needs-confirm");
+          const diy = o.kind === "diy_http";
           const acts = document.createElement("div");
           acts.className = "wx-tool-confirm";
           const ok = document.createElement("button");
@@ -1279,7 +1280,8 @@
           ok.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            confirmMomentsPending(card, o.pending_id, true);
+            if (diy) confirmDiyHttpPending(card, o.pending_id, true);
+            else confirmMomentsPending(card, o.pending_id, true);
           });
           const no = document.createElement("button");
           no.type = "button";
@@ -1288,7 +1290,8 @@
           no.addEventListener("click", (e) => {
             e.preventDefault();
             e.stopPropagation();
-            confirmMomentsPending(card, o.pending_id, false);
+            if (diy) confirmDiyHttpPending(card, o.pending_id, false);
+            else confirmMomentsPending(card, o.pending_id, false);
           });
           acts.append(ok, no);
           card.append(acts);
@@ -1332,6 +1335,51 @@
           await refreshMoments();
         } catch (_) {}
       }
+    } catch (err) {
+      shellToast((err && err.message) || "操作失败");
+    }
+  }
+
+  async function confirmDiyHttpPending(card, pendingId, accept) {
+    const id = String(pendingId || "").trim();
+    if (!id) return;
+    const path =
+      "/api/v1/chat/diy-http/pending/" +
+      encodeURIComponent(id) +
+      (accept ? "/confirm" : "/reject");
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "操作失败");
+      if (card) {
+        card.classList.remove("needs-confirm");
+        const acts = card.querySelector(".wx-tool-confirm");
+        if (acts) acts.remove();
+        const pre = card.querySelector(".wx-tool-detail");
+        if (pre) {
+          pre.textContent = accept
+            ? String((data && data.result) || "已调用").slice(0, 400)
+            : "已拒绝";
+        }
+        const sum = card.querySelector(".wx-meta-sum");
+        if (sum) {
+          sum.textContent = accept
+            ? data && data.ok === false
+              ? " · 调用失败"
+              : " · 已调用"
+            : " · 已拒绝";
+        }
+      }
+      shellToast(
+        accept
+          ? data && data.ok === false
+            ? "外部工具失败"
+            : "已调用外部工具"
+          : "已拒绝"
+      );
     } catch (err) {
       shellToast((err && err.message) || "操作失败");
     }

@@ -947,8 +947,10 @@
 
   async function runPropose() {
     const btn = document.getElementById("btnCalProposeRun");
+    const scanBtn = document.getElementById("btnCalScanChat");
     setProposeMsg("家机在想…");
     if (btn) btn.disabled = true;
+    if (scanBtn) scanBtn.disabled = true;
     try {
       const res = await fetch("/api/v1/cal/propose", {
         method: "POST",
@@ -983,6 +985,78 @@
       setProposeMsg((e && e.message) || "提议失败 · 已本地瞎编", "bad");
     } finally {
       if (btn) btn.disabled = false;
+      if (scanBtn) scanBtn.disabled = false;
+    }
+  }
+
+  async function runScanChat() {
+    const btn = document.getElementById("btnCalScanChat");
+    const runBtn = document.getElementById("btnCalProposeRun");
+    setProposeMsg("在扫近聊…");
+    if (btn) btn.disabled = true;
+    if (runBtn) runBtn.disabled = true;
+    try {
+      const res = await fetch("/api/v1/cal/scan-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          baseDate: calSelected || localDateISO(new Date()),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || data.error || "扫近聊失败");
+      const events = Array.isArray(data.proposals) ? data.proposals : [];
+      const notes = Array.isArray(data.noteProposals) ? data.noteProposals : [];
+      proposeDraft = events.concat(notes);
+      paintProposeList();
+      if (!proposeDraft.length) {
+        setProposeMsg(data.message || "近聊里没扫到说定的事", "ok");
+      } else {
+        const src = data.source || "";
+        let msg = "扫到了 · 请逐条确认";
+        if (src === "llm") msg = "扫到了 · 请逐条确认";
+        else if (src === "mock" || src === "mock_fallback")
+          msg = data.message || "启发式扫到 · 请确认";
+        else if (src === "empty") msg = data.message || "近聊为空";
+        setProposeMsg(msg, "ok");
+      }
+    } catch (e) {
+      setProposeMsg((e && e.message) || "扫近聊失败", "bad");
+    } finally {
+      if (btn) btn.disabled = false;
+      if (runBtn) runBtn.disabled = false;
+    }
+  }
+
+  async function runAutoSync() {
+    try {
+      const y = (calSelected || localDateISO(new Date())).slice(0, 4);
+      const res = await fetch("/api/v1/cal/auto-sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          from: y + "-01-01",
+          to: String(Number(y) + 1) + "-12-31",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "同步失败");
+      const n = Number(data.added) || 0;
+      await refreshHub();
+      deps.onCalendarChanged();
+      const tip = document.getElementById("calDaySummaryTitle");
+      if (tip && n > 0) {
+        const old = tip.textContent;
+        tip.textContent = "已同步节日 +" + n;
+        setTimeout(() => {
+          if (tip.textContent.indexOf("已同步节日") === 0) tip.textContent = old;
+        }, 1800);
+      }
+      return n;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -1097,12 +1171,16 @@
     if (dayAi) {
       dayAi.addEventListener("click", () => openPropose("cal-agenda"));
     }
+    const autoSyncBtn = document.getElementById("btnCalAutoSync");
+    if (autoSyncBtn) autoSyncBtn.addEventListener("click", () => runAutoSync());
     const proposeBack = document.getElementById("btnCalProposeBack");
     if (proposeBack) {
       proposeBack.addEventListener("click", () => deps.showView(proposeBackView));
     }
     const proposeRun = document.getElementById("btnCalProposeRun");
     if (proposeRun) proposeRun.addEventListener("click", runPropose);
+    const scanChat = document.getElementById("btnCalScanChat");
+    if (scanChat) scanChat.addEventListener("click", runScanChat);
     const noteAdd = document.getElementById("btnCalNoteAdd");
     if (noteAdd) {
       noteAdd.addEventListener("click", () => beginComposeMemoLine(null));
