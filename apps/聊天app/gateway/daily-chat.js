@@ -3,6 +3,7 @@
  * 你侧先落库；家机短回复失败不回滚你侧（A-daily）。
  * 红包/转账走模拟钱包（≠ LLM 额度/token）。
  * H2.1：多 peer 骨架（默认 daily=家机 + mint=薄巧测试）；请求用 withPeer 隔离。
+ * H7：同 peer 下话题频道（topics）；主线 messages 与频道互不串；记忆注入可关。
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -23,6 +24,9 @@ const THREAD_ID = "daily";
 const DEFAULT_PEER_ID = "daily";
 const DEMO_PEER_ID = "mint";
 const PEER_ID_RE = /^[a-zA-Z0-9_-]{1,32}$/;
+const TOPIC_ID_RE = /^[a-zA-Z0-9_-]{1,40}$/;
+const TOPICS_MAX = 20;
+const TOPIC_TITLE_MAX = 32;
 const peerCtx = new AsyncLocalStorage();
 
 function normalizePeerId(raw) {
@@ -31,17 +35,94 @@ function normalizePeerId(raw) {
   return DEFAULT_PEER_ID;
 }
 
+function normalizeTopicId(raw) {
+  const s = String(raw || "").trim();
+  if (s && TOPIC_ID_RE.test(s)) return s;
+  return "";
+}
+
+function normalizeCtx(raw) {
+  if (typeof raw === "string") {
+    return { peerId: normalizePeerId(raw), topicId: "" };
+  }
+  if (raw && typeof raw === "object") {
+    return {
+      peerId: normalizePeerId(raw.peerId),
+      topicId: normalizeTopicId(raw.topicId),
+    };
+  }
+  return { peerId: DEFAULT_PEER_ID, topicId: "" };
+}
+
 function currentPeerId() {
-  const stored = peerCtx.getStore();
-  return stored ? normalizePeerId(stored) : DEFAULT_PEER_ID;
+  return normalizeCtx(peerCtx.getStore()).peerId;
+}
+
+function currentTopicId() {
+  return normalizeCtx(peerCtx.getStore()).topicId;
 }
 
 function withPeer(peerId, fn) {
-  return peerCtx.run(normalizePeerId(peerId), fn);
+  return withPeerTopic(peerId, "", fn);
+}
+
+function withPeerTopic(peerId, topicId, fn) {
+  const pid = normalizePeerId(peerId);
+  let tid = normalizeTopicId(topicId);
+  if (tid) {
+    try {
+      const store = readStore();
+      const th = threadBucket(store, pid);
+      const topics = normalizeTopicsMap(th.topics);
+      if (!topics[tid]) tid = "";
+    } catch (_) {
+      tid = "";
+    }
+  }
+  return peerCtx.run({ peerId: pid, topicId: tid }, fn);
+}
+
+function emptyTopic(patch) {
+  const now = Date.now();
+  const id =
+    normalizeTopicId(patch && patch.id) ||
+    ("t" + randomUUID().replace(/-/g, "").slice(0, 12));
+  return {
+    id,
+    title: String((patch && patch.title) || "话题")
+      .trim()
+      .slice(0, TOPIC_TITLE_MAX) || "话题",
+    messages: Array.isArray(patch && patch.messages) ? patch.messages : [],
+    memory_inject: patch && patch.memory_inject === false ? false : true,
+    /* IB M7：该 ts 及更早不进 API prior；各频道独立 */
+    archive_before_ts: Math.max(0, Math.floor(Number(patch && patch.archive_before_ts) || 0)),
+    created_at: Number((patch && patch.created_at) || now) || now,
+    updated_at: Number((patch && patch.updated_at) || now) || now,
+  };
 }
 
 function emptyThread() {
-  return { messages: [], tokens_used: 0, budget_tokens: 0 };
+  return {
+    messages: [],
+    tokens_used: 0,
+    budget_tokens: 0,
+    topics: {},
+    active_topic: "",
+    archive_before_ts: 0,
+  };
+}
+
+function normalizeTopicsMap(raw) {
+  const src = raw && typeof raw === "object" ? raw : {};
+  const out = {};
+  for (const key of Object.keys(src)) {
+    const t = src[key];
+    if (!t || typeof t !== "object") continue;
+    const id = normalizeTopicId(t.id || key);
+    if (!id) continue;
+    out[id] = emptyTopic({ ...t, id });
+  }
+  return out;
 }
 
 function defaultPeers() {
@@ -54,9 +135,11 @@ const BODY_MAX = 800;
 const HISTORY = 20;
 const VARIANT_MAX = 5;
 const MEDIA_MAX_BYTES = 2 * 1024 * 1024;
-const MEDIA_ID_RE =
-  /^[a-f0-9-]{36}\.(jpe?g|png|webp|gif|webm|ogg|mp3|m4a|mp4|aac|wav)$/i;
+/** 聊天附件（非图音）上限；图/音仍走 MEDIA_MAX_BYTES */
+const FILE_MAX_BYTES = 16 * 1024 * 1024;
+const MEDIA_ID_RE = /^[a-f0-9-]{36}\.[a-z0-9]{1,8}$/i;
 const MEDIA_URL_PREFIX = "/api/v1/chat/media/";
+const FILE_BLOCKED_EXT = new Set(["exe", "bat", "cmd", "scr", "com", "msi", "dll"]);
 const MONEY_KINDS = new Set(["redpacket", "transfer"]);
 const STRUCT_KINDS = new Set([
   "redpacket",
@@ -87,6 +170,7 @@ const CALL_PHASES = new Set([
   "answered",
   "active",
   "ended",
+  "missed",
 ]);
 /** H1.29：气泡表情回应（固定小套） */
 /** 家机偶发贴用的短清单；你侧可贴系统键盘任意 Emoji */
@@ -135,17 +219,130 @@ function normalizeReactionEmoji(raw) {
   return isReactionEmoji(e) ? e : "";
 }
 
+/** 人设口吻；工具能力句由 buildToolsSystemHint 按实际工具表拼（关了就不写） */
 const DAILY_SYSTEM_BASE =
   "你是同居室友「家机」，在小手机日常聊天里回短讯。" +
   "语气像室友短信：短、口语、轻松。" +
-  "不要长篇剧情连载，不要章节目录，不要扮演系统通知。" +
-  "问到日程/安排/几点有事/帮我加日程/改日程/删日程时：必须调用 calendar_* 工具，禁止口头编造或说「翻不到日历」。" +
-  "对方让你看屏幕/看在干嘛、或文字不够需要确认画面时：调用 cam_check（会先提示对方再截主屏）；不要连续多次、不要说「我监控了你」。" +
-  "想了解对方电脑最近在忙啥、久坐摸鱼、换没换任务时：调用 view_activity（slots=1～12≈10～120分钟前台摘要，不截屏）；比截屏轻，优先用它；未开采样时工具会说明。" +
-  "对方让你过会儿/到点再关心一下、预约看护（不是定闹钟）时：调用 schedule_monitor（minutes 或 at=HH:MM；list/cancel）；到点会主动发短讯。" +
-  "对方想听某首歌/让你点歌/分享共听正在播的歌时：调用 share_music（query 或 name+artist；歧义时用 pick_id；或 from_presence）。" +
-  "优先网易云整曲卡（需本机兼容 API）；否则 Apple 试听/外链。失败/多候选如实说，勿假装已播。" +
-  "工具结果用一两句口语告诉对方；今天日期以 [TODAY] 段或工具返回的 today 为准。";
+  "不要长篇剧情连载，不要章节目录，不要扮演系统通知。";
+
+/**
+ * H2：只描述「当前工具表里有的」能力；关权限的工具不出现在提示词里。
+ * @param {Set<string>|string[]} toolNames
+ */
+function buildToolsSystemHint(toolNames) {
+  const has = (n) =>
+    toolNames &&
+    (typeof toolNames.has === "function"
+      ? toolNames.has(n)
+      : Array.isArray(toolNames) && toolNames.includes(n));
+  const names = toolNames && typeof toolNames.has === "function"
+    ? [...toolNames]
+    : Array.isArray(toolNames)
+      ? toolNames
+      : [];
+  const anyCal = names.some((n) => String(n).startsWith("calendar_"));
+  const parts = [];
+  if (anyCal) {
+    parts.push(
+      "问到日程/安排/几点有事/帮我加日程/改日程/删日程时：必须调用 calendar_* 工具，禁止口头编造或说「翻不到日历」。"
+    );
+  }
+  if (has("sticky_leave_note") || has("sticky_list_notes")) {
+    parts.push(
+      "想在日历日页留一句叮嘱/提醒/便签、或核对某天便笺时：调用 sticky_leave_note / sticky_list_notes（写进日历便签，署名家机；可挂 event_id）。" +
+        "不等于备忘录 App。留笺/写日历属动作类：调完即可用短句收尾，不必为成败结果再开一轮空聊。"
+    );
+  }
+  if (
+    has("auto_memory_upsert") ||
+    has("auto_memory_list") ||
+    has("auto_memory_delete")
+  ) {
+    parts.push(
+      "关于对方的长期事实/偏好/叮嘱（「你对 TA 的了解」档案，≠记忆库）：用 auto_memory_upsert / list / delete。" +
+        "每轮最多 3 次写删；always 核心最多 3 条。琐碎闲聊别写进档案。"
+    );
+  }
+  if (
+    has("moments_list") ||
+    has("moments_post") ||
+    has("moments_comment") ||
+    has("moments_like")
+  ) {
+    parts.push(
+      "朋友圈：想翻近况用 moments_list；想发/评/赞用 moments_post / comment / like（每轮最多发 1、评 2）。" +
+        "看不见「仅自己」或未点名你的部分可见帖。若返回需确认，等对方点同意即可，勿催。"
+    );
+  }
+  if (has("geo_location")) {
+    parts.push(
+      "关心对方在哪/到了没：调用 geo_location（浏览器定位或手动城市）；不要每轮都查、不要追问精确坐标。"
+    );
+  }
+  if (has("weather_now")) {
+    parts.push(
+      "出门/冷不冷/带伞：调用 weather_now（Open-Meteo；可传 city）；结果可能有缓存，用口语提气温与天气即可。"
+    );
+  }
+  if (has("peek_phone")) {
+    parts.push(
+      "吃醋/关心/找人/怀疑对方在跟谁聊、玩哪个 App 时：优先调用 peek_phone（查虚拟小手机壳，不是电脑屏）；不要每轮都查、不要说「我监控了你」。"
+    );
+  }
+  if (has("phone_device")) {
+    parts.push(
+      "关心电量/是不是锁屏/还亮不亮着时：调用 phone_device（设备态，不含会话内容）。"
+    );
+  }
+  if (has("cam_check")) {
+    parts.push(
+      "对方让你看电脑屏幕/看在干嘛、或文字不够需要确认画面时：调用 cam_check（会先提示对方再截主屏）；不要连续多次、不要说「我监控了你」。"
+    );
+  }
+  if (has("view_activity")) {
+    parts.push(
+      "想了解对方电脑最近在忙啥、久坐摸鱼、换没换任务时：调用 view_activity（slots=1～12≈10～120分钟前台摘要，不截屏）；比截屏轻，优先用它。"
+    );
+  }
+  const prio = ["peek_phone", "phone_device", "view_activity", "cam_check"].filter(
+    has
+  );
+  if (prio.length >= 2) {
+    parts.push("查岗类优先级：" + prio.join(" → ") + "。");
+  }
+  if (has("schedule_monitor")) {
+    parts.push(
+      "对方让你过会儿/到点再关心一下、预约看护（不是定闹钟）时：调用 schedule_monitor（minutes 或 at=HH:MM；list/cancel）；到点会主动发短讯。"
+    );
+  }
+  if (has("share_music")) {
+    parts.push(
+      "对方想听某首歌/让你点歌/分享共听正在播的歌时：调用 share_music（query 或 name+artist；歧义时用 pick_id；或 from_presence）。" +
+        "优先网易云整曲卡（需本机兼容 API）；否则 Apple 试听/外链。失败/多候选如实说，勿假装已播。"
+    );
+  }
+  if (has("start_call")) {
+    parts.push(
+      "对方让你打电话/打过来/拨给我/语音通话/视频通话时：必须调用 start_call（media=voice|video，默认 voice）；禁止只说「打了」或说没有拨号工具。"
+    );
+  }
+  if (has("set_avatar")) {
+    parts.push(
+      "对方发来几张图让你挑头像/换头像/选一个喜欢的：看候选图后必须调用 set_avatar（pick=候选编号，或 url）；禁止只口头说换了却不调工具。"
+    );
+  }
+  if (has("block_user") || has("unblock_user")) {
+    parts.push(
+      "对方明确要求拉黑/解除拉黑时，调用 block_user / unblock_user；不要口头假装已拉黑。"
+    );
+  }
+  if (parts.length) {
+    parts.push(
+      "工具结果用一两句口语告诉对方；今天日期以 [TODAY] 段或工具返回的 today 为准。"
+    );
+  }
+  return parts.join("");
+}
 
 /** 接话前塞进 system：今日日历摘要（有则列标题，无则写无行程） */
 function buildTodayPrompt() {
@@ -215,7 +412,18 @@ function migrateStore(raw) {
           const id = String(p.id || "").trim();
           if (!PEER_ID_RE.test(id)) return null;
           const name = String(p.name || "").trim().slice(0, 32) || id;
-          return { id, name };
+          const row = { id, name };
+          if (p.kind === "group") {
+            row.kind = "group";
+            row.members = Array.isArray(p.members)
+              ? p.members.map((m) => String(m || "").trim()).filter((m) => PEER_ID_RE.test(m)).slice(0, 12)
+              : [];
+          }
+          if (p.blocks_you) row.blocks_you = true;
+          if (p.blocked_by_you) row.blocked_by_you = true;
+          if (p.avatar) row.avatar = String(p.avatar);
+          if (p.persona) row.persona = String(p.persona);
+          return row;
         })
         .filter(Boolean)
     : [];
@@ -254,10 +462,15 @@ function migrateStore(raw) {
       threads[p.id] = emptyThread();
     } else {
       const th = threads[p.id];
+      const topics = normalizeTopicsMap(th.topics);
+      let active = normalizeTopicId(th.active_topic);
+      if (active && !topics[active]) active = "";
       threads[p.id] = {
         messages: Array.isArray(th.messages) ? th.messages : [],
         tokens_used: Math.max(0, Math.floor(Number(th.tokens_used) || 0)),
         budget_tokens: Math.max(0, Math.floor(Number(th.budget_tokens) || 0)),
+        topics,
+        active_topic: active,
       };
     }
   }
@@ -309,6 +522,12 @@ function listPeers() {
       return {
         id: p.id,
         name: p.name,
+        kind: p.kind === "group" ? "group" : "dm",
+        members: Array.isArray(p.members) ? p.members : undefined,
+        avatar: p.avatar ? String(p.avatar) : "",
+        persona: p.persona ? String(p.persona) : "",
+        blocks_you: !!p.blocks_you,
+        blocked_by_you: !!p.blocked_by_you,
         unread,
         last,
         lastTs: last ? last.ts : 0,
@@ -318,15 +537,228 @@ function listPeers() {
   return { ok: true, peers: sessions, defaultPeerId: DEFAULT_PEER_ID };
 }
 
-function resolvePeerForMessage(msgId) {
+function slugPeerId(raw) {
+  const base = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+  return base || "peer";
+}
+
+function normalizePeerAvatar(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "";
+  /* 本站 media / cafe 静态 / http(s)；拒超长 data URL 撑爆 chat.json */
+  if (s.length > 512) {
+    const err = new Error("头像地址过长，请先上传图片");
+    err.code = "peer_avatar_too_long";
+    throw err;
+  }
+  if (
+    s.startsWith("/api/v1/chat/media/") ||
+    s.startsWith("/assets/") ||
+    /^https?:\/\//i.test(s)
+  ) {
+    return s;
+  }
+  const err = new Error("头像地址无效");
+  err.code = "peer_avatar_invalid";
+  throw err;
+}
+
+function normalizePeerPersona(raw) {
+  return String(raw || "").trim().slice(0, 4000);
+}
+
+/** 新建联系人 / 群。daily 不可删；群 members 引用已有 peer id；可带 avatar/persona */
+function createPeer(opts) {
+  const o = opts || {};
+  const name = String(o.name || "").trim().slice(0, 32);
+  if (!name) {
+    const err = new Error("请填写名称");
+    err.code = "peer_name_required";
+    throw err;
+  }
+  const kind = o.kind === "group" ? "group" : "dm";
+  let id = String(o.id || "").trim();
+  if (!id || !PEER_ID_RE.test(id)) {
+    id = slugPeerId(name);
+    if (!PEER_ID_RE.test(id)) id = "p" + Date.now().toString(36).slice(-8);
+  }
+  const store = readStore();
+  if (store.peers.some((p) => p.id === id)) {
+    id = (id.slice(0, 20) + "-" + Date.now().toString(36).slice(-4)).slice(0, 32);
+  }
+  if (!PEER_ID_RE.test(id)) {
+    const err = new Error("会话 id 无效");
+    err.code = "peer_id_invalid";
+    throw err;
+  }
+  const peer = { id, name, kind };
+  const persona = normalizePeerPersona(o.persona != null ? o.persona : o.persona_card);
+  if (persona) peer.persona = persona;
+  if (o.avatar != null && String(o.avatar).trim()) {
+    peer.avatar = normalizePeerAvatar(o.avatar);
+  }
+  if (kind === "group") {
+    const members = Array.isArray(o.members)
+      ? o.members.map((m) => normalizePeerId(m)).filter((m) => m !== id)
+      : [];
+    const uniq = [];
+    const seen = new Set();
+    for (const m of members) {
+      if (seen.has(m)) continue;
+      if (!store.peers.some((p) => p.id === m)) continue;
+      seen.add(m);
+      uniq.push(m);
+    }
+    if (!uniq.includes(DEFAULT_PEER_ID)) uniq.unshift(DEFAULT_PEER_ID);
+    peer.members = uniq.slice(0, 12);
+  }
+  store.peers.push(peer);
+  store.threads[id] = emptyThread();
+  writeStore(store);
+  return { ok: true, peer };
+}
+
+function updatePeer(peerId, patch) {
+  const id = normalizePeerId(peerId);
+  const o = patch || {};
+  const store = readStore();
+  const p = store.peers.find((x) => x.id === id);
+  if (!p) {
+    const err = new Error("会话不存在");
+    err.code = "peer_missing";
+    throw err;
+  }
+  if (o.name != null) {
+    const nm = String(o.name || "").trim().slice(0, 32);
+    if (!nm) {
+      const err = new Error("请填写名称");
+      err.code = "peer_name_required";
+      throw err;
+    }
+    p.name = nm;
+  }
+  if (o.persona != null || o.persona_card != null) {
+    const persona = normalizePeerPersona(
+      o.persona != null ? o.persona : o.persona_card
+    );
+    if (persona) p.persona = persona;
+    else delete p.persona;
+  }
+  if (o.avatar != null) {
+    const av = String(o.avatar || "").trim();
+    if (!av) delete p.avatar;
+    else p.avatar = normalizePeerAvatar(av);
+  }
+  if (o.blocks_you != null) {
+    if (o.blocks_you) p.blocks_you = true;
+    else delete p.blocks_you;
+  }
+  if (o.blocked_by_you != null) {
+    if (o.blocked_by_you) p.blocked_by_you = true;
+    else delete p.blocked_by_you;
+  }
+  writeStore(store);
+  return { ok: true, peer: p };
+}
+
+function peerBlocksYou(peerId) {
+  const id = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const store = readStore();
+  const p = store.peers.find((x) => x && x.id === id);
+  return !!(p && p.blocks_you);
+}
+
+/** 你拉黑了对方（本机会话仍可见；发消息打 blocked_send） */
+function youBlockedPeer(peerId) {
+  const id = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const store = readStore();
+  const p = store.peers.find((x) => x && x.id === id);
+  return !!(p && p.blocked_by_you);
+}
+
+function setYouBlockedPeer(on, peerId) {
+  return updatePeer(peerId != null ? peerId : currentPeerId(), {
+    blocked_by_you: !!on,
+  });
+}
+
+function setPeerBlocksYou(on, peerId) {
+  return updatePeer(peerId != null ? peerId : currentPeerId(), {
+    blocks_you: !!on,
+  });
+}
+
+/** 拉黑期间看到和好意图 → 自动解除（仍可读消息） */
+function maybeSoftUnblockFromText(text) {
+  const s = String(text || "");
+  if (!peerBlocksYou()) return false;
+  if (
+    !/(和好|原谅我|对不起|抱歉|求你|别拉黑|解除拉黑|别黑我|我错了|还喜欢你|想你了|不要不理我|消消气|别生气了|回来吧|理理我|我在呢|抱抱你|心疼你|不要冷战|取消拉黑|解开拉黑)/.test(
+      s
+    )
+  ) {
+    return false;
+  }
+  setPeerBlocksYou(false);
+  return true;
+}
+
+function renamePeer(peerId, name) {
+  return updatePeer(peerId, { name });
+}
+
+function deletePeer(peerId) {
+  const id = normalizePeerId(peerId);
+  if (id === DEFAULT_PEER_ID) {
+    const err = new Error("家机会话不能删");
+    err.code = "peer_protected";
+    throw err;
+  }
+  const store = readStore();
+  if (!store.peers.some((p) => p.id === id)) {
+    const err = new Error("会话不存在");
+    err.code = "peer_missing";
+    throw err;
+  }
+  store.peers = store.peers.filter((p) => p.id !== id);
+  delete store.threads[id];
+  writeStore(store);
+  return { ok: true, deleted: id };
+}
+
+/** @returns {{ peerId: string, topicId: string }|null} */
+function resolveChatCtxForMessage(msgId) {
   const id = String(msgId || "").trim();
   if (!id) return null;
   const store = readStore();
-  for (const p of store.peers) {
-    const msgs = (store.threads[p.id] && store.threads[p.id].messages) || [];
-    if (msgs.some((m) => m && m.id === id)) return p.id;
+  for (const p of store.peers || []) {
+    if (!p || !p.id) continue;
+    const th = store.threads[p.id] || emptyThread();
+    const main = Array.isArray(th.messages) ? th.messages : [];
+    if (main.some((m) => m && m.id === id)) {
+      return { peerId: p.id, topicId: "" };
+    }
+    const topics = normalizeTopicsMap(th.topics);
+    for (const tid of Object.keys(topics)) {
+      const msgs = Array.isArray(topics[tid].messages)
+        ? topics[tid].messages
+        : [];
+      if (msgs.some((m) => m && m.id === id)) {
+        return { peerId: p.id, topicId: tid };
+      }
+    }
   }
   return null;
+}
+
+function resolvePeerForMessage(msgId) {
+  const ctx = resolveChatCtxForMessage(msgId);
+  return ctx ? ctx.peerId : null;
 }
 
 function normalizeKind(raw) {
@@ -399,6 +831,8 @@ function callDisplayBody(payload) {
       return "通话中 " + clock;
     case "ended":
       return "通话时长 " + clock;
+    case "missed":
+      return "未接" + lab;
     default:
       return lab;
   }
@@ -500,12 +934,15 @@ function normalizeToolPayload(raw) {
   const label = String(src.label || name || "tool").trim().slice(0, 32) || "tool";
   const summary = String(src.summary || "").trim().slice(0, 80);
   if (!name && !label) return null;
-  return {
+  const out = {
     name: name || label,
     label,
     summary,
     ok: src.ok !== false,
   };
+  const detail = String(src.detail || "").trim().slice(0, 1200);
+  if (detail) out.detail = detail;
+  return out;
 }
 
 function isMediaUrl(body) {
@@ -554,7 +991,14 @@ function normalizeLocationPayload(raw) {
   const detail = String(src.detail != null ? src.detail : (raw && raw.detail) || "")
     .trim()
     .slice(0, 80);
-  return { name, detail };
+  const lat = Number(src.lat != null ? src.lat : raw && raw.lat);
+  const lng = Number(src.lng != null ? src.lng : raw && raw.lng);
+  const out = { name, detail };
+  if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+    out.lat = Math.round(lat * 1e6) / 1e6;
+    out.lng = Math.round(lng * 1e6) / 1e6;
+  }
+  return out;
 }
 
 const FILE_TEXT_MAX = 8 * 1024;
@@ -569,11 +1013,35 @@ function normalizeFilePayload(raw) {
     .replace(/[/\\]/g, "")
     .slice(0, 80);
   if (!name) return null;
+  const out = { name };
+  const size = Math.max(0, Math.floor(Number(src.size) || 0));
+  if (size > 0) out.size = Math.min(size, FILE_MAX_BYTES);
+  let ext = String(src.ext || "")
+    .trim()
+    .replace(/^\./, "")
+    .toLowerCase()
+    .slice(0, 8);
+  if (!ext) {
+    ext = path
+      .extname(name)
+      .replace(/^\./, "")
+      .toLowerCase()
+      .slice(0, 8);
+  }
+  if (ext && /^[a-z0-9]+$/.test(ext)) out.ext = ext;
+  const urlRaw = String(src.url || src.src || "").trim();
+  if (urlRaw && isMediaUrl(urlRaw)) {
+    out.url = urlRaw;
+  } else if (urlRaw) {
+    const id = mediaIdFromUrl(urlRaw);
+    if (id) out.url = MEDIA_URL_PREFIX + id;
+  }
   const text = String(src.text != null ? src.text : src.excerpt || "")
     .replace(/\u0000/g, "")
     .slice(0, FILE_TEXT_MAX);
-  if (text) return { name, text };
-  return { name, fileStub: true };
+  if (text) out.text = text;
+  if (!out.url && !out.text) out.fileStub = true;
+  return out;
 }
 
 function normalizeMusicPayload(raw) {
@@ -726,6 +1194,14 @@ function reactionsLlmSuffix(m) {
   );
 }
 
+function normalizeSpeakerPayload(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = String(raw.speaker_id || "").trim();
+  if (!id || !PEER_ID_RE.test(id)) return null;
+  const name = String(raw.speaker_name || "").trim().slice(0, 32);
+  return { speaker_id: id, speaker_name: name || id };
+}
+
 function llmContent(m) {
   if (!m) return "";
   /* 撤回：原文进模型（心意/表白才好品），界面与搜索仍当已撤 */
@@ -742,7 +1218,8 @@ function llmContent(m) {
     const st = getSticker(m.body);
     core = "[贴纸:" + ((st && st.label) || m.body) + "]";
   } else if (m.kind === "image") {
-    core = "[图片]";
+    const url = String(m.body || "").trim();
+    core = url ? "[图片 " + url + "]" : "[图片]";
   } else if (m.kind === "voice") {
     const p = m.payload || {};
     const ms = p.durationMs || 0;
@@ -770,12 +1247,11 @@ function llmContent(m) {
   } else if (m.kind === "file") {
     const p = m.payload || {};
     const text = String(p.text || "").trim();
+    const label = p.name || m.body || "未命名";
     if (text) {
-      core =
-        "[文件 " +
-        (p.name || m.body || "未命名") +
-        "]\n" +
-        text.slice(0, FILE_TEXT_MAX);
+      core = "[文件 " + label + "]\n" + text.slice(0, FILE_TEXT_MAX);
+    } else if (p.url) {
+      core = "[文件 " + label + "]";
     } else {
       core = "[文件]";
     }
@@ -807,6 +1283,9 @@ function llmContent(m) {
       body = body ? q + "\n" + body : q;
     }
     core = body;
+  }
+  if (m.from === "bot" && m.payload && m.payload.speaker_name) {
+    core = "「" + String(m.payload.speaker_name) + "」：" + core;
   }
   return core + reactionsLlmSuffix(m);
 }
@@ -920,6 +1399,17 @@ function normalizeMsg(raw) {
     read: from === "you" ? true : raw.read !== false,
   };
   if (payload) out.payload = payload;
+  if (
+    raw.blocked_send === true ||
+    (raw.payload && raw.payload.blocked_send === true)
+  ) {
+    out.blocked_send = true;
+  }
+  /* H2.14：群说话人挂在 bot 文本 payload 上 */
+  if (from === "bot" && kind === "text") {
+    const sp = normalizeSpeakerPayload(raw.payload || raw);
+    if (sp) out.payload = Object.assign({}, out.payload || {}, sp);
+  }
   const quote = normalizeQuote(raw.quote);
   if (quote) out.quote = quote;
   const forward = normalizeForward(raw.forward);
@@ -1410,19 +1900,39 @@ function extFromContentType(ct) {
   return "jpg";
 }
 
-function saveChatMedia(buf, contentType) {
+function safeFileExt(originalName) {
+  let ext = path
+    .extname(String(originalName || ""))
+    .replace(/^\./, "")
+    .toLowerCase();
+  if (!/^[a-z0-9]{1,8}$/.test(ext) || FILE_BLOCKED_EXT.has(ext)) return "bin";
+  return ext;
+}
+
+/**
+ * @param {Buffer} buf
+ * @param {string} [contentType]
+ * @param {string} [originalName] 有则当聊天附件（更大上限 + 按原后缀存）
+ */
+function saveChatMedia(buf, contentType, originalName) {
   ensureFile();
   if (!Buffer.isBuffer(buf) || !buf.length) {
     const err = new Error("文件为空");
     err.code = "bad_chat_media";
     throw err;
   }
-  if (buf.length > MEDIA_MAX_BYTES) {
-    const err = new Error("文件太大（上限 2MB）");
+  const asFile = Boolean(originalName && String(originalName).trim());
+  const limit = asFile ? FILE_MAX_BYTES : MEDIA_MAX_BYTES;
+  if (buf.length > limit) {
+    const err = new Error(
+      asFile ? "文件太大（上限约 16MB）" : "文件太大（上限 2MB）"
+    );
     err.code = "chat_media_too_large";
     throw err;
   }
-  const ext = extFromContentType(contentType);
+  const ext = asFile
+    ? safeFileExt(originalName)
+    : extFromContentType(contentType);
   const name = randomUUID() + "." + ext;
   fs.writeFileSync(path.join(MEDIA_DIR, name), buf);
   return { ok: true, id: name, url: MEDIA_URL_PREFIX + name };
@@ -1437,15 +1947,155 @@ function resolveChatMediaPath(id) {
   return filePath;
 }
 
+function mediaIdFromUrl(url) {
+  const s = String(url || "").trim();
+  if (s.startsWith(MEDIA_URL_PREFIX)) {
+    const id = s.slice(MEDIA_URL_PREFIX.length);
+    return MEDIA_ID_RE.test(id) ? id : "";
+  }
+  return MEDIA_ID_RE.test(s) ? s : "";
+}
+
+/** 给视觉模型用的 data URL；过大则 null（仍可文字带 url） */
+function chatMediaDataUrl(urlOrId) {
+  const id = mediaIdFromUrl(urlOrId);
+  const filePath = resolveChatMediaPath(id);
+  if (!filePath) return null;
+  let buf;
+  try {
+    buf = fs.readFileSync(filePath);
+  } catch (_) {
+    return null;
+  }
+  if (!buf || !buf.length || buf.length > 900000) return null;
+  const ext = path.extname(id).toLowerCase();
+  const mime =
+    ext === ".png"
+      ? "image/png"
+      : ext === ".webp"
+        ? "image/webp"
+        : ext === ".gif"
+          ? "image/gif"
+          : "image/jpeg";
+  return "data:" + mime + ";base64," + buf.toString("base64");
+}
+
+/** 当前线程你侧近期图片，时间正序，pick=1…n */
+function listRecentYouImages(limit) {
+  const lim = Math.max(1, Math.min(12, Math.floor(Number(limit) || 8)));
+  const msgs = (listMessages().messages || []).filter(
+    (m) =>
+      m &&
+      m.from === "you" &&
+      m.kind === "image" &&
+      !m.recalled &&
+      isMediaUrl(String(m.body || "").trim())
+  );
+  const slice = msgs.slice(-lim);
+  return slice.map((m, i) => ({
+    pick: i + 1,
+    id: m.id,
+    url: String(m.body || "").trim(),
+    ts: m.ts,
+  }));
+}
+
+/**
+ * 换头像：默认写当前 peer；家机(daily)同时写设定 avatar_bot，壳顶栏跟着变。
+ * who=you → avatar_user（仅 daily 有意义）
+ */
+function applyChatAvatar({ url, who }) {
+  const av = normalizePeerAvatar(url);
+  const side = who === "you" ? "you" : "bot";
+  const peerId = currentPeerId();
+  if (side === "bot") {
+    updatePeer(peerId, { avatar: av });
+    /* 并发 writeStore 可能冲掉字段；读回不对就再写一次 */
+    const hit = (readStore().peers || []).find((p) => p && p.id === peerId);
+    if (!hit || hit.avatar !== av) updatePeer(peerId, { avatar: av });
+    if (peerId === DEFAULT_PEER_ID) {
+      const { patchSettings } = require("../../共读app/gateway/settings");
+      patchSettings({ avatar_bot: av });
+    }
+  } else {
+    if (peerId === DEFAULT_PEER_ID) {
+      const { patchSettings } = require("../../共读app/gateway/settings");
+      patchSettings({ avatar_user: av });
+    }
+  }
+  return { ok: true, who: side, url: av, peerId };
+}
+
+function userImagePriorContent(m, pickById, visionLeft) {
+  const url = String((m && m.body) || "").trim();
+  const pick = m && m.id && pickById ? pickById.get(m.id) : 0;
+  const label = pick
+    ? "[候选头像#" +
+      pick +
+      "] 若让你换头像请 set_avatar(pick=" +
+      pick +
+      " 或 url=" +
+      url +
+      ")"
+    : url
+      ? "[图片 " + url + "]"
+      : "[图片]";
+  if (visionLeft && visionLeft.n > 0) {
+    const dataUrl = chatMediaDataUrl(url);
+    if (dataUrl) {
+      visionLeft.n -= 1;
+      return [
+        { type: "text", text: label },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ];
+    }
+  }
+  return label;
+}
+
+function threadBucket(store, peerId) {
+  const th = store.threads[peerId];
+  if (!th || typeof th !== "object") {
+    const empty = emptyThread();
+    store.threads[peerId] = empty;
+    return empty;
+  }
+  if (!th.topics || typeof th.topics !== "object") th.topics = {};
+  if (th.active_topic == null) th.active_topic = "";
+  return th;
+}
+
+function activeMessageList(th, topicId) {
+  const tid = normalizeTopicId(topicId);
+  if (tid && th.topics && th.topics[tid]) {
+    if (!Array.isArray(th.topics[tid].messages)) th.topics[tid].messages = [];
+    return th.topics[tid].messages;
+  }
+  if (!Array.isArray(th.messages)) th.messages = [];
+  return th.messages;
+}
+
 function readAll() {
   const store = readStore();
   const peerId = currentPeerId();
-  const th = store.threads[peerId] || emptyThread();
-  const messages = (th.messages || []).map(normalizeMsg).filter(Boolean);
+  const topicId = currentTopicId();
+  const th = threadBucket(store, peerId);
+  const rawMsgs = activeMessageList(th, topicId);
+  const messages = (rawMsgs || []).map(normalizeMsg).filter(Boolean);
   messages.sort((a, b) => a.ts - b.ts);
+  const topic =
+    topicId && th.topics && th.topics[topicId] ? th.topics[topicId] : null;
+  const archive_before_ts =
+    topicId && topic
+      ? Math.max(0, Math.floor(Number(topic.archive_before_ts) || 0))
+      : Math.max(0, Math.floor(Number(th.archive_before_ts) || 0));
   return {
     threadId: peerId,
     peerId,
+    topicId: topicId || "",
+    topicTitle: topic ? topic.title : "",
+    memory_inject: topic ? topic.memory_inject !== false : true,
+    archive_before_ts,
     messages,
     tokens_used: Math.max(0, Math.floor(Number(th.tokens_used) || 0)),
     budget_tokens: Math.max(0, Math.floor(Number(th.budget_tokens) || 0)),
@@ -1459,7 +2109,8 @@ function readAll() {
 function writeAll(data) {
   const store = readStore();
   const peerId = currentPeerId();
-  const prevTh = store.threads[peerId] || emptyThread();
+  const topicId = currentTopicId();
+  const prevTh = threadBucket(store, peerId);
   const messages = (data.messages || []).map(normalizeMsg).filter(Boolean);
   messages.sort((a, b) => a.ts - b.ts);
   const tokens_used = Object.prototype.hasOwnProperty.call(data, "tokens_used")
@@ -1468,7 +2119,37 @@ function writeAll(data) {
   const budget_tokens = Object.prototype.hasOwnProperty.call(data, "budget_tokens")
     ? Math.max(0, Math.floor(Number(data.budget_tokens) || 0))
     : Math.max(0, Math.floor(Number(prevTh.budget_tokens) || 0));
-  store.threads[peerId] = { messages, tokens_used, budget_tokens };
+  const topics = normalizeTopicsMap(prevTh.topics);
+  let active = normalizeTopicId(prevTh.active_topic);
+  if (active && !topics[active]) active = "";
+  const archive_before_ts = Math.max(
+    0,
+    Math.floor(Number(prevTh.archive_before_ts) || 0)
+  );
+  if (topicId && topics[topicId]) {
+    topics[topicId] = {
+      ...topics[topicId],
+      messages,
+      updated_at: Date.now(),
+    };
+    store.threads[peerId] = {
+      messages: Array.isArray(prevTh.messages) ? prevTh.messages : [],
+      tokens_used,
+      budget_tokens,
+      topics,
+      active_topic: active,
+      archive_before_ts,
+    };
+  } else {
+    store.threads[peerId] = {
+      messages,
+      tokens_used,
+      budget_tokens,
+      topics,
+      active_topic: active,
+      archive_before_ts,
+    };
+  }
   if (Object.prototype.hasOwnProperty.call(data, "last_poke_day")) {
     store.last_poke_day = String(data.last_poke_day || "").trim();
   }
@@ -1552,8 +2233,13 @@ function pokeDaily(opts) {
     return { ok: true, poked: false, count: unreadCount().count, message: null };
   }
   let message;
-  if (Math.random() < 0.12) {
-    /* 偶发来电（inbound） */
+  let callChance = 0.12;
+  try {
+    const { readSettings } = require("../../共读app/gateway/settings");
+    if (readSettings().call_proactive_enabled) callChance = 0.35;
+  } catch (_) {}
+  if (Math.random() < callChance) {
+    /* 偶发来电（inbound）；M4 主动来电开时更勤 */
     message = startChatCall(Math.random() < 0.35 ? "video" : "voice", "in").message;
   } else if (Math.random() < 0.28) {
     message = appendMessage("bot", randomSticker().id, "sticker");
@@ -1665,8 +2351,190 @@ function listMessages() {
     ok: true,
     threadId: all.threadId,
     peerId: all.peerId || all.threadId,
+    topicId: all.topicId || "",
+    topicTitle: all.topicTitle || "",
+    memory_inject: all.memory_inject !== false,
+    archive_before_ts: Math.max(0, Math.floor(Number(all.archive_before_ts) || 0)),
     messages: all.messages,
   };
+}
+
+/** IB M7：当前频道封档线（ms）；0=无 */
+function getArchiveBeforeTs() {
+  return Math.max(0, Math.floor(Number(readAll().archive_before_ts) || 0));
+}
+
+/** 设封档线；ts=0 清除。各频道独立。 */
+function setArchiveBeforeTs(ts) {
+  const cut = Math.max(0, Math.floor(Number(ts) || 0));
+  const store = readStore();
+  const peerId = currentPeerId();
+  const topicId = currentTopicId();
+  const th = threadBucket(store, peerId);
+  if (topicId) {
+    const topics = normalizeTopicsMap(th.topics);
+    if (!topics[topicId]) {
+      const err = new Error("话题不存在");
+      err.code = "topic_missing";
+      throw err;
+    }
+    topics[topicId] = {
+      ...topics[topicId],
+      archive_before_ts: cut,
+      updated_at: Date.now(),
+    };
+    store.threads[peerId] = { ...th, topics };
+  } else {
+    store.threads[peerId] = { ...th, archive_before_ts: cut };
+  }
+  writeStore(store);
+  return { ok: true, archive_before_ts: cut };
+}
+
+/** 封档到指定消息（含该条及更早） */
+function setArchiveAtMessage(messageId) {
+  const sid = String(messageId || "").trim();
+  if (!sid) {
+    const err = new Error("缺少消息");
+    err.code = "bad_archive";
+    throw err;
+  }
+  const msg = (listMessages().messages || []).find((m) => m && m.id === sid);
+  if (!msg) {
+    const err = new Error("消息不存在");
+    err.code = "msg_missing";
+    throw err;
+  }
+  return setArchiveBeforeTs(Number(msg.ts) || 0);
+}
+
+/** H7：列出某 peer 的话题频道（不含主线消息体） */
+function listTopics(peerId) {
+  const store = readStore();
+  const pid = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const th = threadBucket(store, pid);
+  const topics = normalizeTopicsMap(th.topics);
+  const rows = Object.keys(topics)
+    .map((id) => {
+      const t = topics[id];
+      const msgs = Array.isArray(t.messages) ? t.messages : [];
+      const last = msgs.length ? msgs[msgs.length - 1] : null;
+      return {
+        id: t.id,
+        title: t.title,
+        memory_inject: t.memory_inject !== false,
+        created_at: t.created_at,
+        updated_at: t.updated_at,
+        count: msgs.length,
+        preview: last
+          ? String(last.body || last.kind || "").trim().slice(0, 40)
+          : "",
+      };
+    })
+    .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
+  const active = normalizeTopicId(th.active_topic);
+  return {
+    ok: true,
+    peerId: pid,
+    active_topic: active && topics[active] ? active : "",
+    main: {
+      id: "",
+      title: "主线",
+      memory_inject: true,
+      count: Array.isArray(th.messages) ? th.messages.length : 0,
+    },
+    topics: rows,
+  };
+}
+
+function createTopic(peerId, patch) {
+  const store = readStore();
+  const pid = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const th = threadBucket(store, pid);
+  const topics = normalizeTopicsMap(th.topics);
+  if (Object.keys(topics).length >= TOPICS_MAX) {
+    const err = new Error("话题频道已满（" + TOPICS_MAX + "）");
+    err.code = "topics_full";
+    throw err;
+  }
+  const topic = emptyTopic({
+    title: patch && patch.title,
+    memory_inject: patch && patch.memory_inject,
+  });
+  topics[topic.id] = topic;
+  store.threads[pid] = {
+    ...th,
+    topics,
+    active_topic: normalizeTopicId(th.active_topic),
+  };
+  writeStore(store);
+  return { ok: true, topic: listTopics(pid).topics.find((t) => t.id === topic.id) };
+}
+
+function updateTopic(peerId, topicId, patch) {
+  const store = readStore();
+  const pid = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const tid = normalizeTopicId(topicId);
+  const th = threadBucket(store, pid);
+  const topics = normalizeTopicsMap(th.topics);
+  if (!tid || !topics[tid]) {
+    const err = new Error("话题不存在");
+    err.code = "topic_missing";
+    throw err;
+  }
+  const cur = topics[tid];
+  if (patch && patch.title != null) {
+    cur.title =
+      String(patch.title || "").trim().slice(0, TOPIC_TITLE_MAX) || cur.title;
+  }
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "memory_inject")) {
+    cur.memory_inject = patch.memory_inject !== false;
+  }
+  cur.updated_at = Date.now();
+  topics[tid] = cur;
+  store.threads[pid] = { ...th, topics };
+  writeStore(store);
+  return { ok: true, topic: listTopics(pid).topics.find((t) => t.id === tid) };
+}
+
+function deleteTopic(peerId, topicId) {
+  const store = readStore();
+  const pid = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const tid = normalizeTopicId(topicId);
+  const th = threadBucket(store, pid);
+  const topics = normalizeTopicsMap(th.topics);
+  if (!tid || !topics[tid]) {
+    const err = new Error("话题不存在");
+    err.code = "topic_missing";
+    throw err;
+  }
+  delete topics[tid];
+  let active = normalizeTopicId(th.active_topic);
+  if (active === tid) active = "";
+  store.threads[pid] = { ...th, topics, active_topic: active };
+  writeStore(store);
+  return { ok: true, id: tid, active_topic: active };
+}
+
+function setActiveTopic(peerId, topicId) {
+  const store = readStore();
+  const pid = normalizePeerId(peerId != null ? peerId : currentPeerId());
+  const tid = normalizeTopicId(topicId);
+  const th = threadBucket(store, pid);
+  const topics = normalizeTopicsMap(th.topics);
+  if (tid && !topics[tid]) {
+    const err = new Error("话题不存在");
+    err.code = "topic_missing";
+    throw err;
+  }
+  store.threads[pid] = { ...th, topics, active_topic: tid };
+  writeStore(store);
+  return { ok: true, peerId: pid, active_topic: tid };
+}
+
+function topicMemoryInjectEnabled() {
+  const all = readAll();
+  return all.memory_inject !== false;
 }
 
 function dayStartMs(day) {
@@ -1727,12 +2595,13 @@ function messageSearchText(m) {
   return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
-function appendToolMessage({ name, label, summary, ok }) {
+function appendToolMessage({ name, label, summary, ok, detail }) {
   const payload = normalizeToolPayload({
     name,
     label,
     summary,
     ok: ok !== false,
+    detail,
   });
   if (!payload) {
     const err = new Error("工具摘要无效");
@@ -1745,18 +2614,26 @@ function appendToolMessage({ name, label, summary, ok }) {
   });
 }
 
-/** q / kind(all|text|image|sticker|redpacket|transfer|location|money) / from / to (YYYY-MM-DD) */
+/** q / kind(all|text|image|sticker|redpacket|transfer|location|money) / from / to (YYYY-MM-DD) / peer / topic */
 function searchMessages(query) {
   const q = String((query && query.q) || "").trim().toLowerCase();
   const kind = String((query && query.kind) || "all").trim() || "all";
   const fromMs = dayStartMs(query && query.from);
   const toMs = dayEndMs(query && query.to);
-  const store = readStore();
+  const peerId = String((query && query.peer) || "").trim();
+  const topicId = String((query && query.topic) || "").trim();
   let messages = [];
-  for (const p of store.peers) {
-    withPeer(p.id, () => {
-      messages = messages.concat(listMessages().messages || []);
+  if (peerId) {
+    withPeerTopic(peerId, topicId, () => {
+      messages = listMessages().messages || [];
     });
+  } else {
+    const store = readStore();
+    for (const p of store.peers) {
+      withPeer(p.id, () => {
+        messages = messages.concat(listMessages().messages || []);
+      });
+    }
   }
   if (kind === "money") {
     messages = messages.filter((m) => m.kind === "redpacket" || m.kind === "transfer");
@@ -2059,6 +2936,25 @@ async function finishChatCallStream(id, patch, emit) {
       })
     );
   }
+  /* M4：婉拒/拒绝来电 → 落一条你侧提示并让 TA 知情回应 */
+  if (
+    (phase === "declined" || phase === "rejected") &&
+    msg &&
+    msg.from === "bot"
+  ) {
+    const tip = appendMessage("you", "（暂时不方便接电话）", "text", {
+      payload: { source: "call_decline" },
+    });
+    await write({ type: "you", message: tip });
+    return exclusiveBotReply(() =>
+      runBotReplyStream(write, tip, {
+        skipObserve: true,
+        coalesced: true,
+        systemExtra:
+          "对方婉拒了你刚打的电话，用一两句口语回应即可；不要立刻再拨、不要追问为什么。",
+      })
+    );
+  }
   const messages = listMessages().messages;
   await write({
     type: "done",
@@ -2068,6 +2964,80 @@ async function finishChatCallStream(id, patch, emit) {
     messages,
   });
   return { ok: true, message: msg, bot_message: null, messages };
+}
+
+/** M4：`[[call:voice]]` / `[[call:video]]` */
+const CALL_TAG_RE = /\[\[\s*call\s*:\s*(voice|video)\s*\]\]/gi;
+
+function extractCallTag(text) {
+  let media = "";
+  const cleaned = String(text || "")
+    .replace(CALL_TAG_RE, (_, m) => {
+      media = String(m || "").toLowerCase() === "video" ? "video" : "voice";
+      return "";
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { text: cleaned, media };
+}
+
+/**
+ * 剥来电标签；若开启主动来电则拨入并发 bot_call。
+ * @returns {Promise<string>} 展示用正文
+ */
+async function applyProactiveCallTag(write, text) {
+  const parsed = extractCallTag(text);
+  let body = parsed.text;
+  if (!parsed.media) return String(text || "").trim();
+  try {
+    const { readSettings } = require("../../共读app/gateway/settings");
+    if (!readSettings().call_proactive_enabled) {
+      /* 关着也剥标签，避免露馅 */
+      return body || String(text || "").trim();
+    }
+    const out = startChatCall(parsed.media, "in");
+    if (out && out.message && typeof write === "function") {
+      await write({ type: "bot_call", message: out.message });
+    }
+  } catch (_) {}
+  if (!body) body = parsed.media === "video" ? "视频打给你了" : "打给你了";
+  return body;
+}
+
+/**
+ * M5：剥礼物标签；开启时发 bot_gift（仅仪式，无支付）。
+ * @returns {Promise<string>}
+ */
+async function applyGiftTag(write, text) {
+  let body = String(text || "");
+  let gift = null;
+  try {
+    const { extractGiftTag } = require("./call-gifts");
+    const parsed = extractGiftTag(body);
+    body = parsed.text;
+    gift = parsed.gift;
+  } catch (_) {
+    return String(text || "").trim();
+  }
+  if (!gift) return String(text || "").trim();
+  try {
+    const { readSettings } = require("../../共读app/gateway/settings");
+    if (readSettings().call_gift_enabled && typeof write === "function") {
+      await write({
+        type: "bot_gift",
+        gift: {
+          tier: gift.tier,
+          id: gift.id,
+          name: gift.name,
+          emoji: gift.emoji,
+        },
+      });
+    }
+  } catch (_) {}
+  if (!body) body = gift.emoji + " 送了" + gift.name;
+  else body = body + "\n" + gift.emoji + " " + gift.name;
+  return body;
 }
 
 function mediaIdFromChatBody(body) {
@@ -2200,6 +3170,10 @@ function createPat(patch) {
 }
 
 function createMessage(patch) {
+  /* 你已拉黑：任意出站消息打感叹号标记 */
+  if (youBlockedPeer() && patch && typeof patch === "object") {
+    patch = Object.assign({}, patch, { blocked_send: true });
+  }
   const kind = normalizeKind(patch && patch.kind);
   if (kind === "tool") {
     const err = new Error("工具摘要不能手发");
@@ -2266,6 +3240,7 @@ function createMessage(patch) {
     const locExtra = { payload };
     const locFwd = normalizeForward(patch && patch.forward);
     if (locFwd) locExtra.forward = locFwd;
+    if (patch && patch.blocked_send) locExtra.blocked_send = true;
     const msg = appendMessage("you", payload.name, "location", locExtra);
     return { ok: true, message: msg };
   }
@@ -2277,7 +3252,11 @@ function createMessage(patch) {
       err.code = "bad_chat_file";
       throw err;
     }
-    const msg = appendMessage("you", payload.name, "file", { payload });
+    const fileExtra = { payload };
+    const fileFwd = normalizeForward(patch && patch.forward);
+    if (fileFwd) fileExtra.forward = fileFwd;
+    if (patch && patch.blocked_send) fileExtra.blocked_send = true;
+    const msg = appendMessage("you", payload.name, "file", fileExtra);
     return { ok: true, message: msg };
   }
 
@@ -2288,7 +3267,9 @@ function createMessage(patch) {
       err.code = "bad_chat_music";
       throw err;
     }
-    const msg = appendMessage("you", payload.name, "music", { payload });
+    const musicExtra = { payload };
+    if (patch && patch.blocked_send) musicExtra.blocked_send = true;
+    const msg = appendMessage("you", payload.name, "music", musicExtra);
     return { ok: true, message: msg };
   }
 
@@ -2306,6 +3287,9 @@ function createMessage(patch) {
   if (kind === "voice") {
     extra.payload = normalizeVoicePayload(patch);
   }
+  if (patch && patch.blocked_send) extra.blocked_send = true;
+  /* 服务端为准：你已拉黑对方时强制打标（防前端漏传） */
+  if (youBlockedPeer()) extra.blocked_send = true;
   const msg = appendMessage("you", body, kind, extra);
   return { ok: true, message: msg };
 }
@@ -2523,6 +3507,123 @@ function moodPublicSnap() {
   }
 }
 
+/** H2.14：从模型 JSON / 脏文本里抽出合法成员 id，最多 3 个 */
+function parseSpeakerPickIds(raw, allowedIds) {
+  const allow = new Set(
+    (Array.isArray(allowedIds) ? allowedIds : [])
+      .map((x) => String(x || "").trim())
+      .filter((id) => PEER_ID_RE.test(id))
+  );
+  const fallback = () => {
+    if (allow.has(DEFAULT_PEER_ID)) return [DEFAULT_PEER_ID];
+    const first = allow.values().next().value;
+    return first ? [first] : [DEFAULT_PEER_ID];
+  };
+  if (!allow.size) return [DEFAULT_PEER_ID];
+  let ids = [];
+  try {
+    const s = String(raw || "");
+    const m = s.match(/\{[\s\S]*\}/);
+    const j = JSON.parse(m ? m[0] : s);
+    const arr = Array.isArray(j && j.ids) ? j.ids : [];
+    for (const x of arr) {
+      const id = String(x || "").trim();
+      if (!allow.has(id) || ids.includes(id)) continue;
+      ids.push(id);
+      if (ids.length >= 3) break;
+    }
+  } catch (_) {
+    ids = [];
+  }
+  return ids.length ? ids : fallback();
+}
+
+(function selfCheckSpeakerPick() {
+  const a = parseSpeakerPickIds('{"ids":["daily","mint","ghost","mint"]}', [
+    "daily",
+    "mint",
+  ]);
+  if (a.join(",") !== "daily,mint") throw new Error("speaker pick trim");
+  const b = parseSpeakerPickIds("not json", ["mint"]);
+  if (b.join(",") !== "mint") throw new Error("speaker pick fallback");
+})();
+
+function resolveGroupMemberMeta(memberId) {
+  const id = normalizePeerId(memberId);
+  const store = readStore();
+  const m = (store.peers || []).find((p) => p && p.id === id);
+  if (id === DEFAULT_PEER_ID) {
+    return {
+      id,
+      name: (m && m.name) || "家机",
+      persona: String((m && m.persona) || "").trim(),
+    };
+  }
+  return {
+    id,
+    name: (m && m.name) || id,
+    persona: String((m && m.persona) || "").trim(),
+  };
+}
+
+function currentGroupPeer() {
+  const store = readStore();
+  const pid = currentPeerId();
+  const peer = (store.peers || []).find((p) => p && p.id === pid);
+  if (!peer || peer.kind !== "group") return null;
+  return peer;
+}
+
+/** H2.14：模型从群成员里选 1～3 人；失败回落 daily / 第一人 */
+async function pickGroupSpeakers(userText) {
+  const peer = currentGroupPeer();
+  if (!peer) return { ids: [DEFAULT_PEER_ID], used: 0 };
+  const store = readStore();
+  const members = (Array.isArray(peer.members) ? peer.members : [])
+    .map((mid) => normalizePeerId(mid))
+    .filter((id) => (store.peers || []).some((p) => p && p.id === id));
+  const allowed = members.length ? members : [DEFAULT_PEER_ID];
+  const roster = allowed.map((id) => {
+    const meta = resolveGroupMemberMeta(id);
+    return (
+      "- " +
+      meta.id +
+      "｜" +
+      meta.name +
+      (meta.persona ? "｜" + meta.persona.slice(0, 120) : "")
+    );
+  });
+  try {
+    const { chatCompletion, parseThinkBody } = require("../../共读app/gateway/llm");
+    const system =
+      "你是群聊选人助手。只能从给定成员 id 里选 1～3 个该回消息的人。" +
+      '只输出 JSON：{"ids":["id1",...]}，不要解释、不要 markdown。';
+    const user =
+      "群名：" +
+      (peer.name || peer.id) +
+      "\n成员：\n" +
+      roster.join("\n") +
+      "\n\n用户刚说：\n" +
+      String(userText || "").trim().slice(0, 400);
+    const out = await chatCompletion({
+      system,
+      user,
+      think: false,
+      replyKind: "chat",
+    });
+    const parsed = parseThinkBody(out.content, false);
+    const body = String((parsed && parsed.body) || out.content || "");
+    const used =
+      (Number(out.tokens_in) || 0) + (Number(out.tokens_out) || 0);
+    return { ids: parseSpeakerPickIds(body, allowed), used };
+  } catch (_) {
+    return {
+      ids: parseSpeakerPickIds("", allowed),
+      used: 0,
+    };
+  }
+}
+
 async function runBotReplyStream(write, you, opts) {
   const {
     observeUserText,
@@ -2616,39 +3717,92 @@ async function runBotReplyStream(write, you, opts) {
     if (opts && opts.extraUser) {
       prior = prior.concat([{ role: "user", content: String(opts.extraUser) }]);
     }
-    await write({ type: "bot_start" });
     if (gate.delayMs > 0) await sleep(gate.delayMs);
     const memQuery =
       (opts && opts.observeText) != null
         ? String(opts.observeText)
         : observeTextForMessage(you);
-    const { text, thinkExtra, used } = await streamBotReply(write, prior, {
-      moodPrompt: gate.moodPrompt,
-      memoryQuery: memQuery,
-    });
-    bot_message = appendMessage("bot", text, "text", thinkExtra);
-    addTokensUsed(used > 0 ? used : 400);
-    await write({ type: "bot_done", message: bot_message });
-    try {
-      const { maybeExtractMemory } = require("./memory");
-      const obs =
-        (opts && opts.observeText) != null
-          ? String(opts.observeText)
-          : observeTextForMessage(you);
-      if (obs) maybeExtractMemory(currentPeerId(), obs);
-    } catch (_) {
-      /* 抽记失败不挡接话 */
+    const groupPeer = currentGroupPeer();
+    if (groupPeer) {
+      /* H2.14：模型选 1～3 人，串行各回一句；工具关闭 */
+      const pick = await pickGroupSpeakers(memQuery);
+      if (pick.used) addTokensUsed(pick.used);
+      const speakers = pick.ids.length
+        ? pick.ids
+        : parseSpeakerPickIds("", groupPeer.members || []);
+      let lastText = "";
+      for (let i = 0; i < speakers.length; i++) {
+        const sid = speakers[i];
+        const meta = resolveGroupMemberMeta(sid);
+        await write({
+          type: "bot_start",
+          speaker_id: meta.id,
+          speaker_name: meta.name,
+        });
+        const { text, thinkExtra, used } = await streamBotReply(write, prior, {
+          moodPrompt: gate.moodPrompt,
+          memoryQuery: memQuery,
+          speakerId: meta.id,
+          speakerName: meta.name,
+          speakerPersona: meta.persona,
+          disableTools: true,
+        });
+        const extra = Object.assign({}, thinkExtra, {
+          payload: {
+            speaker_id: meta.id,
+            speaker_name: meta.name,
+          },
+        });
+        let shown = await applyProactiveCallTag(write, text);
+        shown = await applyGiftTag(write, shown);
+        bot_message = appendMessage("bot", shown, "text", extra);
+        addTokensUsed(used > 0 ? used : 400);
+        await write({ type: "bot_done", message: bot_message });
+        lastText = shown;
+        prior = prior.concat([
+          {
+            role: "assistant",
+            content: "「" + meta.name + "」：" + shown,
+          },
+        ]);
+      }
+      try {
+        const { maybeExtractMemory } = require("./memory");
+        if (memQuery) maybeExtractMemory(currentPeerId(), memQuery);
+      } catch (_) {}
+      const bot_money = maybeBotMoney(you, lastText);
+      if (bot_money) await write({ type: "bot_money", message: bot_money });
+      const bot_sticker = maybeBotSticker(you, lastText);
+      if (bot_sticker) await write({ type: "bot_sticker", message: bot_sticker });
+      const bot_voice = maybeBotVoice(you);
+      if (bot_voice) await write({ type: "bot_voice", message: bot_voice });
+      if (you) await maybeBotReact(write, you, opts);
+      if (bot_message) await maybeBotSelfRecall(write, bot_message, opts);
+    } else {
+      await write({ type: "bot_start" });
+      const { text, thinkExtra, used } = await streamBotReply(write, prior, {
+        moodPrompt: gate.moodPrompt,
+        memoryQuery: memQuery,
+        systemExtra: opts && opts.systemExtra,
+      });
+      let shown = await applyProactiveCallTag(write, text);
+      shown = await applyGiftTag(write, shown);
+      bot_message = appendMessage("bot", shown, "text", thinkExtra);
+      addTokensUsed(used > 0 ? used : 400);
+      await write({ type: "bot_done", message: bot_message });
+      try {
+        const { maybeExtractMemory } = require("./memory");
+        if (memQuery) maybeExtractMemory(currentPeerId(), memQuery);
+      } catch (_) {}
+      const bot_money = maybeBotMoney(you, shown);
+      if (bot_money) await write({ type: "bot_money", message: bot_money });
+      const bot_sticker = maybeBotSticker(you, shown);
+      if (bot_sticker) await write({ type: "bot_sticker", message: bot_sticker });
+      const bot_voice = maybeBotVoice(you);
+      if (bot_voice) await write({ type: "bot_voice", message: bot_voice });
+      if (you) await maybeBotReact(write, you, opts);
+      if (bot_message) await maybeBotSelfRecall(write, bot_message, opts);
     }
-    const bot_money = maybeBotMoney(you, text);
-    if (bot_money) await write({ type: "bot_money", message: bot_money });
-    const bot_sticker = maybeBotSticker(you, text);
-    if (bot_sticker) await write({ type: "bot_sticker", message: bot_sticker });
-    const bot_voice = maybeBotVoice(you);
-    if (bot_voice) await write({ type: "bot_voice", message: bot_voice });
-    /* H1.29：偶发给你侧消息贴表情 */
-    if (you) await maybeBotReact(write, you, opts);
-    /* H1.28：偶发撤回刚发的文字（miss/peek 落在 bot_recall） */
-    if (bot_message) await maybeBotSelfRecall(write, bot_message, opts);
   } catch (e) {
     bot_error = {
       code: e.code || "llm_failed",
@@ -2714,6 +3868,52 @@ async function createMessageWithReplyStream(patch, emit) {
   const { observeUserText, sleep } = require("./mood");
   const obs = observeTextForMessage(you);
   if (obs) observeUserText(obs);
+
+  /* 你拉黑对方 / 消息带感叹号：不接话 */
+  if ((you && you.blocked_send) || youBlockedPeer()) {
+    const messages = listMessages().messages;
+    await write({
+      type: "done",
+      ok: true,
+      message: you,
+      bot_message: null,
+      skipped: true,
+      reason: "you_blocked",
+      messages,
+    });
+    return {
+      ok: true,
+      message: you,
+      bot_message: null,
+      skipped: true,
+      reason: "you_blocked",
+      messages,
+    };
+  }
+  if (peerBlocksYou()) {
+    const soft = maybeSoftUnblockFromText(obs || (you && you.body) || "");
+    if (!soft) {
+      const messages = listMessages().messages;
+      await write({
+        type: "done",
+        ok: true,
+        message: you,
+        bot_message: null,
+        skipped: true,
+        reason: "blocks_you",
+        blocks_you: true,
+        messages,
+      });
+      return {
+        ok: true,
+        message: you,
+        bot_message: null,
+        skipped: true,
+        reason: "blocks_you",
+        messages,
+      };
+    }
+  }
 
   if (!messageWaitsForCoalesce(you)) {
     return exclusiveBotReply(() =>
@@ -2885,9 +4085,11 @@ function detectTranslateTarget(text) {
 
 /**
  * 短讯翻译（不落库）。think:false。
+ * @param {string} text
+ * @param {string} [forceTo] zh|en|ja|ko；空则自动中↔英
  * @returns {Promise<{ ok: true, text: string, translation: string, to: string }>}
  */
-async function translateChatText(text) {
+async function translateChatText(text, forceTo) {
   const raw = String(text || "").trim().slice(0, 800);
   if (!raw) {
     const err = new Error("没有可翻译的文字");
@@ -2903,14 +4105,20 @@ async function translateChatText(text) {
     err.code = "bad_translate_kind";
     throw err;
   }
-  const to = detectTranslateTarget(raw);
+  const forced = String(forceTo || "")
+    .trim()
+    .toLowerCase();
+  const to = ["zh", "en", "ja", "ko"].includes(forced)
+    ? forced
+    : detectTranslateTarget(raw);
   const { chatCompletion, parseThinkBody } = require("../../共读app/gateway/llm");
   const system =
     "你是翻译助手。只输出译文本身，不要解释、不要加引号、不要标注语言名。";
-  const user =
-    to === "zh"
-      ? "把下面内容译成简体中文：\n" + raw
-      : "Translate the following into natural English:\n" + raw;
+  let user;
+  if (to === "zh") user = "把下面内容译成简体中文：\n" + raw;
+  else if (to === "ja") user = "次の内容を自然な日本語に訳してください：\n" + raw;
+  else if (to === "ko") user = "다음 내용을 자연스러운 한국어로 번역하세요:\n" + raw;
+  else user = "Translate the following into natural English:\n" + raw;
   const out = await chatCompletion({
     system,
     user,
@@ -2937,7 +4145,15 @@ function buildChatPrior(hist, youOrNull, excludeId) {
   const skip = excludeId ? String(excludeId) : "";
   const youId = youOrNull && youOrNull.id ? String(youOrNull.id) : "";
   const prior = [];
-  const slice = Array.isArray(hist) ? hist.slice(-HISTORY) : [];
+  const cut = getArchiveBeforeTs();
+  const base = Array.isArray(hist) ? hist : [];
+  const visible =
+    cut > 0 ? base.filter((m) => (Number(m && m.ts) || 0) > cut) : base;
+  const slice = visible.slice(-HISTORY);
+  const recentImgs = listRecentYouImages(8);
+  const pickById = new Map(recentImgs.map((x) => [x.id, x.pick]));
+  /* ponytail: 最多 6 张真图进视觉，其余只带编号+url 文案 */
+  const visionLeft = { n: 6 };
   let lastTs = null;
   for (const m of slice) {
     if (!m) continue;
@@ -2951,6 +4167,11 @@ function buildChatPrior(hist, youOrNull, excludeId) {
       const am = { role: "assistant", content: llmContent(m) };
       if (toolsOn) am.reasoning_content = m.think || "";
       prior.push(am);
+    } else if (m.kind === "image") {
+      prior.push({
+        role: "user",
+        content: userImagePriorContent(m, pickById, visionLeft),
+      });
     } else {
       prior.push({ role: "user", content: llmContent(m) });
     }
@@ -2959,7 +4180,14 @@ function buildChatPrior(hist, youOrNull, excludeId) {
   if (youOrNull) {
     const yTs = Number(youOrNull.ts) || Date.now();
     if (lastTs != null) pushHistoryGap(prior, lastTs, yTs);
-    prior.push({ role: "user", content: llmContent(youOrNull) });
+    if (youOrNull.kind === "image") {
+      prior.push({
+        role: "user",
+        content: userImagePriorContent(youOrNull, pickById, visionLeft),
+      });
+    } else {
+      prior.push({ role: "user", content: llmContent(youOrNull) });
+    }
   }
   return prior;
 }
@@ -2990,45 +4218,150 @@ async function streamBotReply(write, priorIn, opts) {
     runChatTool,
     resolveToolLabel,
     summarizeToolResult,
+    formatToolDetail,
     getToolBundle,
+    isActionTool,
   } = require("./chat-tools");
   const settings = readSettings();
   const resolved = resolveAppPersona("chat", settings);
-  const toolsOn = settings.chat_tools_enabled !== false;
+  const speakerId = String((opts && opts.speakerId) || "").trim();
+  const toolsForcedOff = !!(opts && opts.disableTools);
+  const toolsOn = !toolsForcedOff && settings.chat_tools_enabled !== false;
   const toolLabels = settings.chat_tool_labels || {};
   let toolBundle = null;
   if (toolsOn) toolBundle = await getToolBundle(settings);
   const tools = toolBundle && toolBundle.defs.length ? toolBundle.defs : undefined;
+  const toolNameSet = new Set(
+    (tools || [])
+      .map((t) => t && t.function && t.function.name)
+      .filter(Boolean)
+  );
+  let stickyLeaveUsed = 0;
+  let autoMemoryOpsUsed = 0;
+  let momentsPostsUsed = 0;
+  let momentsCommentsUsed = 0;
   let system = DAILY_SYSTEM_BASE;
   system +=
     "对方可能发贴纸、图片、红包、转账或位置；用一两句口语接住即可。" +
     "不要每条都提表情包，也不要说「我发了贴纸/红包」（贴纸与红包由系统按气氛另发）。";
+  if (toolsOn && toolNameSet.size) {
+    system += buildToolsSystemHint(toolNameSet);
+  }
+  let peerPersona = "";
+  let displayName = "";
+  try {
+    const store = readStore();
+    const pid = currentPeerId();
+    const peer = (store.peers || []).find((p) => p && p.id === pid);
+    if (speakerId && peer && peer.kind === "group") {
+      /* H2.14：以指定成员身份发言 */
+      const meta = resolveGroupMemberMeta(speakerId);
+      const names = (Array.isArray(peer.members) ? peer.members : [])
+        .map((mid) => {
+          const m = (store.peers || []).find((x) => x && x.id === mid);
+          return m ? m.name : mid;
+        })
+        .filter(Boolean);
+      displayName =
+        String((opts && opts.speakerName) || "").trim() || meta.name;
+      peerPersona =
+        String((opts && opts.speakerPersona) || "").trim() || meta.persona;
+      system +=
+        "\n你在群聊「" +
+        (peer.name || pid) +
+        "」里；成员：" +
+        (names.join("、") || "家机") +
+        "。你的身份是「" +
+        displayName +
+        "」。只以自己口吻回一句短讯，不要扮演其它成员或用户，不要自称家机（除非你就是家机）。";
+    } else if (peer && peer.kind === "group") {
+      const names = (Array.isArray(peer.members) ? peer.members : [])
+        .map((mid) => {
+          const m = (store.peers || []).find((x) => x && x.id === mid);
+          return m ? m.name : mid;
+        })
+        .filter(Boolean);
+      system +=
+        "\n你在群聊「" +
+        (peer.name || pid) +
+        "」里发言；成员：" +
+        (names.join("、") || "家机") +
+        "。以家机身份回短讯，可点名其它成员，勿冒充用户。";
+      peerPersona = String(peer.persona || "").trim();
+    } else if (peer && peer.id !== DEFAULT_PEER_ID) {
+      system +=
+        "\n当前会话对象：「" +
+        (peer.name || peer.id) +
+        "」。你就是对方本人（AI 联系人），按本会话人设说话，勿自称家机。";
+      peerPersona = String(peer.persona || "").trim();
+    }
+  } catch (_) {}
   if (!toolsOn) {
     system +=
-      "\n（工具已关闭：不要声称已查/已改日历或已看屏幕，可请对方去日历 App 看 / 自己描述屏幕。）";
+      "\n（工具已关闭：不要声称已查手机、已改日历、已看屏幕或已拨电话；可请对方自己去对应 App 看。）";
   } else if (toolBundle && toolBundle.mcpMap.size) {
     system += "\n（另有外接 MCP 工具可用，名称见工具表。）";
   } else if (toolBundle && toolBundle.mcpError) {
     system += "\n（外接 MCP 暂不可用：" + String(toolBundle.mcpError).slice(0, 80) + "）";
   }
-  const card = String((resolved && resolved.persona_card) || "").trim();
+  /* 非家机会话优先用 peer.persona；家机 / 未填仍走小屋聊天人设 */
+  const card = peerPersona
+    ? peerPersona
+    : String((resolved && resolved.persona_card) || "").trim();
   if (card) {
     /* ponytail: 聊天人设硬截 4000，与跟批同级；以后要省额度再加开关 */
     system += "\n人设（请遵守，勿整段复述）：\n" + card.slice(0, 4000);
   }
-  const nameBot = String(settings.name_bot || "").trim();
-  if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+  if (displayName) {
+    system += "\n你的显示名：" + displayName + "。";
+  } else {
+    const nameBot = String(settings.name_bot || "").trim();
+    if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+  }
   const moodPrompt = opts && opts.moodPrompt ? String(opts.moodPrompt).trim() : "";
   if (moodPrompt) system += "\n" + moodPrompt;
+  const systemExtra =
+    opts && opts.systemExtra ? String(opts.systemExtra).trim() : "";
+  if (systemExtra) system += "\n" + systemExtra;
+  if (settings.call_proactive_enabled) {
+    system +=
+      "\n若要主动打来电，在回复末尾单独一行写 [[call:voice]] 或 [[call:video]]（不要口头假装已拨）；也可调 start_call。";
+  }
+  if (settings.call_gift_enabled) {
+    system +=
+      "\n视频通话仪式礼物（无支付）：可在回复末尾写 [[gift:1]]～[[gift:5]]" +
+      "（1小心心 2花束 3夏日烟火 4流星雨 5银河铁道之夜），每条最多一枚；勿提花钱。";
+  }
   try {
-    const { buildMemoryPrompt } = require("./memory");
-    const memPrompt = await buildMemoryPrompt(
-      currentPeerId(),
-      opts && opts.memoryQuery
-    );
-    if (memPrompt) system += "\n" + memPrompt;
+    const { buildPocketKeyPrompt } = require("../../资产app/gateway/pocket-keys");
+    const keyPrompt = buildPocketKeyPrompt();
+    if (keyPrompt) system += "\n" + keyPrompt;
+  } catch (_) {
+    /* 零花钥事实可选 */
+  }
+  try {
+    if (topicMemoryInjectEnabled()) {
+      const { buildMemoryPrompt } = require("./memory");
+      const memPrompt = await buildMemoryPrompt(
+        currentPeerId(),
+        opts && opts.memoryQuery
+      );
+      if (memPrompt) system += "\n" + memPrompt;
+    }
   } catch (_) {
     /* 记忆模块异常不挡接话 */
+  }
+  try {
+    if (settings.auto_memory_enabled) {
+      const { buildAutoMemoryPrompt, clampBudget } = require("./auto-memory");
+      const amPrompt = buildAutoMemoryPrompt(currentPeerId(), {
+        mute: !!settings.auto_memory_mute,
+        budget: clampBudget(settings.auto_memory_budget),
+      });
+      if (amPrompt) system += "\n" + amPrompt;
+    }
+  } catch (_) {
+    /* 档案模块异常不挡接话 */
   }
   system += "\n" + buildTodayPrompt();
   try {
@@ -3103,9 +4436,12 @@ async function streamBotReply(write, priorIn, opts) {
       tool_calls: calls,
     };
     prior.push(amsg);
+    let roundHadFetch = false;
     for (const tc of calls) {
       const name = (tc.function && tc.function.name) || "";
       const label = resolveToolLabel(name, toolLabels);
+      const actionOnly = isActionTool(name);
+      if (!actionOnly) roundHadFetch = true;
       await write({ type: "bot_tool", name, label });
       if (name === "cam_check") {
         const sec = CAM_CHECK_DELAY_SEC;
@@ -3121,9 +4457,30 @@ async function streamBotReply(write, priorIn, opts) {
       const ran = await runChatTool(name, tc.function && tc.function.arguments, {
         mcpMap: toolBundle && toolBundle.mcpMap,
         settings,
+        stickyLeaveUsed,
+        autoMemoryOpsUsed,
+        momentsPostsUsed,
+        momentsCommentsUsed,
+        peerId: currentPeerId(),
       });
+      if (name === "sticky_leave_note" && ran.ok) stickyLeaveUsed += 1;
+      if (
+        (name === "auto_memory_upsert" || name === "auto_memory_delete") &&
+        ran.ok
+      ) {
+        autoMemoryOpsUsed += 1;
+      }
+      if (name === "moments_post" && ran.ok) momentsPostsUsed += 1;
+      if (name === "moments_comment" && ran.ok) momentsCommentsUsed += 1;
       const summary = summarizeToolResult(ran.name, ran.result, !!ran.ok);
-      const meta = { name: ran.name, label, summary, ok: !!ran.ok };
+      const detail = formatToolDetail(ran.result);
+      const meta = {
+        name: ran.name,
+        label,
+        summary,
+        ok: !!ran.ok,
+      };
+      if (detail) meta.detail = detail;
       toolMetas.push(meta);
       await write({
         type: "bot_tool_done",
@@ -3131,6 +4488,7 @@ async function streamBotReply(write, priorIn, opts) {
         label,
         ok: !!ran.ok,
         summary,
+        detail: detail || undefined,
       });
       if (name === "share_music" && ran.ok) {
         try {
@@ -3138,12 +4496,40 @@ async function streamBotReply(write, priorIn, opts) {
           if (o && o.message) await write({ type: "bot_music", message: o.message });
         } catch (_) {}
       }
+      if (name === "start_call" && ran.ok) {
+        try {
+          const o = JSON.parse(ran.result);
+          if (o && o.message) await write({ type: "bot_call", message: o.message });
+        } catch (_) {}
+      }
+      if (name === "set_avatar" && ran.ok) {
+        try {
+          const o = JSON.parse(ran.result);
+          if (o && o.url) {
+            await write({
+              type: "avatar_changed",
+              who: o.who || "bot",
+              url: o.url,
+              peerId: o.peerId || "",
+            });
+          }
+        } catch (_) {}
+      }
+      /* 动作类：成败短回传，不喂进下一轮续答（取数类仍喂） */
       prior.push({
         role: "tool",
         tool_call_id: tc.id,
-        content: ran.result,
+        content: actionOnly
+          ? JSON.stringify({
+              ok: !!ran.ok,
+              summary,
+              action: true,
+            })
+          : ran.result,
       });
     }
+    /* 本轮全是动作类 → 不触发续答 */
+    if (!roundHadFetch) break;
   }
 
   if (!text) text = String(streamed || "").trim();
@@ -3255,9 +4641,11 @@ if (require.main === module) {
     label: "查行程",
     summary: "2 条：午觉、散步",
     ok: true,
+    detail: '{\n  "events": [\n    { "title": "午觉" }\n  ]\n}',
   });
   console.assert(toolMsg.kind === "tool" && toolMsg.read === true);
   console.assert(toolMsg.payload && toolMsg.payload.summary.includes("2 条"));
+  console.assert(toolMsg.payload && toolMsg.payload.detail.includes("午觉"));
   console.assert(llmContent(toolMsg) === "");
   const withTools = appendMessage("bot", "挂工具自检", "text", {
     tools: [
@@ -3266,6 +4654,7 @@ if (require.main === module) {
         label: "查行程",
         summary: "1 条：午觉",
         ok: true,
+        detail: '{"events":[{"title":"午觉"}]}',
       },
     ],
   });
@@ -3274,6 +4663,15 @@ if (require.main === module) {
       withTools.tools[0] &&
       withTools.tools[0].summary.includes("午觉")
   );
+  console.assert(
+    withTools.tools[0].detail && withTools.tools[0].detail.includes("午觉")
+  );
+  {
+    const { formatToolDetail: fmtDetail } = require("./chat-tools");
+    console.assert(
+      fmtDetail('{"a":1}').includes("\n") && fmtDetail('{"a":1}').includes('"a"')
+    );
+  }
   console.assert(
     searchMessages({ q: "查行程" }).messages.some((m) => m.id === withTools.id)
   );
@@ -3329,6 +4727,26 @@ if (require.main === module) {
   console.assert(
     searchMessages({ q: "笔记.txt" }).messages.some((m) => m.id === fileMsg.message.id)
   );
+  const fakeDoc = saveChatMedia(
+    Buffer.from("hello-file-body"),
+    "application/octet-stream",
+    "hello.txt"
+  );
+  console.assert(/\.[a-z0-9]+$/i.test(fakeDoc.id));
+  const fileUp = createMessage({
+    kind: "file",
+    name: "hello.txt",
+    url: fakeDoc.url,
+    size: 15,
+    ext: "txt",
+    text: "hello-file-body",
+  });
+  console.assert(fileUp.message.payload.url === fakeDoc.url);
+  console.assert(fileUp.message.payload.fileStub !== true);
+  console.assert(String(llmContent(fileUp.message)).includes("hello.txt"));
+  try {
+    fs.unlinkSync(path.join(MEDIA_DIR, fakeDoc.id));
+  } catch (_) {}
   const musicMsg = createMessage({ kind: "music", name: "夜曲.mp3" });
   console.assert(musicMsg.message.kind === "music" && musicMsg.message.payload.musicStub === true);
   console.assert(llmContent(musicMsg.message) === "[音乐]");
@@ -3418,8 +4836,17 @@ if (require.main === module) {
     forward: { who: "家机" },
   });
   console.assert(fwdMsg.message.forward && fwdMsg.message.forward.who === "家机");
+  const fwdFile = createMessage({
+    kind: "file",
+    name: "fwd-file.txt",
+    text: "fwd-body",
+    forward: { who: "你" },
+  });
+  console.assert(fwdFile.message.kind === "file" && fwdFile.message.forward.who === "你");
   writeAll({
-    messages: readAll().messages.filter((m) => m.id !== fwdMsg.message.id),
+    messages: readAll().messages.filter(
+      (m) => m.id !== fwdMsg.message.id && m.id !== fwdFile.message.id
+    ),
     tokens_used: readAll().tokens_used,
     budget_tokens: readAll().budget_tokens,
     last_poke_day: readAll().last_poke_day,
@@ -3480,6 +4907,11 @@ if (require.main === module) {
   const hit = searchMessages({ q: "自检", kind: "all" });
   console.assert(hit.ok && Array.isArray(hit.messages));
   console.assert(searchMessages({ kind: "redpacket" }).ok);
+  /* IB M6：peer 限定不得扫全库 */
+  console.assert(
+    searchMessages({ peer: "daily", from: "2099-01-01", to: "2099-01-01" }).messages
+      .length === 0
+  );
 
   const vYou = createMessage({ body: "variant-selfcheck-you-" + Date.now() });
   const vBot = appendMessage("bot", "版本甲");
@@ -3539,6 +4971,9 @@ if (require.main === module) {
   console.assert(detectTranslateTarget("hello world") === "zh");
   console.assert(detectTranslateTarget("你好呀") === "en");
   console.assert(detectTranslateTarget("好的好的") === "en");
+  console.assert(extractCallTag("嗨\n[[call:voice]]").media === "voice");
+  console.assert(extractCallTag("嗨\n[[call:voice]]").text === "嗨");
+  console.assert(extractCallTag("x [[call:video]]").media === "video");
   try {
     recallMessage(vBot.id);
     throw new Error("expected not_yours");
@@ -3666,6 +5101,32 @@ if (require.main === module) {
     poke_count: readAll().poke_count,
   });
 
+  /* IB M7 封档线：cut 及更早不进 prior */
+  const archA = createMessage({ body: "archive-old-" + Date.now() });
+  const archB = createMessage({ body: "archive-new-" + Date.now() });
+  setArchiveAtMessage(archA.message.id);
+  console.assert(getArchiveBeforeTs() === (Number(archA.message.ts) || 0));
+  const archPrior = buildChatPrior(
+    [archA.message, archB.message],
+    null
+  );
+  console.assert(
+    !archPrior.some((p) => String(p.content || "").includes("archive-old-"))
+  );
+  console.assert(
+    archPrior.some((p) => String(p.content || "").includes("archive-new-"))
+  );
+  setArchiveBeforeTs(0);
+  writeAll({
+    messages: readAll().messages.filter(
+      (m) => m.id !== archA.message.id && m.id !== archB.message.id
+    ),
+    tokens_used: readAll().tokens_used,
+    budget_tokens: readAll().budget_tokens,
+    last_poke_day: readAll().last_poke_day,
+    poke_count: readAll().poke_count,
+  });
+
   const beforeClear = readAll();
   createMessage({ body: "clear-selfcheck-" + Date.now() });
   const cleared = clearChatMessages();
@@ -3673,6 +5134,34 @@ if (require.main === module) {
   console.assert(listMessages().messages.length === 0);
   console.assert(getChatPrefs().slow_reply === (beforeClear.slow_reply !== false));
   writeAll(beforeClear);
+
+  /* H7 话题频道 */
+  const topicMade = createTopic(DEFAULT_PEER_ID, {
+    title: "H7话题-" + Date.now(),
+    memory_inject: false,
+  });
+  console.assert(topicMade.ok && topicMade.topic && topicMade.topic.id);
+  console.assert(topicMade.topic.memory_inject === false);
+  const tid = topicMade.topic.id;
+  setActiveTopic(DEFAULT_PEER_ID, tid);
+  withPeerTopic(DEFAULT_PEER_ID, tid, () => {
+    const m = createMessage({ body: "topic-only-" + Date.now() });
+    console.assert(m.message && listMessages().topicId === tid);
+    console.assert(topicMemoryInjectEnabled() === false);
+  });
+  withPeer(DEFAULT_PEER_ID, () => {
+    console.assert(
+      !listMessages().messages.some((m) =>
+        String(m.body || "").includes("topic-only-")
+      )
+    );
+  });
+  updateTopic(DEFAULT_PEER_ID, tid, { memory_inject: true, title: "H7改名" });
+  console.assert(
+    listTopics(DEFAULT_PEER_ID).topics.find((t) => t.id === tid).title === "H7改名"
+  );
+  deleteTopic(DEFAULT_PEER_ID, tid);
+  console.assert(!listTopics(DEFAULT_PEER_ID).topics.some((t) => t.id === tid));
 
   console.log("daily-chat ok");
   })().catch((e) => {
@@ -3688,6 +5177,8 @@ module.exports = {
   createPat,
   createMessageWithReply,
   createMessageWithReplyStream,
+  parseSpeakerPickIds,
+  pickGroupSpeakers,
   recallMessageWithReplyStream,
   regenerateMessageStream,
   setMessageVariant,
@@ -3707,6 +5198,7 @@ module.exports = {
   unreadCount,
   markAllRead,
   pokeDaily,
+  buildToolsSystemHint,
   getChatPrefs,
   setChatPrefs,
   clearChatMessages,
@@ -3718,6 +5210,9 @@ module.exports = {
   resolveChatMediaPath,
   markMoneyReceived,
   claimIncomingMoney,
+  getArchiveBeforeTs,
+  setArchiveBeforeTs,
+  setArchiveAtMessage,
   buildChatPrior,
   buildTodayPrompt,
   coalesceWaitMs,
@@ -3732,17 +5227,44 @@ module.exports = {
   startChatCall,
   setChatCallPhase,
   finishChatCallStream,
+  extractCallTag,
+  applyProactiveCallTag,
+  applyGiftTag,
   formatCallClock,
   callDisplayBody,
+  listRecentYouImages,
+  applyChatAvatar,
   MEDIA_MAX_BYTES,
+  FILE_MAX_BYTES,
   addTokensUsed,
+  ensureBudget,
+  budgetExhausted,
   CHAT_PATH,
   VARIANT_MAX,
   DEFAULT_PEER_ID,
   DEMO_PEER_ID,
   normalizePeerId,
   currentPeerId,
+  peerBlocksYou,
+  setPeerBlocksYou,
+  youBlockedPeer,
+  setYouBlockedPeer,
+  maybeSoftUnblockFromText,
   withPeer,
+  withPeerTopic,
+  currentTopicId,
+  normalizeTopicId,
+  listTopics,
+  createTopic,
+  updateTopic,
+  deleteTopic,
+  setActiveTopic,
+  topicMemoryInjectEnabled,
+  resolveChatCtxForMessage,
   listPeers,
+  createPeer,
+  updatePeer,
+  renamePeer,
+  deletePeer,
   resolvePeerForMessage,
 };

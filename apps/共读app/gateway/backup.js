@@ -18,8 +18,17 @@ const DATA_FILES = [
   { name: "moments.json", dir: path.join(APPS_DIR, "聊天app", "data") },
   { name: "favorites.json", dir: path.join(APPS_DIR, "聊天app", "data") },
   { name: "mood.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "memory.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "auto-memory.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "letters.json", dir: path.join(APPS_DIR, "聊天app", "data") },
+  { name: "geo.json", dir: path.join(APPS_DIR, "聊天app", "data") },
   { name: "watch.json", dir: path.join(APPS_DIR, "共看app", "data") },
   { name: "listen.json", dir: path.join(APPS_DIR, "共听app", "data") },
+  { name: "wallet.json", dir: path.join(APPS_DIR, "资产app", "data") },
+  { name: "wealth.json", dir: path.join(APPS_DIR, "资产app", "data") },
+  { name: "economy-events.json", dir: path.join(APPS_DIR, "资产app", "data") },
+  { name: "pocket-keys.json", dir: path.join(APPS_DIR, "资产app", "data") },
+  { name: "memo.json", dir: path.join(APPS_DIR, "备忘录app", "data") },
 ];
 
 function dataDirFor(entry) {
@@ -244,6 +253,10 @@ function collectBackupBundle() {
   if (data.lore != null) modules.push("lore");
   if (data.watch != null) modules.push("cowatch");
   if (data.listen != null) modules.push("colisten");
+  if (data.wallet != null || data.wealth != null || data["economy-events"] != null) {
+    modules.push("wallet");
+  }
+  if (data.memo != null) modules.push("memo");
   const pending_modules = [];
   if (data.chat == null) pending_modules.push("chat");
   if (data.lore == null) pending_modules.push("lore");

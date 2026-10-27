@@ -42,6 +42,10 @@
   let queueSheetEdit = false;
   let likedCountCache = null;
   let addToSong = null;
+  /** 歌单库列表缓存（搜索过滤） */
+  let playlistLibCache = [];
+  let playlistSearchQ = "";
+  let queuePendingCount = 0;
   /** @type {{ id?: number, lines: { t: number, text: string, trans?: string }[], active: number, showTrans: boolean, hasTrans: boolean }} */
   let lyricState = { id: 0, lines: [], active: -1, showTrans: false, hasTrans: false };
   let hotCommentsLoadedFor = "";
@@ -933,6 +937,12 @@
         );
         if (idx >= 0) queueCursor = idx;
       }
+      let pending = q.length;
+      if (liveTrack && liveTrack.id) {
+        const cur = q.findIndex((s) => String(s.id) === String(liveTrack.id));
+        if (cur >= 0) pending = Math.max(0, q.length - cur - 1);
+      }
+      paintQueueChip(pending);
       return data;
     } catch (_) {
       return null;
@@ -1598,6 +1608,73 @@
     document.getElementById("rowAppleMusic").classList.add("open");
   }
 
+  async function probeMusicReady() {
+    try {
+      const res = await fetch("/api/v1/music/netease/ping", {
+        cache: "no-store",
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data && data.ok) return { ok: true, message: "" };
+      return {
+        ok: false,
+        message:
+          (data && data.message) ||
+          "网易云兼容 API 连不上 · 去设置填地址并确认服务已起",
+      };
+    } catch (e) {
+      return {
+        ok: false,
+        message: (e && e.message) || "探测失败 · 去设置检查音源",
+      };
+    }
+  }
+
+  function showAuthGate(message) {
+    const gate = document.getElementById("colistenAuthGate");
+    const msg = document.getElementById("colistenAuthGateMsg");
+    if (msg) {
+      msg.textContent =
+        message || "网易云兼容 API 未就绪 · 去设置里填地址并扫码";
+    }
+    if (gate) gate.hidden = false;
+    const view = document.getElementById("view-colisten");
+    if (view) view.classList.add("cl-auth-blocked");
+  }
+
+  function hideAuthGate() {
+    const gate = document.getElementById("colistenAuthGate");
+    if (gate) gate.hidden = true;
+    const view = document.getElementById("view-colisten");
+    if (view) view.classList.remove("cl-auth-blocked");
+  }
+
+  function goAuthSettings() {
+    if (typeof deps.showView === "function") deps.showView("phone-settings");
+    expand();
+  }
+
+  async function retryAuthGate() {
+    const msg = document.getElementById("colistenAuthGateMsg");
+    if (msg) msg.textContent = "探测中…";
+    const ready = await probeMusicReady();
+    if (!ready.ok) {
+      showAuthGate(ready.message);
+      return false;
+    }
+    hideAuthGate();
+    try {
+      await refreshSession();
+      await postJson("/api/v1/listen/engage", {});
+      await restoreCoveSession();
+      paintMini();
+      await switchHomeTab(homeTab || "home");
+    } catch (e) {
+      toast((e && e.message) || "进入失败");
+    }
+    return true;
+  }
+
   function toggle() {
     if (document.getElementById("appleMusicPanel").classList.contains("open")) {
       collapse();
@@ -2110,12 +2187,85 @@
     const head = document.getElementById("colistenHomeTitle");
     const up = document.getElementById("btnColistenHomeUp");
     const plus = document.getElementById("btnColistenHomeImport");
+    const tools = document.getElementById("colistenPlTools");
     const drilled =
       homeTab === "playlists" &&
       (level === "playlist" || level === "liked");
     if (head) head.textContent = titleText || "Playlists";
     if (up) up.hidden = !drilled;
     if (plus) plus.hidden = drilled;
+    if (tools) tools.hidden = drilled;
+  }
+
+  function paintQueueChip(count) {
+    queuePendingCount = Math.max(0, Math.floor(Number(count) || 0));
+    const chip = document.getElementById("btnColistenPlQueue");
+    if (!chip) return;
+    if (!queuePendingCount) {
+      chip.textContent = "队列空 · 点歌入队";
+      chip.classList.add("is-empty");
+      chip.title = "队列为空 · 打开队列看引导";
+      return;
+    }
+    chip.textContent = "待播 " + queuePendingCount + " 首";
+    chip.classList.remove("is-empty");
+    chip.title = "打开队列 · " + queuePendingCount + " 首待播";
+  }
+
+  function paintPlaylistLibraryRows() {
+    const list = document.getElementById("colistenPlList");
+    if (!list) return;
+    const q = String(playlistSearchQ || "")
+      .trim()
+      .toLowerCase();
+    list.replaceChildren();
+    const likedLi = document.createElement("li");
+    likedLi.append(
+      paintPlaylistFolderRow({
+        liked: true,
+        title: "Liked",
+        sub:
+          likedCountCache != null
+            ? likedCountCache + " 首 · 点开"
+            : "喜欢的歌曲 · 点开",
+        onClick: () => openLikedSongs(),
+      })
+    );
+    list.append(likedLi);
+    const histLi = document.createElement("li");
+    histLi.append(
+      paintPlaylistFolderRow({
+        title: "最近场次",
+        sub: "历史共听 · 点开",
+        onClick: () => openHistory(),
+      })
+    );
+    list.append(histLi);
+    const pls = Array.isArray(playlistLibCache) ? playlistLibCache : [];
+    const filtered = q
+      ? pls.filter((p) => String(p.name || "").toLowerCase().includes(q))
+      : pls;
+    for (const p of filtered) {
+      const li = document.createElement("li");
+      li.append(
+        paintPlaylistFolderRow({
+          title: p.name,
+          sub: (p.track_count || 0) + " 首 · 点开",
+          cover: p.cover,
+          onClick: () => openImportedPlaylist(String(p.id)),
+        })
+      );
+      list.append(li);
+    }
+    if (!pls.length) {
+      setHomeNote("还没有导入歌单 · 点右上＋导入，或 Discover 搜歌入队");
+    } else if (q && !filtered.length) {
+      setHomeNote("没有匹配「" + playlistSearchQ.trim() + "」的歌单");
+    } else if (!queuePendingCount) {
+      setHomeNote("队列空 · 点开歌单整单入队，或 Discover 搜歌");
+    } else {
+      setHomeNote("");
+    }
   }
 
   function setHomeNote(text) {
@@ -2212,12 +2362,73 @@
     );
   }
 
+  function paintRecentRail(rows) {
+    const rail = document.getElementById("colistenRecentRail");
+    if (!rail) return;
+    rail.replaceChildren();
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length) {
+      const empty = document.createElement("div");
+      empty.className = "cl-recent-empty";
+      empty.textContent = "还没有最近在听 · 去 Discover 搜歌，或 Playlists 整单入队";
+      rail.append(empty);
+      return;
+    }
+    list.forEach((t) => {
+      const song = {
+        id: t.id,
+        name: t.name || t.title,
+        artist: t.artist || "—",
+        cover: t.cover,
+        provider: t.provider || "netease",
+        stream_path: t.stream_path,
+        duration_ms: t.duration_ms,
+      };
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cl-recent-card";
+      btn.title = (song.name || "曲目") + " · 入队并播放";
+      const cover = document.createElement("div");
+      cover.className = "cl-recent-cover";
+      const src = String(song.cover || "").trim();
+      if (src && /^https?:\/\//i.test(src)) {
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = src;
+        cover.append(img);
+      } else {
+        cover.textContent = "♪";
+      }
+      const ttl = document.createElement("span");
+      ttl.className = "cl-recent-ttl";
+      ttl.textContent = song.name || "未命名";
+      const sub = document.createElement("span");
+      sub.className = "cl-recent-sub";
+      sub.textContent =
+        (song.artist || "—") +
+        (t.play_count ? " · " + t.play_count + " 次" : "");
+      btn.append(cover, ttl, sub);
+      btn.addEventListener("click", () => {
+        playNeteaseTrack(song, { openPlayer: true }).catch((e) =>
+          toast((e && e.message) || "播放失败")
+        );
+      });
+      rail.append(btn);
+    });
+  }
+
   async function loadHomePage() {
     homeTab = "home";
     paintTabbar();
-    const list = document.getElementById("colistenHomeList");
     setHomeNote("");
-    paintWaitCell(list, "加载最近在听…", "");
+    const rail = document.getElementById("colistenRecentRail");
+    if (rail) {
+      rail.replaceChildren();
+      const tip = document.createElement("div");
+      tip.className = "cl-recent-empty";
+      tip.textContent = "加载最近在听…";
+      rail.append(tip);
+    }
     paintHomePair({});
     try {
       const [setRes, profRes, qRes] = await Promise.all([
@@ -2250,27 +2461,15 @@
       if (!rows.length && prof && Array.isArray(prof.records)) {
         rows = prof.records.slice(0, 12);
       }
-      if (!rows.length) {
-        paintWaitCell(list, "还没有最近在听", "去 Discover 搜歌，或 Playlists 整单入队");
-        return;
-      }
-      paintHomeList(
-        rows.map((t) => ({
-          id: t.id,
-          title: t.name || t.title,
-          artist:
-            (t.artist || "—") +
-            (t.play_count ? " · " + t.play_count + " 次" : ""),
-          cover: t.cover,
-          provider: t.provider || "netease",
-          stream_path: t.stream_path,
-          duration_ms: t.duration_ms,
-          _playNow: true,
-        })),
-        liveTrack && liveTrack.id
-      );
+      paintRecentRail(rows.slice(0, 20));
     } catch (e) {
-      paintWaitCell(list, (e && e.message) || "加载失败", "可切换底栏再回来");
+      if (rail) {
+        rail.replaceChildren();
+        const err = document.createElement("div");
+        err.className = "cl-recent-empty";
+        err.textContent = (e && e.message) || "加载失败 · 可切换底栏再回来";
+        rail.append(err);
+      }
     }
   }
 
@@ -2314,8 +2513,9 @@
     const list = document.getElementById("colistenPlList");
     if (!list) return;
     paintWaitCell(list, "加载歌单…", "");
+    paintQueueChip(queuePendingCount);
     try {
-      const [plRes, likedRes] = await Promise.all([
+      const [plRes, likedRes, qRes] = await Promise.all([
         fetch("/api/v1/music/library/playlists", {
           cache: "no-store",
           credentials: "same-origin",
@@ -2324,48 +2524,34 @@
           cache: "no-store",
           credentials: "same-origin",
         }).catch(() => null),
+        fetch("/api/v1/music/queue", {
+          cache: "no-store",
+          credentials: "same-origin",
+        }).catch(() => null),
       ]);
+      if (qRes && qRes.ok) {
+        const qData = await qRes.json().catch(() => ({}));
+        const q = Array.isArray(qData.queue) ? qData.queue : [];
+        let pending = q.length;
+        if (liveTrack && liveTrack.id) {
+          const cur = q.findIndex((t) => String(t.id) === String(liveTrack.id));
+          if (cur >= 0) pending = Math.max(0, q.length - cur - 1);
+        }
+        paintQueueChip(pending);
+      } else {
+        paintQueueChip(0);
+      }
       const data = await plRes.json().catch(() => ({}));
-      const pls = Array.isArray(data.playlists) ? data.playlists : [];
-      let likedLabel = "Liked";
-      let likedSub = "喜欢的歌曲 · 点开";
+      playlistLibCache = Array.isArray(data.playlists) ? data.playlists : [];
       if (likedRes && likedRes.ok) {
         const liked = await likedRes.json().catch(() => ({}));
         if (liked && liked.ok) {
           likedCountCache = Number(liked.count) || 0;
-          likedSub = likedCountCache + " 首 · 点开";
         }
       } else if (likedRes && likedRes.status === 401) {
-        likedSub = "需扫码登录网易云";
-      } else {
-        likedSub = "点开查看";
+        likedCountCache = null;
       }
-      list.replaceChildren();
-      const likedLi = document.createElement("li");
-      likedLi.append(
-        paintPlaylistFolderRow({
-          liked: true,
-          title: likedLabel,
-          sub: likedSub,
-          onClick: () => openLikedSongs(),
-        })
-      );
-      list.append(likedLi);
-      for (const p of pls) {
-        const li = document.createElement("li");
-        li.append(
-          paintPlaylistFolderRow({
-            title: p.name,
-            sub: (p.track_count || 0) + " 首 · 点开",
-            cover: p.cover,
-            onClick: () => openImportedPlaylist(String(p.id)),
-          })
-        );
-        list.append(li);
-      }
-      if (!pls.length) {
-        setHomeNote("还没有导入歌单 · 点右上＋导入");
-      }
+      paintPlaylistLibraryRows();
     } catch (e) {
       toast((e && e.message) || "读歌单失败");
       paintWaitCell(list, (e && e.message) || "读歌单失败", "可点右上＋导入");
@@ -2715,7 +2901,8 @@
     if (!arr.length) {
       const empty = document.createElement("li");
       empty.className = "empty";
-      empty.textContent = "队列空 · 在歌单里「＋」追加";
+      empty.textContent =
+        "队列空 · 回 Playlists 整单入队，或 Discover / 点歌搜曲";
       list.append(empty);
       return;
     }
@@ -2974,6 +3161,12 @@
 
   async function enterPlayer() {
     showHome();
+    const ready = await probeMusicReady();
+    if (!ready.ok) {
+      showAuthGate(ready.message);
+      return;
+    }
+    hideAuthGate();
     try {
       await refreshSession();
       await postJson("/api/v1/listen/engage", {});
@@ -3611,6 +3804,21 @@
     if (qrBtn) qrBtn.addEventListener("click", startNeteaseQr);
     const panel = document.getElementById("appleMusicPanel");
     if (panel) panel.addEventListener("click", (e) => e.stopPropagation());
+    const authGo = document.getElementById("btnColistenAuthSettings");
+    if (authGo) authGo.addEventListener("click", goAuthSettings);
+    const authRetry = document.getElementById("btnColistenAuthRetry");
+    if (authRetry) authRetry.addEventListener("click", () => retryAuthGate());
+    const plQueue = document.getElementById("btnColistenPlQueue");
+    if (plQueue) plQueue.addEventListener("click", openQueueView);
+    const plSearch = document.getElementById("colistenPlSearch");
+    if (plSearch) {
+      plSearch.addEventListener("input", () => {
+        playlistSearchQ = plSearch.value || "";
+        if (homeLevel === "library" && homeTab === "playlists") {
+          paintPlaylistLibraryRows();
+        }
+      });
+    }
     setProgress(progressPct);
   }
 

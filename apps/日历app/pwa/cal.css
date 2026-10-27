@@ -491,6 +491,13 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+.cal-memo-line .event-link {
+  margin-left: 0.25em;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(138, 90, 58, 0.72);
+  white-space: nowrap;
+}
 .cal-memo-line .like {
   border: 0;
   background: transparent;

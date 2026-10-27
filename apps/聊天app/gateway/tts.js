@@ -22,10 +22,31 @@ function ttsStatus() {
   };
 }
 
+/** Fish / 浏览器共用的语言码：zh|en|ja|ko → API 串 */
+function normalizeTtsLang(raw) {
+  const s = String(raw || "zh")
+    .trim()
+    .toLowerCase();
+  if (s.startsWith("en")) return "en";
+  if (s.startsWith("ja") || s.startsWith("jp")) return "ja";
+  if (s.startsWith("ko") || s.startsWith("kr")) return "ko";
+  return "zh";
+}
+
+function fishLanguageTag(lang) {
+  const l = normalizeTtsLang(lang);
+  if (l === "en") return "en";
+  if (l === "ja") return "ja";
+  if (l === "ko") return "ko";
+  return "zh";
+}
+
 /**
+ * @param {string} text
+ * @param {{ language?: string }} [opts]
  * @returns {Promise<{ buf: Buffer, contentType: string, provider: "fish" }>}
  */
-async function synthesizeSpeech(text) {
+async function synthesizeSpeech(text, opts) {
   const raw = String(text || "").trim().slice(0, TEXT_MAX);
   if (!raw) {
     const err = new Error("没有可朗读的文字");
@@ -41,6 +62,7 @@ async function synthesizeSpeech(text) {
     throw err;
   }
   const model = String(s.fish_tts_model || "s2.1-pro-free").trim() || "s2.1-pro-free";
+  const language = fishLanguageTag(opts && opts.language);
   const res = await fetch(FISH_TTS_URL, {
     method: "POST",
     headers: {
@@ -54,7 +76,7 @@ async function synthesizeSpeech(text) {
       format: "mp3",
       latency: "balanced",
       normalize: true,
-      language: "zh-CN",
+      language,
     }),
   });
   if (!res.ok) {
@@ -85,12 +107,17 @@ module.exports = {
   synthesizeSpeech,
   fishConfigured,
   ttsStatus,
+  normalizeTtsLang,
+  fishLanguageTag,
   FISH_TTS_URL,
   TEXT_MAX,
 };
 
 if (require.main === module) {
   console.assert(ttsStatus().ok);
+  console.assert(normalizeTtsLang("en-US") === "en");
+  console.assert(normalizeTtsLang("ja-JP") === "ja");
+  console.assert(fishLanguageTag("zh-CN") === "zh");
   synthesizeSpeech("hi")
     .then(() => {
       throw new Error("expected fail without key");

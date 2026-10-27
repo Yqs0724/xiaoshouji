@@ -1,0 +1,1682 @@
+﻿/**
+ * 日常聊天 App 前端（≠ 共读短聊 / 共看吐槽）。
+ * 微信底栏：输入 | 表情 | +/发送；表情/加号占键盘位（会话上方被顶起）。
+ */
+(function (global) {
+  let deps = {
+    showView: function () {},
+    getPeerName: function () {
+      return "家机";
+    },
+    getAvatarYou: function () {
+      return "/assets/cafe/avatar-you.png";
+    },
+    getAvatarBot: function () {
+      return "/assets/cafe/avatar-bot.png";
+    },
+    onUnreadChange: function () {},
+  };
+
+  let bound = false;
+  let lastTimeBucket = -1;
+  let stickerCache = null;
+  let sending = false;
+  let sheetMode = "";
+  let voiceMode = false;
+  let longPressTimer = null;
+  let callTimer = null;
+
+  const PLUS_ITEMS = [
+    { id: "album", lab: "相册", tile: "相册", ok: true },
+    { id: "camera", lab: "拍摄", tile: "拍摄", ok: true },
+    { id: "location", lab: "位置", tile: "位置", ok: true },
+    { id: "redpacket", lab: "红包", tile: "红包", ok: true },
+    { id: "transfer", lab: "转账", tile: "转账", ok: true },
+    { id: "call", lab: "通话", tile: "通话", ok: true },
+    { id: "history", lab: "聊天记录", tile: "记录", ok: true },
+    { id: "file", lab: "文件", tile: "文件", ok: false },
+    { id: "music", lab: "音乐", tile: "音乐", ok: false },
+  ];
+
+  /* 首页分类；点选后才出结果（微信搜聊天记录） */
+  const HIST_CATS = [
+    { id: "date", lab: "日期" },
+    { id: "text", lab: "文字" },
+    { id: "image", lab: "图片" },
+    { id: "sticker", lab: "贴纸" },
+    { id: "redpacket", lab: "红包" },
+    { id: "transfer", lab: "转账" },
+    { id: "money", lab: "交易" },
+    { id: "location", lab: "位置" },
+  ];
+
+  let histKind = "all";
+  let histTimer = null;
+  let histDay = ""; /* YYYY-MM-DD；按日搜寻时用 */
+  let histActiveDays = null; /* Set<string> */
+  /* 本轮回复积累的思考；只挂到连发第一条气泡上 */
+  let pendingThink = { sec: 0, text: "" };
+  let thinkAttached = false;
+
+  function chatTimeLabel(ts) {
+    const d = new Date(Number(ts) || Date.now());
+    const pad = (n) => String(n).padStart(2, "0");
+    return (
+      pad(d.getMonth() + 1) +
+      "-" +
+      pad(d.getDate()) +
+      " " +
+      pad(d.getHours()) +
+      ":" +
+      pad(d.getMinutes())
+    );
+  }
+
+  function timeBucket(ts) {
+    return Math.floor((Number(ts) || 0) / 300000);
+  }
+
+  function appendTimeChip(ts) {
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    const bucket = timeBucket(ts);
+    if (bucket === lastTimeBucket) return;
+    lastTimeBucket = bucket;
+    const t = document.createElement("div");
+    t.className = "wx-time";
+    t.textContent = chatTimeLabel(ts);
+    box.append(t);
+  }
+
+  function setChatErr(text) {
+    const el = document.getElementById("chatErr");
+    if (!el) return;
+    if (!text) {
+      el.hidden = true;
+      el.textContent = "";
+      return;
+    }
+    el.hidden = false;
+    el.textContent = text;
+  }
+
+  async function fetchChatMessages() {
+    const res = await fetch("/api/v1/chat/messages", { credentials: "same-origin" });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) {
+      if (res.status === 404) throw new Error("聊天接口未就绪：请重启 npm start 后再试");
+      if (res.status === 401 || data.error === "gate_locked") {
+        throw new Error(data.message || "请先解锁访问密码");
+      }
+      throw new Error(data.message || data.error || "读取失败");
+    }
+    return Array.isArray(data.messages) ? data.messages : [];
+  }
+
+  async function fetchStickers(force) {
+    if (stickerCache && !force) return stickerCache;
+    const res = await fetch("/api/v1/chat/stickers", { credentials: "same-origin" });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) throw new Error(data.message || "贴纸包加载失败");
+    stickerCache = Array.isArray(data.stickers) ? data.stickers : [];
+    return stickerCache;
+  }
+
+  function stickerSrc(id) {
+    const pack = stickerCache || [];
+    const hit = pack.find((s) => s.id === id);
+    return hit ? hit.src : "";
+  }
+
+  function chatViewActive() {
+    const el = document.getElementById("view-chat");
+    return !!(el && el.classList.contains("active"));
+  }
+
+  async function markChatRead() {
+    try {
+      await fetch("/api/v1/chat/read", {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } catch (_) {}
+    try {
+      deps.onUnreadChange();
+    } catch (_) {}
+  }
+
+  function notifyUnread() {
+    try {
+      deps.onUnreadChange();
+    } catch (_) {}
+  }
+
+  function moneyText(amount) {
+    const n = Number(amount) || 0;
+    return "¥" + n.toFixed(2);
+  }
+
+  function moneyTagText(kind, msg) {
+    const st = (msg && msg.payload && msg.payload.status) || "received";
+    const received = st !== "sent";
+    const fromYou = msg && msg.from === "you";
+    if (kind === "redpacket") {
+      if (!received) return "微信红包";
+      return fromYou ? "已被领取" : "已领取";
+    }
+    if (!received) return "转账";
+    return fromYou ? "已被接收" : "已收款";
+  }
+
+  function setTyping(on) {
+    const peer = document.getElementById("chatPeerName");
+    if (!peer) return;
+    if (on) {
+      if (!peer.dataset.peerName) {
+        peer.dataset.peerName = peer.textContent || deps.getPeerName() || "家机";
+      }
+      peer.textContent = "正在输入中...";
+      peer.classList.add("is-typing");
+      return;
+    }
+    peer.textContent = peer.dataset.peerName || deps.getPeerName() || "家机";
+    peer.classList.remove("is-typing");
+    delete peer.dataset.peerName;
+  }
+
+  function appendMoneyTip(text, ts) {
+    const box = document.getElementById("chatThread");
+    if (!box || !text) return;
+    const empty = box.querySelector(".wx-empty");
+    if (empty) empty.remove();
+    const tip = document.createElement("div");
+    tip.className = "wx-sys-tip";
+    tip.textContent = text;
+    tip.dataset.ts = String(ts || Date.now());
+    box.append(tip);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function patchMessageBubble(msg) {
+    if (!msg || !msg.id) return;
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    const row = box.querySelector('.wx-row[data-msg-id="' + msg.id + '"]');
+    if (!row) return;
+    const bubble = row.querySelector(".bubble");
+    if (bubble) fillBubble(bubble, msg);
+  }
+
+  function bubbleTextEl(bubble) {
+    let t = bubble.querySelector(".wx-bubble-text");
+    if (!t) {
+      t = document.createElement("span");
+      t.className = "wx-bubble-text";
+      const bunny = bubble.querySelector(".wx-bunny-deco");
+      if (bunny) bubble.insertBefore(t, bunny);
+      else bubble.append(t);
+    }
+    return t;
+  }
+
+  function fillBubble(bubble, msg) {
+    const keepBunny = bubble.querySelector(".wx-bunny-deco");
+    bubble.replaceChildren();
+    bubble.classList.remove("is-media", "is-card", "has-think");
+    const kind = (msg && msg.kind) || "text";
+    const finish = () => {
+      if (keepBunny) {
+        bubble.classList.add("has-think");
+        bubble.append(keepBunny);
+      }
+    };
+    if (kind === "sticker") {
+      bubble.classList.add("is-media");
+      const img = document.createElement("img");
+      img.className = "sticker";
+      img.alt = "贴纸";
+      img.src = stickerSrc(msg.body) || "";
+      bubble.append(img);
+      finish();
+      return;
+    }
+    if (kind === "image") {
+      bubble.classList.add("is-media");
+      const img = document.createElement("img");
+      img.className = "chat-pic";
+      img.alt = "图片";
+      img.src = msg.body || "";
+      bubble.append(img);
+      finish();
+      return;
+    }
+    if (kind === "redpacket" || kind === "transfer") {
+      bubble.classList.add("is-card");
+      const p = msg.payload || {};
+      const received = p.status !== "sent";
+      const claimable = msg.from === "bot" && !received;
+      const card = document.createElement("div");
+      card.className =
+        "wx-money-card" +
+        (received ? " is-received" : "") +
+        (claimable ? " is-claimable" : "");
+      const amt = document.createElement("div");
+      amt.className = "amt";
+      amt.textContent = moneyText(p.amount);
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = p.note || (kind === "redpacket" ? "恭喜发财" : "转账");
+      const tag = document.createElement("div");
+      tag.className = "tag";
+      tag.textContent = claimable
+        ? kind === "redpacket"
+          ? "点击领取"
+          : "点击收款"
+        : moneyTagText(kind, msg);
+      card.append(amt, note, tag);
+      if (claimable) {
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
+        card.addEventListener("click", (e) => {
+          e.preventDefault();
+          claimMoneyCard(msg.id);
+        });
+      }
+      bubble.append(card);
+      finish();
+      return;
+    }
+    if (kind === "location") {
+      bubble.classList.add("is-card");
+      const p = msg.payload || {};
+      const card = document.createElement("div");
+      card.className = "wx-loc-card";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = p.name || msg.body || "位置";
+      card.append(name);
+      if (p.detail) {
+        const detail = document.createElement("div");
+        detail.className = "detail";
+        detail.textContent = p.detail;
+        card.append(detail);
+      }
+      const tag = document.createElement("div");
+      tag.className = "tag";
+      tag.textContent = "位置";
+      card.append(tag);
+      bubble.append(card);
+      finish();
+      return;
+    }
+    const t = document.createElement("span");
+    t.className = "wx-bubble-text";
+    t.textContent = (msg && msg.body) || "";
+    bubble.append(t);
+    finish();
+  }
+
+  function bindBunnyThink(bubble, col, thinkText) {
+    if (!bubble || !col) return;
+    const body =
+      String(thinkText || "").trim() || "这条没有思考记录。新回复才会带上深度思考。";
+    bubble.classList.add("has-think");
+    let bunny = bubble.querySelector(".wx-bunny-deco");
+    if (!bunny) {
+      bunny = document.createElement("button");
+      bunny.type = "button";
+      bunny.className = "wx-bunny-deco";
+      bunny.title = "深度思考";
+      bunny.setAttribute("aria-label", "展开深度思考");
+      bunny.setAttribute("aria-expanded", "false");
+      bubble.append(bunny);
+    }
+    let panel = col.querySelector(".wx-think-panel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.className = "wx-think-panel";
+      panel.hidden = true;
+      col.append(panel);
+    }
+    panel.textContent = body;
+    if (!bunny.dataset.bound) {
+      bunny.dataset.bound = "1";
+      bunny.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const open = panel.hidden;
+        panel.hidden = !open;
+        bunny.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    }
+  }
+
+  function appendChatMessage(msg) {
+    const box = document.getElementById("chatThread");
+    if (!box || !msg) return null;
+    if (msg.kind === "tool") {
+      const empty = box.querySelector(".wx-empty");
+      if (empty) empty.remove();
+      const p = msg.payload || {};
+      const row = finishToolChip(null, {
+        name: p.name || msg.body,
+        label: p.label,
+        summary: p.summary,
+        ok: p.ok !== false,
+      });
+      if (row && msg.id) row.dataset.msgId = msg.id;
+      return row;
+    }
+    const empty = box.querySelector(".wx-empty");
+    if (empty) empty.remove();
+    /* 无独立 tool 消息时，用气泡自带的 tools 兜底（避免重开丢失） */
+    if (Array.isArray(msg.tools) && msg.tools.length) {
+      for (const t of msg.tools) {
+        finishToolChip(null, {
+          name: t.name,
+          label: t.label,
+          summary: t.summary,
+          ok: t.ok !== false,
+        });
+      }
+    }
+    appendTimeChip(msg.ts != null ? msg.ts : Date.now());
+    const youAv = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
+    const botAv = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    const row = document.createElement("div");
+    row.className = "wx-row " + (msg.from === "you" ? "me" : "them");
+    if (msg.id) row.dataset.msgId = msg.id;
+    const av = document.createElement("div");
+    av.className = "av";
+    const avImg = document.createElement("img");
+    avImg.alt = "";
+    avImg.src = msg.from === "you" ? youAv : botAv;
+    av.append(avImg);
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    fillBubble(bubble, msg);
+    if (msg.from === "bot") {
+      const col = document.createElement("div");
+      col.className = "wx-col";
+      col.append(bubble);
+      /* 家机气泡始终可点兔子；有 think 显示正文，否则提示 */
+      bindBunnyThink(bubble, col, msg.think);
+      row.append(av, col);
+    } else {
+      row.append(av, bubble);
+    }
+    box.append(row);
+    box.scrollTop = box.scrollHeight;
+    return bubble;
+  }
+
+  function appendChatBubble(from, text, ts, thinkOpts) {
+    const msg = {
+      from: from,
+      kind: "text",
+      body: text || "",
+      ts: ts != null ? ts : Date.now(),
+    };
+    if (thinkOpts && (thinkOpts.think || thinkOpts.think_sec)) {
+      if (thinkOpts.think) msg.think = thinkOpts.think;
+      if (thinkOpts.think_sec) msg.think_sec = thinkOpts.think_sec;
+    }
+    return appendChatMessage(msg);
+  }
+
+  function appendMetaRow(kind, titleHtml) {
+    const box = document.getElementById("chatThread");
+    if (!box) return null;
+    const empty = box.querySelector(".wx-empty");
+    if (empty) empty.remove();
+    const row = document.createElement("div");
+    row.className = "wx-meta wx-meta-" + kind;
+    const ico = document.createElement("span");
+    ico.className = "wx-meta-ico";
+    ico.setAttribute("aria-hidden", "true");
+    const body = document.createElement("span");
+    body.className = "wx-meta-body";
+    body.innerHTML = titleHtml;
+    row.append(ico, body);
+    box.append(row);
+    box.scrollTop = box.scrollHeight;
+    return row;
+  }
+
+  function escMeta(s) {
+    return String(s || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function appendToolChip(name, label) {
+    const show = String(label || name || "").trim() || "tool";
+    return appendMetaRow(
+      "tool",
+      "调用工具 <code>" + escMeta(show) + "</code><span class=\"wx-meta-sum\"> …</span>"
+    );
+  }
+
+  function finishToolChip(row, ev) {
+    const show = String((ev && ev.label) || (ev && ev.name) || "").trim() || "tool";
+    const sum = String((ev && ev.summary) || "").trim();
+    const ok = !ev || ev.ok !== false;
+    let target = row;
+    if (!target) target = appendToolChip(ev && ev.name, ev && ev.label);
+    if (!target) return null;
+    target.classList.toggle("is-bad", !ok);
+    const body = target.querySelector(".wx-meta-body");
+    if (body) {
+      body.innerHTML =
+        "调用工具 <code>" +
+        escMeta(show) +
+        "</code>" +
+        (sum ? '<span class="wx-meta-sum"> · ' + escMeta(sum) + "</span>" : "");
+    }
+    return target;
+  }
+
+  function takePendingThinkForFirstBubble() {
+    if (thinkAttached) return null;
+    const text = String(pendingThink.text || "").trim();
+    const sec = Number(pendingThink.sec) || 0;
+    if (!text && !(sec > 0)) return null;
+    thinkAttached = true;
+    return {
+      think: text,
+      think_sec: sec > 0 ? Math.round(sec * 10) / 10 : undefined,
+    };
+  }
+
+  function ensureBunnyThink(bubble, msg) {
+    if (!bubble) return;
+    const row = bubble.closest(".wx-row");
+    if (!row) return;
+    let col = row.querySelector(".wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      bubble.replaceWith(col);
+      col.append(bubble);
+    }
+    const thinkText = String(
+      (msg && msg.think) || pendingThink.text || ""
+    ).trim();
+    bindBunnyThink(bubble, col, thinkText);
+    if (thinkText) thinkAttached = true;
+  }
+
+  function syncSendPlus() {
+    const input = document.getElementById("dailyChatInput");
+    const hold = document.getElementById("btnChatHold");
+    const send = document.getElementById("btnChatSend");
+    const plus = document.getElementById("btnChatPlus");
+    if (voiceMode) {
+      if (input) input.hidden = true;
+      if (hold) hold.hidden = false;
+      if (send) send.hidden = true;
+      if (plus) plus.hidden = false;
+      return;
+    }
+    if (input) input.hidden = false;
+    if (hold) hold.hidden = true;
+    const has = !!(input && String(input.value || "").trim());
+    if (send) send.hidden = !has;
+    if (plus) plus.hidden = has;
+  }
+
+  function setVoiceMode(on) {
+    voiceMode = !!on;
+    setPanels(null);
+    const stick = document.getElementById("btnChatSticker");
+    if (stick) {
+      stick.textContent = voiceMode ? "键" : "表情";
+      stick.title = voiceMode ? "键盘" : "表情";
+      stick.setAttribute("aria-label", voiceMode ? "键盘" : "表情");
+    }
+    syncSendPlus();
+    if (!voiceMode) {
+      const input = document.getElementById("dailyChatInput");
+      if (input) input.focus();
+    }
+  }
+
+  async function claimMoneyCard(id) {
+    if (!id || sending) return;
+    try {
+      const res = await fetch("/api/v1/chat/money/claim", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: id }),
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) throw new Error(data.message || data.error || "领取失败");
+      if (data.message) patchMessageBubble(data.message);
+      if (data.tip) appendMoneyTip(data.tip, Date.now());
+      setChatErr("");
+    } catch (e) {
+      setChatErr((e && e.message) || "领取失败");
+    }
+  }
+
+  function openCall(kind) {
+    const modal = document.getElementById("chatCallModal");
+    const kindEl = document.getElementById("chatCallKind");
+    const peerEl = document.getElementById("chatCallPeer");
+    const stateEl = document.getElementById("chatCallState");
+    if (!modal) return;
+    closeCallPicker();
+    setPanels(null);
+    if (kindEl) kindEl.textContent = kind === "video" ? "视频通话" : "语音通话";
+    if (peerEl) peerEl.textContent = deps.getPeerName() || "家机";
+    if (stateEl) stateEl.textContent = "等待接听…";
+    modal.hidden = false;
+    if (callTimer) clearTimeout(callTimer);
+    callTimer = setTimeout(() => {
+      if (stateEl) stateEl.textContent = "通话中…";
+    }, 1200);
+  }
+
+  function closeCall() {
+    const modal = document.getElementById("chatCallModal");
+    if (modal) modal.hidden = true;
+    if (callTimer) {
+      clearTimeout(callTimer);
+      callTimer = null;
+    }
+  }
+
+  function scrollToLatest() {
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    /* 只滚到底垫尽头；勿 scrollIntoView(end)，会把最后一条贴视口底边盖住 deco */
+    const go = () => {
+      box.scrollTop = box.scrollHeight;
+    };
+    go();
+    requestAnimationFrame(() => {
+      go();
+      requestAnimationFrame(go);
+    });
+  }
+
+  function scrollThreadEnd() {
+    scrollToLatest();
+  }
+
+  function scrollToMessage(id) {
+    const box = document.getElementById("chatThread");
+    if (!box || !id) return false;
+    const row = box.querySelector('.wx-row[data-msg-id="' + id + '"]');
+    if (!row) return false;
+    try {
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+    } catch (_) {
+      row.scrollIntoView();
+    }
+    row.classList.add("is-flash");
+    setTimeout(() => row.classList.remove("is-flash"), 1200);
+    return true;
+  }
+
+  function dismissKeyboard() {
+    const input = document.getElementById("dailyChatInput");
+    if (input) input.blur();
+  }
+
+  function setPanels(which) {
+    const stick = document.getElementById("chatStickerPanel");
+    const plus = document.getElementById("chatPlusPanel");
+    const sheet = document.getElementById("chatSheet");
+    const stickBtn = document.getElementById("btnChatSticker");
+    const plusBtn = document.getElementById("btnChatPlus");
+    if (which === "sticker" || which === "plus") {
+      dismissKeyboard();
+      if (sheet) sheet.hidden = true;
+      sheetMode = "";
+    }
+    if (stick) stick.hidden = which !== "sticker";
+    if (plus) plus.hidden = which !== "plus";
+    if (stickBtn) stickBtn.setAttribute("aria-pressed", which === "sticker" ? "true" : "false");
+    if (plusBtn) plusBtn.setAttribute("aria-pressed", which === "plus" ? "true" : "false");
+    if (which === "sticker" || which === "plus") {
+      /* 面板入流后底垫生效，再滚到底，避开输入框小组件 */
+      requestAnimationFrame(() => {
+        scrollThreadEnd();
+        requestAnimationFrame(scrollThreadEnd);
+      });
+    }
+  }
+
+  async function refreshChatThread() {
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    closeHist();
+    setPanels(null);
+    setTyping(false);
+    const peer = document.getElementById("chatPeerName");
+    if (peer) {
+      peer.classList.remove("is-typing");
+      delete peer.dataset.peerName;
+      peer.textContent = deps.getPeerName() || "家机";
+    }
+    await markChatRead();
+    box.replaceChildren();
+    lastTimeBucket = -1;
+    try {
+      try {
+        await fetchStickers();
+      } catch (_) {}
+      const msgs = await fetchChatMessages();
+      if (!msgs.length) {
+        const empty = document.createElement("div");
+        empty.className = "wx-empty";
+        empty.textContent = "还没有短讯。正剧请去 Chatbox。";
+        box.append(empty);
+        return;
+      }
+      for (const m of msgs) appendChatMessage(m);
+      setChatErr("");
+      scrollToLatest();
+    } catch (e) {
+      const empty = document.createElement("div");
+      empty.className = "wx-empty";
+      empty.textContent = (e && e.message) || "聊天加载失败";
+      box.append(empty);
+    }
+  }
+
+  function histPreview(m) {
+    if (!m) return "";
+    const p = m.payload || {};
+    if (m.kind === "redpacket") return "[红包] " + moneyText(p.amount) + " " + (p.note || "");
+    if (m.kind === "transfer") return "[转账] " + moneyText(p.amount) + " " + (p.note || "");
+    if (m.kind === "location") return "[位置] " + (p.name || m.body || "");
+    if (m.kind === "image") return "[图片]";
+    if (m.kind === "sticker") return "[贴纸]";
+    if (m.kind === "tool") return "[工具] " + (m.body || "");
+    if (Array.isArray(m.tools) && m.tools.length) {
+      const t0 = m.tools[0] || {};
+      const tip =
+        String(t0.label || t0.name || "工具").trim() +
+        (t0.summary ? " · " + t0.summary : "");
+      const more = m.tools.length > 1 ? " +" + (m.tools.length - 1) : "";
+      const body = String(m.body || "").trim();
+      return "[工具] " + tip + more + (body ? " · " + body : "");
+    }
+    return m.body || "";
+  }
+
+  function paintHistGrid() {
+    const box = document.getElementById("chatHistGrid");
+    if (!box) return;
+    box.replaceChildren();
+    for (const k of HIST_CATS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = k.lab;
+      b.addEventListener("click", () => onHistCat(k.id));
+      box.append(b);
+    }
+  }
+
+  function histTopEl() {
+    return document.querySelector("#chatHist .wx-hist-top");
+  }
+
+  function setHistTopVisible(on) {
+    const top = histTopEl();
+    if (top) top.hidden = !on;
+  }
+
+  function showHistHome() {
+    const home = document.getElementById("chatHistHome");
+    const dates = document.getElementById("chatHistDates");
+    const list = document.getElementById("chatHistList");
+    setHistTopVisible(true);
+    if (home) home.hidden = false;
+    if (dates) dates.hidden = true;
+    if (list) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
+    histKind = "all";
+    histDay = "";
+  }
+
+  function showHistResults() {
+    const home = document.getElementById("chatHistHome");
+    const dates = document.getElementById("chatHistDates");
+    const list = document.getElementById("chatHistList");
+    setHistTopVisible(true);
+    if (home) home.hidden = true;
+    if (dates) dates.hidden = true;
+    if (list) list.hidden = false;
+  }
+
+  function ymdLocal(d) {
+    const pad = (n) => String(n).padStart(2, "0");
+    return (
+      d.getFullYear() +
+      "-" +
+      pad(d.getMonth() + 1) +
+      "-" +
+      pad(d.getDate())
+    );
+  }
+
+  function monthLab(y, m0) {
+    return y + " 年 " + (m0 + 1) + " 月";
+  }
+
+  function setCalJumpLab(y, m0) {
+    const lab = document.getElementById("chatHistCalJumpLab");
+    if (lab) lab.textContent = monthLab(y, m0);
+    const inp = document.getElementById("chatHistCalMonth");
+    if (inp) {
+      const pad = (n) => String(n).padStart(2, "0");
+      inp.value = y + "-" + pad(m0 + 1);
+    }
+  }
+
+  function paintHistCal(activeDays) {
+    const box = document.getElementById("chatHistCal");
+    if (!box) return;
+    box.replaceChildren();
+    const today = new Date();
+    today.setHours(12, 0, 0, 0);
+    const todayKey = ymdLocal(today);
+    let start = new Date(today.getFullYear(), today.getMonth() - 5, 1);
+    if (activeDays && activeDays.size) {
+      let minKey = null;
+      for (const k of activeDays) {
+        if (!minKey || k < minKey) minKey = k;
+      }
+      if (minKey) {
+        const p = minKey.split("-").map(Number);
+        const early = new Date(p[0], p[1] - 1, 1);
+        if (early < start) start = early;
+      }
+    }
+    const end = new Date(today.getFullYear(), today.getMonth(), 1);
+    for (
+      let cur = new Date(start.getFullYear(), start.getMonth(), 1);
+      cur <= end;
+      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1)
+    ) {
+      const y = cur.getFullYear();
+      const m0 = cur.getMonth();
+      const sec = document.createElement("section");
+      sec.className = "wx-cal-month";
+      sec.dataset.ym = y + "-" + String(m0 + 1).padStart(2, "0");
+      const lab = document.createElement("div");
+      lab.className = "wx-cal-month-lab";
+      lab.textContent = y + "年" + (m0 + 1) + "月";
+      const grid = document.createElement("div");
+      grid.className = "wx-cal-grid";
+      const firstDow = new Date(y, m0, 1).getDay();
+      const daysInMonth = new Date(y, m0 + 1, 0).getDate();
+      for (let i = 0; i < firstDow; i++) {
+        const blank = document.createElement("div");
+        blank.className = "wx-cal-cell";
+        blank.setAttribute("aria-hidden", "true");
+        grid.append(blank);
+      }
+      for (let day = 1; day <= daysInMonth; day++) {
+        const key =
+          y +
+          "-" +
+          String(m0 + 1).padStart(2, "0") +
+          "-" +
+          String(day).padStart(2, "0");
+        const cell = document.createElement("button");
+        cell.type = "button";
+        cell.className = "wx-cal-cell";
+        cell.dataset.day = key;
+        const num = document.createElement("span");
+        num.className = "wx-cal-num";
+        num.textContent = String(day);
+        cell.append(num);
+        const isToday = key === todayKey;
+        const has = activeDays && activeDays.has(key);
+        if (isToday) {
+          cell.classList.add("is-today");
+          const tag = document.createElement("span");
+          tag.className = "wx-cal-today-tag";
+          tag.textContent = "今天";
+          cell.append(tag);
+        }
+        if (has) {
+          cell.classList.add("is-active");
+          cell.addEventListener("click", () => {
+            histKind = "all";
+            histDay = key;
+            const q = document.getElementById("chatHistQ");
+            if (q) q.value = "";
+            runHistSearch();
+          });
+        } else {
+          cell.disabled = true;
+        }
+        grid.append(cell);
+      }
+      sec.append(lab, grid);
+      box.append(sec);
+    }
+    setCalJumpLab(today.getFullYear(), today.getMonth());
+    requestAnimationFrame(() => {
+      const last = box.lastElementChild;
+      if (last) last.scrollIntoView({ block: "end" });
+    });
+  }
+
+  async function loadHistActiveDays() {
+    try {
+      const res = await fetch("/api/v1/chat/messages", { credentials: "same-origin" });
+      const data = await res.json().catch(() => ({}));
+      const msgs = Array.isArray(data.messages) ? data.messages : [];
+      const set = new Set();
+      for (const m of msgs) {
+        const t = Number(m.ts) || 0;
+        if (!t) continue;
+        set.add(ymdLocal(new Date(t)));
+      }
+      histActiveDays = set;
+      return set;
+    } catch (_) {
+      histActiveDays = new Set();
+      return histActiveDays;
+    }
+  }
+
+  async function showHistDates() {
+    const home = document.getElementById("chatHistHome");
+    const dates = document.getElementById("chatHistDates");
+    const list = document.getElementById("chatHistList");
+    setHistTopVisible(false);
+    if (home) home.hidden = true;
+    if (list) list.hidden = true;
+    if (dates) dates.hidden = false;
+    const cal = document.getElementById("chatHistCal");
+    if (cal) cal.textContent = "加载中…";
+    const days = await loadHistActiveDays();
+    paintHistCal(days);
+  }
+
+  function onHistCat(id) {
+    if (id === "date") {
+      histKind = "all";
+      histDay = "";
+      showHistDates();
+      return;
+    }
+    histKind = id;
+    histDay = "";
+    const q = document.getElementById("chatHistQ");
+    if (q) q.blur();
+    showHistResults();
+    runHistSearch();
+  }
+
+  async function runHistSearch() {
+    const list = document.getElementById("chatHistList");
+    if (!list) return;
+    const q = String((document.getElementById("chatHistQ") || {}).value || "").trim();
+    const from = histDay;
+    const to = histDay;
+    /* 无关键词、无分类、无日期 → 回首页，不刷记录 */
+    if (!q && (!histKind || histKind === "all") && !from && !to) {
+      showHistHome();
+      return;
+    }
+    showHistResults();
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (histKind && histKind !== "all") params.set("kind", histKind);
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    list.textContent = "搜索中…";
+    try {
+      const res = await fetch("/api/v1/chat/search?" + params.toString(), {
+        credentials: "same-origin",
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) throw new Error(data.message || "搜索失败");
+      const msgs = Array.isArray(data.messages) ? data.messages : [];
+      list.replaceChildren();
+      if (!msgs.length) {
+        const empty = document.createElement("div");
+        empty.className = "wx-hist-empty";
+        empty.textContent = "没有匹配的记录";
+        list.append(empty);
+        return;
+      }
+      for (const m of msgs) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "wx-hist-row";
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        meta.textContent =
+          (m.from === "you" ? "我" : deps.getPeerName() || "家机") +
+          " · " +
+          chatTimeLabel(m.ts);
+        const body = document.createElement("div");
+        body.className = "body";
+        body.textContent = histPreview(m);
+        row.append(meta, body);
+        row.addEventListener("click", async () => {
+          closeHist();
+          await refreshChatThread();
+          if (!scrollToMessage(m.id)) scrollToLatest();
+        });
+        list.append(row);
+      }
+    } catch (e) {
+      list.replaceChildren();
+      const empty = document.createElement("div");
+      empty.className = "wx-hist-empty";
+      empty.textContent = (e && e.message) || "搜索失败";
+      list.append(empty);
+    }
+  }
+
+  function openHist() {
+    const hist = document.getElementById("chatHist");
+    if (!hist) return;
+    setPanels(null);
+    dismissKeyboard();
+    hist.hidden = false;
+    histKind = "all";
+    histDay = "";
+    paintHistGrid();
+    const q = document.getElementById("chatHistQ");
+    if (q) q.value = "";
+    showHistHome();
+  }
+
+  function closeHist() {
+    const hist = document.getElementById("chatHist");
+    if (hist) hist.hidden = true;
+    if (histTimer) {
+      clearTimeout(histTimer);
+      histTimer = null;
+    }
+  }
+
+  function setComposerBusy(busy) {
+    sending = !!busy;
+    ["btnChatSend", "btnChatPlus", "btnChatSticker", "dailyChatInput"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = sending;
+    });
+  }
+
+  async function postChatPayload(payload) {
+    const box = document.getElementById("chatThread");
+    setChatErr("");
+    setComposerBusy(true);
+    setPanels(null);
+    let botBubble = null;
+    let pendingToolRow = null;
+    const paintFrame = () =>
+      new Promise((r) => requestAnimationFrame(() => r()));
+    try {
+      const res = await fetch("/api/v1/chat/messages", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(payload),
+      });
+      const ctype = String(res.headers.get("content-type") || "");
+      if (!res.ok && !ctype.includes("event-stream")) {
+        let data = {};
+        try {
+          data = await res.json();
+        } catch (_) {
+          data = {};
+        }
+        if (res.status === 404) throw new Error("聊天接口未就绪：请重启 npm start 后再试");
+        if (data.error === "wallet_insufficient") throw new Error("余额不足");
+        throw new Error(data.message || data.error || "发送失败");
+      }
+      if (!res.body || !res.body.getReader) {
+        throw new Error("浏览器不支持流式读取");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buf = "";
+      const handleEvent = async (ev) => {
+        if (!ev || !ev.type) return;
+        if (ev.type === "you" && ev.message) {
+          appendChatMessage(ev.message);
+          await paintFrame();
+        } else if (ev.type === "money_claim" && ev.message) {
+          patchMessageBubble(ev.message);
+          await paintFrame();
+        } else if (ev.type === "money_tip" && ev.text) {
+          appendMoneyTip(ev.text, ev.ts);
+          await paintFrame();
+        } else if (ev.type === "bot_start") {
+          pendingThink = { sec: 0, text: "" };
+          thinkAttached = false;
+          setTyping(true);
+          await paintFrame();
+        } else if (ev.type === "bot_think") {
+          if (ev.text) {
+            pendingThink.text = pendingThink.text
+              ? pendingThink.text + "\n---\n" + ev.text
+              : String(ev.text);
+          }
+          if (Number(ev.seconds) > 0) pendingThink.sec += Number(ev.seconds);
+          if (botBubble) {
+            ensureBunnyThink(botBubble, {
+              think: pendingThink.text,
+              think_sec: pendingThink.sec,
+            });
+          }
+          await paintFrame();
+        } else if (ev.type === "bot_tool" && ev.name) {
+          pendingToolRow = appendToolChip(ev.name, ev.label);
+          await paintFrame();
+        } else if (ev.type === "bot_tool_done") {
+          const row = finishToolChip(pendingToolRow, ev);
+          if (row && ev.message && ev.message.id) row.dataset.msgId = ev.message.id;
+          pendingToolRow = null;
+          await paintFrame();
+        } else if (ev.type === "bot_delta" && ev.text) {
+          if (!botBubble) {
+            setTyping(true);
+            botBubble = appendChatBubble(
+              "bot",
+              "",
+              Date.now(),
+              takePendingThinkForFirstBubble()
+            );
+          }
+          if (botBubble) {
+            const te = bubbleTextEl(botBubble);
+            te.textContent = (te.textContent || "") + ev.text;
+            if (box) box.scrollTop = box.scrollHeight;
+          }
+          await paintFrame();
+        } else if (ev.type === "bot_done" && ev.message) {
+          const m = ev.message;
+          if (botBubble) {
+            fillBubble(botBubble, m);
+            ensureBunnyThink(botBubble, m);
+          } else {
+            thinkAttached = true;
+            appendChatMessage(m);
+          }
+          botBubble = null;
+          setTyping(false);
+        } else if (ev.type === "bot_money" && ev.message) {
+          /* 连发后续条：不绑兔子思考 */
+          appendChatMessage(ev.message);
+          await paintFrame();
+        } else if (ev.type === "bot_sticker" && ev.message) {
+          appendChatMessage(ev.message);
+          await paintFrame();
+        } else if (ev.type === "bot_error") {
+          if (botBubble && !(botBubble.textContent || "").trim()) {
+            const row = botBubble.closest(".wx-row");
+            if (row) row.remove();
+          }
+          botBubble = null;
+          setTyping(false);
+          if (ev.code === "wallet_insufficient") setChatErr("余额不足");
+        } else if (ev.type === "done") {
+          setTyping(false);
+          if (ev.bot_error) {
+            const tip =
+              ev.bot_error.code === "budget_exhausted"
+                ? ev.bot_error.message || "额度已用尽 · 你侧已留下"
+                : "家机未接上：" +
+                  (ev.bot_error.message || ev.bot_error.code || "降级");
+            setChatErr(tip);
+          }
+        }
+      };
+      const consumeBlock = async (block) => {
+        const lines = String(block || "").split(/\r?\n/);
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t || t.startsWith(":")) continue;
+          if (!t.startsWith("data:")) continue;
+          const raw = t.slice(5).trim();
+          if (!raw || raw === "[DONE]") continue;
+          let evObj;
+          try {
+            evObj = JSON.parse(raw);
+          } catch {
+            continue;
+          }
+          await handleEvent(evObj);
+        }
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split(/\r?\n\r?\n/);
+        buf = parts.pop() || "";
+        for (const part of parts) await consumeBlock(part);
+      }
+      if (buf.trim()) await consumeBlock(buf);
+      if (chatViewActive()) await markChatRead();
+      else notifyUnread();
+    } catch (e) {
+      setTyping(false);
+      setChatErr((e && e.message) || "发送失败");
+    } finally {
+      setTyping(false);
+      setComposerBusy(false);
+      syncSendPlus();
+      const input = document.getElementById("dailyChatInput");
+      if (input) input.focus();
+    }
+  }
+
+  async function sendChatMessage() {
+    if (sending) return;
+    const input = document.getElementById("dailyChatInput");
+    const body = input ? String(input.value || "").trim() : "";
+    if (!body) return;
+    if (input) input.value = "";
+    syncSendPlus();
+    await postChatPayload({ kind: "text", body: body });
+  }
+
+  async function sendSticker(id) {
+    if (sending || !id) return;
+    await postChatPayload({ kind: "sticker", body: id });
+  }
+
+  async function sendPickedImage(file) {
+    if (sending || !file) return;
+    setChatErr("");
+    setComposerBusy(true);
+    try {
+      const res = await fetch("/api/v1/chat/media", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) throw new Error(data.message || data.error || "上传失败");
+      if (!data.url) throw new Error("上传失败");
+      setComposerBusy(false);
+      await postChatPayload({ kind: "image", body: data.url });
+    } catch (e) {
+      setChatErr((e && e.message) || "上传失败");
+      setComposerBusy(false);
+    }
+  }
+
+  async function uploadUserSticker(file) {
+    if (!file) return;
+    setChatErr("");
+    try {
+      const res = await fetch("/api/v1/chat/stickers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Sticker-Label": "自建",
+        },
+        body: file,
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) throw new Error(data.message || data.error || "贴纸上传失败");
+      await fetchStickers(true);
+      await paintStickerPanel();
+      setPanels("sticker");
+    } catch (e) {
+      setChatErr((e && e.message) || "贴纸上传失败");
+    }
+  }
+
+  async function paintStickerPanel() {
+    const panel = document.getElementById("chatStickerPanel");
+    if (!panel) return;
+    const pack = await fetchStickers();
+    panel.replaceChildren();
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "wx-sticker-add";
+    add.title = "添加贴纸";
+    add.textContent = "+";
+    add.addEventListener("click", () => {
+      const inp = document.getElementById("chatStickerInput");
+      if (inp) {
+        inp.value = "";
+        inp.click();
+      }
+    });
+    panel.append(add);
+    for (const s of pack) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.title = s.label || s.id;
+      const img = document.createElement("img");
+      img.src = s.src;
+      img.alt = s.label || s.id;
+      b.append(img);
+      b.addEventListener("click", () => sendSticker(s.id));
+      panel.append(b);
+    }
+  }
+
+  function paintPlusPanel() {
+    const panel = document.getElementById("chatPlusPanel");
+    if (!panel) return;
+    panel.replaceChildren();
+    const pages = document.createElement("div");
+    pages.className = "wx-plus-pages";
+    const pageSize = 8;
+    const pageCount = Math.max(1, Math.ceil(PLUS_ITEMS.length / pageSize));
+    for (let p = 0; p < pageCount; p++) {
+      const page = document.createElement("div");
+      page.className = "wx-plus-page";
+      const chunk = PLUS_ITEMS.slice(p * pageSize, p * pageSize + pageSize);
+      for (const item of chunk) {
+        const b = document.createElement("button");
+        b.type = "button";
+        const tile = document.createElement("span");
+        tile.className = "tile";
+        tile.textContent = item.tile;
+        const lab = document.createElement("span");
+        lab.textContent = item.lab;
+        b.append(tile, lab);
+        b.addEventListener("click", () => onPlusItem(item));
+        page.append(b);
+      }
+      pages.append(page);
+    }
+    panel.append(pages);
+  }
+
+  function openCallPicker() {
+    const pick = document.getElementById("chatCallPick");
+    if (!pick) return;
+    setPanels(null);
+    dismissKeyboard();
+    pick.hidden = false;
+  }
+
+  function closeCallPicker() {
+    const pick = document.getElementById("chatCallPick");
+    if (pick) pick.hidden = true;
+  }
+
+  function openSheet(mode) {
+    sheetMode = mode;
+    const sheet = document.getElementById("chatSheet");
+    const stick = document.getElementById("chatStickerPanel");
+    const plus = document.getElementById("chatPlusPanel");
+    const stickBtn = document.getElementById("btnChatSticker");
+    const plusBtn = document.getElementById("btnChatPlus");
+    const title = document.getElementById("chatSheetTitle");
+    const aw = document.getElementById("chatSheetAmountWrap");
+    const nw = document.getElementById("chatSheetNoteWrap");
+    const nameW = document.getElementById("chatSheetNameWrap");
+    const detailW = document.getElementById("chatSheetDetailWrap");
+    const noteLab = document.getElementById("chatSheetNoteLab");
+    const amount = document.getElementById("chatSheetAmount");
+    const note = document.getElementById("chatSheetNote");
+    const name = document.getElementById("chatSheetName");
+    const detail = document.getElementById("chatSheetDetail");
+    if (!sheet) return;
+    dismissKeyboard();
+    if (stick) stick.hidden = true;
+    if (plus) plus.hidden = true;
+    if (stickBtn) stickBtn.setAttribute("aria-pressed", "false");
+    if (plusBtn) plusBtn.setAttribute("aria-pressed", "false");
+    if (aw) aw.hidden = mode !== "redpacket" && mode !== "transfer";
+    if (nw) nw.hidden = mode !== "redpacket" && mode !== "transfer";
+    if (nameW) nameW.hidden = mode !== "location";
+    if (detailW) detailW.hidden = mode !== "location";
+    if (title) {
+      title.textContent =
+        mode === "redpacket" ? "发红包" : mode === "transfer" ? "转账" : "发送位置";
+    }
+    if (noteLab) noteLab.textContent = mode === "redpacket" ? "祝福" : "备注";
+    if (amount) amount.value = "";
+    if (note) note.value = mode === "redpacket" ? "恭喜发财" : "";
+    if (name) name.value = "";
+    if (detail) detail.value = "";
+    sheet.hidden = false;
+    requestAnimationFrame(scrollThreadEnd);
+  }
+
+  function closeSheet() {
+    const sheet = document.getElementById("chatSheet");
+    if (sheet) sheet.hidden = true;
+    sheetMode = "";
+  }
+
+  async function confirmSheet() {
+    const mode = sheetMode;
+    if (mode === "redpacket" || mode === "transfer") {
+      const amount = Number(
+        (document.getElementById("chatSheetAmount") || {}).value
+      );
+      const note = String(
+        (document.getElementById("chatSheetNote") || {}).value || ""
+      ).trim();
+      if (!(amount > 0)) {
+        setChatErr("请填写金额");
+        return;
+      }
+      closeSheet();
+      await postChatPayload({
+        kind: mode,
+        amount: amount,
+        note: note,
+      });
+      return;
+    }
+    if (mode === "location") {
+      const name = String(
+        (document.getElementById("chatSheetName") || {}).value || ""
+      ).trim();
+      const detail = String(
+        (document.getElementById("chatSheetDetail") || {}).value || ""
+      ).trim();
+      if (!name) {
+        setChatErr("请填写位置名称");
+        return;
+      }
+      closeSheet();
+      await postChatPayload({ kind: "location", name: name, detail: detail });
+    }
+  }
+
+  function onPlusItem(item) {
+    if (!item.ok) {
+      setChatErr(item.lab + "未开");
+      return;
+    }
+    if (item.id === "album") {
+      const inp = document.getElementById("chatImageInput");
+      if (inp) {
+        inp.value = "";
+        inp.click();
+      }
+      return;
+    }
+    if (item.id === "camera") {
+      const inp = document.getElementById("chatCameraInput");
+      if (inp) {
+        inp.value = "";
+        inp.click();
+      }
+      return;
+    }
+    if (item.id === "location") {
+      openSheet("location");
+      return;
+    }
+    if (item.id === "redpacket") {
+      openSheet("redpacket");
+      return;
+    }
+    if (item.id === "transfer") {
+      openSheet("transfer");
+      return;
+    }
+    if (item.id === "call") {
+      openCallPicker();
+      return;
+    }
+    if (item.id === "history") {
+      openHist();
+    }
+  }
+
+  async function toggleStickerPanel() {
+    const panel = document.getElementById("chatStickerPanel");
+    if (!panel) return;
+    if (!panel.hidden) {
+      setPanels(null);
+      return;
+    }
+    try {
+      await paintStickerPanel();
+      setPanels("sticker");
+    } catch (e) {
+      setChatErr((e && e.message) || "贴纸包加载失败");
+    }
+  }
+
+  function togglePlusPanel() {
+    const panel = document.getElementById("chatPlusPanel");
+    if (!panel) return;
+    if (!panel.hidden) {
+      setPanels(null);
+      return;
+    }
+    paintPlusPanel();
+    setPanels("plus");
+  }
+
+  function bind() {
+    if (bound) return;
+    bound = true;
+    const back = document.getElementById("btnChatBack");
+    if (back) back.addEventListener("click", () => deps.showView("home"));
+    const form = document.getElementById("chatForm");
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        sendChatMessage();
+      });
+    }
+    const input = document.getElementById("dailyChatInput");
+    if (input) {
+      input.addEventListener("input", syncSendPlus);
+      input.addEventListener("focus", () => {
+        const stick = document.getElementById("chatStickerPanel");
+        const plus = document.getElementById("chatPlusPanel");
+        const sheet = document.getElementById("chatSheet");
+        const stickBtn = document.getElementById("btnChatSticker");
+        const plusBtn = document.getElementById("btnChatPlus");
+        if (stick) stick.hidden = true;
+        if (plus) plus.hidden = true;
+        if (sheet) sheet.hidden = true;
+        sheetMode = "";
+        if (stickBtn) stickBtn.setAttribute("aria-pressed", "false");
+        if (plusBtn) plusBtn.setAttribute("aria-pressed", "false");
+      });
+      const clearLong = () => {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+      };
+      input.addEventListener("pointerdown", () => {
+        clearLong();
+        longPressTimer = setTimeout(() => {
+          longPressTimer = null;
+          setVoiceMode(true);
+        }, 480);
+      });
+      input.addEventListener("pointerup", clearLong);
+      input.addEventListener("pointerleave", clearLong);
+      input.addEventListener("pointercancel", clearLong);
+    }
+    const hold = document.getElementById("btnChatHold");
+    if (hold) {
+      hold.addEventListener("contextmenu", (e) => e.preventDefault());
+      hold.addEventListener("pointerdown", () => {
+        hold.classList.add("is-pressing");
+        hold.textContent = "松开 结束";
+      });
+      const endHold = () => {
+        if (!hold.classList.contains("is-pressing")) return;
+        hold.classList.remove("is-pressing");
+        hold.textContent = "按住 说话";
+        setChatErr("语音消息未开");
+      };
+      hold.addEventListener("pointerup", endHold);
+      hold.addEventListener("pointerleave", endHold);
+      hold.addEventListener("pointercancel", endHold);
+    }
+    const stick = document.getElementById("btnChatSticker");
+    if (stick) {
+      stick.addEventListener("click", () => {
+        if (voiceMode) {
+          setVoiceMode(false);
+          return;
+        }
+        toggleStickerPanel();
+      });
+    }
+    const plus = document.getElementById("btnChatPlus");
+    if (plus) plus.addEventListener("click", () => togglePlusPanel());
+    const hang = document.getElementById("chatCallHang");
+    if (hang) hang.addEventListener("click", closeCall);
+    const pickVoice = document.getElementById("chatCallPickVoice");
+    if (pickVoice) pickVoice.addEventListener("click", () => openCall("voice"));
+    const pickVideo = document.getElementById("chatCallPickVideo");
+    if (pickVideo) pickVideo.addEventListener("click", () => openCall("video"));
+    const pickCancel = document.getElementById("chatCallPickCancel");
+    if (pickCancel) pickCancel.addEventListener("click", closeCallPicker);
+    const histCancel = document.getElementById("chatHistCancel");
+    if (histCancel) histCancel.addEventListener("click", closeHist);
+    const histQ = document.getElementById("chatHistQ");
+    if (histQ) {
+      histQ.addEventListener("input", () => {
+        if (histTimer) clearTimeout(histTimer);
+        histTimer = setTimeout(() => {
+          const q = String(histQ.value || "").trim();
+          if (q) histDay = "";
+          if (!q && histKind === "all" && !histDay) {
+            showHistHome();
+            return;
+          }
+          runHistSearch();
+        }, 220);
+      });
+    }
+    const dateBack = document.getElementById("chatHistDateBack");
+    if (dateBack) dateBack.addEventListener("click", () => showHistHome());
+    const calJump = document.getElementById("chatHistCalJump");
+    const calMonth = document.getElementById("chatHistCalMonth");
+    if (calJump && calMonth) {
+      calJump.addEventListener("click", () => {
+        try {
+          if (typeof calMonth.showPicker === "function") calMonth.showPicker();
+          else calMonth.focus();
+        } catch (_) {
+          calMonth.focus();
+        }
+      });
+      calMonth.addEventListener("change", () => {
+        const v = String(calMonth.value || "");
+        if (!/^\d{4}-\d{2}$/.test(v)) return;
+        const sec = document.querySelector(
+          '#chatHistCal .wx-cal-month[data-ym="' + v + '"]'
+        );
+        if (sec) {
+          sec.scrollIntoView({ block: "start" });
+          const [y, m] = v.split("-").map(Number);
+          setCalJumpLab(y, m - 1);
+        }
+      });
+    }
+    const calScroll = document.getElementById("chatHistCal");
+    if (calScroll) {
+      calScroll.addEventListener(
+        "scroll",
+        () => {
+          const months = calScroll.querySelectorAll(".wx-cal-month");
+          let hit = null;
+          const top = calScroll.scrollTop + 8;
+          for (const sec of months) {
+            if (sec.offsetTop <= top) hit = sec;
+          }
+          if (hit && hit.dataset.ym) {
+            const [y, m] = hit.dataset.ym.split("-").map(Number);
+            setCalJumpLab(y, m - 1);
+          }
+        },
+        { passive: true }
+      );
+    }
+    const img = document.getElementById("chatImageInput");
+    if (img) {
+      img.addEventListener("change", () => {
+        const f = img.files && img.files[0];
+        if (f) sendPickedImage(f);
+      });
+    }
+    const cam = document.getElementById("chatCameraInput");
+    if (cam) {
+      cam.addEventListener("change", () => {
+        const f = cam.files && cam.files[0];
+        if (f) sendPickedImage(f);
+      });
+    }
+    const stIn = document.getElementById("chatStickerInput");
+    if (stIn) {
+      stIn.addEventListener("change", () => {
+        const f = stIn.files && stIn.files[0];
+        if (f) uploadUserSticker(f);
+      });
+    }
+    const cancel = document.getElementById("chatSheetCancel");
+    if (cancel) cancel.addEventListener("click", closeSheet);
+    const ok = document.getElementById("chatSheetOk");
+    if (ok) ok.addEventListener("click", () => confirmSheet());
+    syncSendPlus();
+  }
+
+  function mount(d) {
+    deps = Object.assign(deps, d || {});
+    bind();
+  }
+
+  global.ChatApp = {
+    mount: mount,
+    refreshThread: refreshChatThread,
+  };
+})(typeof window !== "undefined" ? window : globalThis);

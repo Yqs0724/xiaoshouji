@@ -55,6 +55,19 @@ function attachWsHub(server) {
         try {
           socket.send(JSON.stringify({ type: "pong", t: Date.now() }));
         } catch (_) {}
+        return;
+      }
+      /* H3.3：通话 WebRTC 信令转发给其它端（不回声） */
+      if (msg.type === "call_signal") {
+        const line = JSON.stringify(msg);
+        for (const other of clients) {
+          if (other === socket || !isOpen(other)) continue;
+          try {
+            other.send(line);
+          } catch (_) {
+            clients.delete(other);
+          }
+        }
       }
     });
     const drop = () => {

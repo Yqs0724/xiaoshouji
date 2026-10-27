@@ -468,6 +468,15 @@
     const body = document.createElement("span");
     body.className = "body";
     body.textContent = note.body;
+    if (note.event_title) {
+      const link = document.createElement("span");
+      link.className = "event-link";
+      link.textContent = "·" + String(note.event_title);
+      link.title = note.event_id
+        ? "关联行程 " + note.event_id
+        : "关联行程";
+      body.append(link);
+    }
     const like = document.createElement("button");
     like.type = "button";
     like.className = "like" + (note.liked ? " on" : "");

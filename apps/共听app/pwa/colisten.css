@@ -1079,15 +1079,22 @@
    text-align: center;
  }
  .cl-history {
-   margin: 0 14px 8px;
+   position: absolute;
+   left: 12px;
+   right: 12px;
+   bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+   z-index: 28;
+   margin: 0;
    padding: 10px 12px;
    border: 2px solid var(--cl-choco);
    border-radius: 14px;
-   background: rgba(255, 249, 242, .92);
+   background: rgba(255, 249, 242, .96);
    box-shadow: 2px 2px 0 rgba(75, 44, 32, .16);
-   max-height: 140px;
+   max-height: min(42vh, 280px);
    overflow: auto;
-   flex-shrink: 0;
+ }
+ #view-colisten.cl-on-session .cl-history {
+   bottom: 12px;
  }
  .cl-history[hidden] { display: none !important; }
  .cl-history-head {
@@ -1872,4 +1879,169 @@
  .cl-pl-row.is-liked .cl-pl-cover {
    background: #ffd6e2;
    color: #c45a7a;
+ }
+
+ /* 最近播放：横滑封面 */
+ .cl-recent-rail {
+   display: flex;
+   gap: 12px;
+   overflow-x: auto;
+   overflow-y: hidden;
+   padding: 4px 2px 14px;
+   margin: 0 -2px;
+   -webkit-overflow-scrolling: touch;
+   scrollbar-width: none;
+   flex: 0 0 auto;
+ }
+ .cl-recent-rail::-webkit-scrollbar { display: none; }
+ .cl-recent-rail .cl-recent-empty {
+   flex: 1;
+   text-align: center;
+   padding: 28px 12px;
+   font-size: 12px;
+   color: var(--cl-choco-soft);
+   line-height: 1.45;
+ }
+ .cl-recent-card {
+   flex: 0 0 auto;
+   width: 96px;
+   border: 0;
+   padding: 0;
+   background: transparent;
+   color: var(--cl-choco);
+   cursor: pointer;
+   text-align: left;
+ }
+ .cl-recent-card .cl-recent-cover {
+   width: 96px;
+   height: 96px;
+   border-radius: 12px;
+   overflow: hidden;
+   background: rgba(198, 231, 209, .55);
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   font-size: 28px;
+   color: var(--cl-choco-soft);
+   box-shadow: 0 4px 12px rgba(75, 44, 32, .12);
+ }
+ .cl-recent-card .cl-recent-cover img {
+   width: 100%;
+   height: 100%;
+   object-fit: cover;
+   display: block;
+ }
+ .cl-recent-card .cl-recent-ttl {
+   display: block;
+   margin-top: 6px;
+   font-size: 12px;
+   font-weight: 650;
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
+ .cl-recent-card .cl-recent-sub {
+   display: block;
+   font-size: 10px;
+   color: var(--cl-choco-soft);
+   white-space: nowrap;
+   overflow: hidden;
+   text-overflow: ellipsis;
+ }
+
+ /* 歌单库：队列 chip + 搜索 */
+ .cl-pl-tools {
+   display: flex;
+   gap: 8px;
+   align-items: center;
+   padding: 0 0 8px;
+   flex: 0 0 auto;
+ }
+ .cl-pl-tools[hidden] { display: none !important; }
+ .cl-pl-queue-chip {
+   flex: 0 0 auto;
+   border: 0;
+   border-radius: 999px;
+   padding: 7px 12px;
+   background: rgba(198, 231, 209, .65);
+   color: var(--cl-choco);
+   font-size: 11px;
+   font-weight: 650;
+   cursor: pointer;
+   white-space: nowrap;
+ }
+ .cl-pl-queue-chip.is-empty {
+   background: rgba(75, 44, 32, .06);
+   color: var(--cl-choco-soft);
+ }
+ #colistenPlSearch {
+   flex: 1;
+   min-width: 0;
+   border: 0;
+   border-radius: 10px;
+   padding: 8px 10px;
+   background: rgba(255, 249, 242, .9);
+   color: var(--cl-choco);
+   font-size: 12px;
+   box-shadow: inset 0 0 0 1px rgba(75, 44, 32, .12);
+ }
+ #colistenPlSearch::placeholder { color: var(--cl-choco-soft); }
+
+ /* 未授权整页门 */
+ .cl-auth-gate {
+   position: absolute;
+   inset: 0;
+   z-index: 40;
+   display: flex;
+   align-items: center;
+   justify-content: center;
+   padding: 24px 20px;
+   background:
+     radial-gradient(120% 80% at 50% 0%, rgba(198, 231, 209, .55), transparent 55%),
+     rgba(255, 249, 242, .96);
+ }
+ .cl-auth-gate[hidden] { display: none !important; }
+ .cl-auth-gate-card {
+   width: min(100%, 280px);
+   text-align: center;
+ }
+ .cl-auth-gate-card h2 {
+   margin: 0 0 8px;
+   font-size: 20px;
+   color: var(--cl-choco);
+ }
+ .cl-auth-gate-card p {
+   margin: 0 0 18px;
+   font-size: 13px;
+   line-height: 1.45;
+   color: var(--cl-choco-soft);
+ }
+ .cl-auth-gate-card .primary,
+ .cl-auth-gate-card .ghost {
+   display: block;
+   width: 100%;
+   margin: 0 0 8px;
+   border: 0;
+   border-radius: 12px;
+   padding: 12px 14px;
+   font-size: 14px;
+   font-weight: 650;
+   cursor: pointer;
+ }
+ .cl-auth-gate-card .primary {
+   background: var(--cl-mint, #c6e7d1);
+   color: var(--cl-choco);
+ }
+ .cl-auth-gate-card .ghost {
+   background: transparent;
+   color: var(--cl-choco-soft);
+ }
+ #view-colisten.cl-auth-blocked .cl-home,
+ #view-colisten.cl-auth-blocked .cl-session,
+ #view-colisten.cl-auth-blocked .cl-mini,
+ #view-colisten.cl-auth-blocked .cl-tabbar,
+ #view-colisten.cl-auth-blocked .cl-queue-sheet,
+ #view-colisten.cl-auth-blocked .cl-modal {
+   visibility: hidden;
+   pointer-events: none;
  }

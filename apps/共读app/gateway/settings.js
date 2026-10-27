@@ -23,6 +23,19 @@ const DEFAULTS = {
   /** 默认免费档模型；可改 s2.1-pro 等 */
   fish_tts_model: "s2.1-pro-free",
   /**
+   * M3 语音条朗读语言：空=关；zh|en|ja|ko。
+   * 气泡仍显示中文，条点播对应语言（非 zh 先译再 TTS）。
+   */
+  voice_bar_lang: "",
+  /** M4 通话心跳：静默后 TA 主动开口；默认开 */
+  call_heartbeat_enabled: true,
+  /** 心跳基准秒 30–120；实际再随机 +0～30s */
+  call_heartbeat_sec: 45,
+  /** M4 主动来电：回复里 [[call:voice|video]] 可打来；骰子/poke 更易来电；默认关 */
+  call_proactive_enabled: false,
+  /** M5 视频通话仪式礼物；默认开（可关）；无支付 */
+  call_gift_enabled: true,
+  /**
    * 小屋底稿人设 = persona_card（一份长文）。
    * persona 仅兼容旧数据：卡空时回落；新写入请只写 persona_card。
    */
@@ -65,6 +78,15 @@ const DEFAULTS = {
   pin_anniv_id: "",
   /** 桌面隐藏的 App id 列表；显隐不删业务数据 */
   app_hidden: [],
+  /** M1 Desk 挂件：Token 环 / 便笺块（默认开） */
+  desk_widget_token: true,
+  desk_widget_sticky: true,
+  /** 装饰摆件已撤；字段保留兼容旧备份 */
+  desk_deco_enabled: false,
+  /** @deprecated 摆件 UI 已撤；读盘仍归一化 */
+  desk_decos: [],
+  /** 自由桌面：[{ id, x, y, w? }]；空=出厂排布 */
+  desk_layout: [],
   /** 日常聊天是否允许调用工具（日历等；网关内执行） */
   chat_tools_enabled: true,
   /** 工具显示名：{ function.name: "中文名" }；空则用内置默认 */
@@ -73,6 +95,11 @@ const DEFAULTS = {
   mcp_enabled: false,
   mcp_url: "",
   mcp_token: "",
+  /** 备用 MCP endpoint（主失败时试） */
+  mcp_url_2: "",
+  mcp_token_2: "",
+  /** 保活心跳：约 5 分钟探测一次（仅启用 MCP 时） */
+  mcp_heartbeat: false,
   /** H1.24：关掉的 MCP 远端工具名（remote name），不进 LLM 工具表 */
   mcp_tool_hidden: [],
   /** V1 Sentinel/Core：默认关；开后定时截主屏轻量判断是否主动找你 */
@@ -86,8 +113,36 @@ const DEFAULTS = {
   sentinel_quiet_enabled: false,
   sentinel_quiet_start: "23:00",
   sentinel_quiet_end: "08:00",
+  /** H5：定时推送骰子（动态→日程便笺→开口）；默认关；可与哨兵共用间隔/安静/日上限 */
+  presence_dice_enabled: false,
+  /** 每次检查掷中概率 0.05～1，默认 0.35 */
+  presence_dice_chance: 0.35,
+  /** 优先级链是否允许发朋友圈（仍受间隔约束） */
+  presence_dice_moments: true,
   /** V4：PC 前台窗采样；默认关，仅本机 Win */
   activity_enabled: false,
+  /** P0：查虚拟小手机壳（App/会话）；默认开，关则工具不进表 */
+  peek_phone_enabled: true,
+  /** P0：peek 是否带当前会话最近几条（L1）；默认关 */
+  peek_phone_l1_enabled: false,
+  /** P0：手机设备态（电量等）；默认开 */
+  phone_device_enabled: true,
+  /** H6 Auto Memory：「你对 TA 的了解」档案；默认关 */
+  auto_memory_enabled: false,
+  /** 静默：不注入档案，仍可工具写入（对方明确要求时） */
+  auto_memory_mute: false,
+  /** 注入字数预算 300–6000 */
+  auto_memory_budget: 2000,
+  /** H9：授权 TA 用工具参与朋友圈；默认关 */
+  moments_ai_enabled: false,
+  /** H9：auto=直接发；confirm=需你点同意 */
+  moments_ai_mode: "confirm",
+  /** H10：定位工具；默认关（隐私） */
+  geo_tool_enabled: false,
+  /** H10：天气工具；默认关 */
+  weather_tool_enabled: false,
+  /** H10：定位不可用时的手动城市兜底 */
+  weather_city: "",
   /** Cove 网易云：兼容 API 根地址（如 NeteaseCloudMusicApi :3000） */
   netease_api_base_url: "http://127.0.0.1:3000",
   /** 可选 Cookie / MUSIC_U=…；只存服务端，勿进 Git */
@@ -180,7 +235,7 @@ function normalizeMcpToolHidden(raw) {
   return out;
 }
 
-/** DEMO 咖啡屋头像预设（仅允许这些路径） */
+/** DEMO 咖啡屋头像预设；另允许聊天上传 media / 静态 / http(s) */
 const AVATAR_PRESETS = [
   "/assets/cafe/avatar-you.png",
   "/assets/cafe/avatar-bot.png",
@@ -190,6 +245,14 @@ const AVATAR_PRESETS = [
 function normalizeAvatar(src, fallback) {
   const s = String(src || "").trim();
   if (AVATAR_PRESETS.includes(s)) return s;
+  if (s.length > 512) return fallback || DEFAULTS.avatar_user;
+  if (
+    s.startsWith("/api/v1/chat/media/") ||
+    s.startsWith("/assets/") ||
+    /^https?:\/\//i.test(s)
+  ) {
+    return s;
+  }
   return fallback || DEFAULTS.avatar_user;
 }
 
@@ -290,6 +353,7 @@ const APP_IDS = [
   "shop",
   "budget",
   "wallet",
+  "memo",
   "ledger",
   "album",
   "eat",
@@ -297,6 +361,72 @@ const APP_IDS = [
   "settings",
 ];
 const APP_ALWAYS_VISIBLE = new Set(["settings"]);
+
+const DESK_DECO_IDS = new Set([
+  "bear",
+  "croissant",
+  "cupcake",
+  "donut",
+  "macaron",
+  "flower",
+  "stamp",
+  "paw",
+]);
+
+/** 自由桌面布局；id=wid-*|app-* ；col/row 网格格点；page=0–2 */
+function normalizeDeskLayout(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const id = String(item.id || "").trim().slice(0, 40);
+    if (!id || seen.has(id)) continue;
+    if (!/^(wid|app)-[a-z0-9_-]+$/i.test(id)) continue;
+    let col = Number(item.col);
+    let row = Number(item.row);
+    /* 兼容旧版百分比 x/y */
+    if (!Number.isFinite(col) && Number.isFinite(Number(item.x))) {
+      col = Math.floor((Number(item.x) / 100) * 4);
+    }
+    if (!Number.isFinite(row) && Number.isFinite(Number(item.y))) {
+      row = Math.floor((Number(item.y) / 100) * 6);
+    }
+    if (!Number.isFinite(col)) col = 0;
+    if (!Number.isFinite(row)) row = 0;
+    col = Math.max(0, Math.min(3, Math.floor(col)));
+    row = Math.max(0, Math.min(11, Math.floor(row)));
+    let page = Number(item.page);
+    if (!Number.isFinite(page)) page = 0;
+    page = Math.max(0, Math.min(2, Math.floor(page)));
+    seen.add(id);
+    out.push({ id, col, row, page });
+    if (out.length >= 48) break;
+  }
+  return out;
+}
+
+/** M2：桌面摆件列表；最多 6；坐标 0–100 百分比 */
+function normalizeDeskDecos(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const id = String(item.id || "").trim();
+    if (!DESK_DECO_IDS.has(id) || seen.has(id)) continue;
+    let x = Number(item.x);
+    let y = Number(item.y);
+    if (!Number.isFinite(x)) x = 50;
+    if (!Number.isFinite(y)) y = 50;
+    x = Math.max(0, Math.min(100, Math.round(x * 10) / 10));
+    y = Math.max(0, Math.min(100, Math.round(y * 10) / 10));
+    seen.add(id);
+    out.push({ id, x, y });
+    if (out.length >= 6) break;
+  }
+  return out;
+}
 
 function normalizeAppHidden(v) {
   const raw = Array.isArray(v) ? v : [];
@@ -315,6 +445,19 @@ const FOLLOW_MODES = ["immersive", "ideas", "silent"];
 /** 跟批语气：空=默认；short/ask/empathy */
 const FOLLOW_TONES = ["", "short", "ask", "empathy"];
 
+/** M3：语音条语言；空=关 */
+function normalizeVoiceBarLang(raw) {
+  const s = String(raw == null ? "" : raw)
+    .trim()
+    .toLowerCase();
+  if (!s || s === "off" || s === "0" || s === "false") return "";
+  if (s === "zh" || s === "zh-cn" || s === "cn") return "zh";
+  if (s === "en" || s === "en-us" || s === "en-gb") return "en";
+  if (s === "ja" || s === "jp" || s === "ja-jp") return "ja";
+  if (s === "ko" || s === "kr" || s === "ko-kr") return "ko";
+  return "";
+}
+
 function normalizeFollowMode(m) {
   const s = String(m || "").trim();
   return FOLLOW_MODES.includes(s) ? s : "immersive";
@@ -326,13 +469,14 @@ function normalizeFollowTone(t) {
   return FOLLOW_TONES.includes(s) ? s : "";
 }
 
-/** Flash 闲时粗算：约 2.5 元 / 百万 token（与 PWA 额度档一致） */
-const RMB_PER_M_TOKEN = 2.5;
-
+/** 场预算 ¥→token：跟当前 llm_model 价卡闲时混合单价（额度app deepseek-pricing） */
 function tokensFromBudgetRmb(rmb) {
   const n = Number(rmb) || 0;
   if (n <= 0) return 0;
-  return Math.round((n / RMB_PER_M_TOKEN) * 1e6);
+  const { blendRmbPerMOffFor } = require("../../额度app/gateway/deepseek-pricing");
+  const model = String(readSettings().llm_model || "").trim() || "deepseek-flash";
+  const perM = blendRmbPerMOffFor(model) || 1.75;
+  return Math.round((n / perM) * 1e6);
 }
 
 function envSettings() {
@@ -388,6 +532,24 @@ function readSettings() {
     fish_tts_model: String(
       file.fish_tts_model || process.env.FISH_TTS_MODEL || "s2.1-pro-free"
     ).trim() || "s2.1-pro-free",
+    voice_bar_lang: normalizeVoiceBarLang(file.voice_bar_lang),
+    call_heartbeat_enabled: file.call_heartbeat_enabled !== false,
+    call_heartbeat_sec: (() => {
+      const n = Math.floor(
+        Number(
+          file.call_heartbeat_sec != null
+            ? file.call_heartbeat_sec
+            : DEFAULTS.call_heartbeat_sec
+        )
+      );
+      if (!Number.isFinite(n)) return 45;
+      return Math.max(30, Math.min(120, n));
+    })(),
+    call_proactive_enabled: !!file.call_proactive_enabled,
+    call_gift_enabled:
+      file.call_gift_enabled === undefined || file.call_gift_enabled === null
+        ? true
+        : !!file.call_gift_enabled,
     persona: (env.persona || file.persona || "").trim(),
     persona_card: (env.persona_card || file.persona_card || "").trim(),
     persona_card_in_follow: !!file.persona_card_in_follow,
@@ -423,11 +585,19 @@ function readSettings() {
       };
     })(),
     app_hidden: normalizeAppHidden(file.app_hidden),
+    desk_widget_token: file.desk_widget_token !== false,
+    desk_widget_sticky: file.desk_widget_sticky !== false,
+    desk_deco_enabled: file.desk_deco_enabled === true,
+    desk_decos: normalizeDeskDecos(file.desk_decos),
+    desk_layout: normalizeDeskLayout(file.desk_layout),
     chat_tools_enabled: file.chat_tools_enabled !== false,
     chat_tool_labels: normalizeChatToolLabels(file.chat_tool_labels),
     mcp_enabled: !!file.mcp_enabled,
     mcp_url: String(file.mcp_url || "").trim(),
     mcp_token: String(file.mcp_token || "").trim(),
+    mcp_url_2: String(file.mcp_url_2 || "").trim(),
+    mcp_token_2: String(file.mcp_token_2 || "").trim(),
+    mcp_heartbeat: !!file.mcp_heartbeat,
     mcp_tool_hidden: normalizeMcpToolHidden(file.mcp_tool_hidden),
     sentinel_enabled: !!file.sentinel_enabled,
     sentinel_interval_min: Math.max(
@@ -452,7 +622,40 @@ function readSettings() {
       file.sentinel_quiet_end,
       DEFAULTS.sentinel_quiet_end
     ),
+    presence_dice_enabled: !!file.presence_dice_enabled,
+    presence_dice_chance: Math.max(
+      0.05,
+      Math.min(
+        1,
+        Number(file.presence_dice_chance) > 0
+          ? Number(file.presence_dice_chance)
+          : DEFAULTS.presence_dice_chance
+      )
+    ),
+    presence_dice_moments: file.presence_dice_moments !== false,
     activity_enabled: !!file.activity_enabled,
+    peek_phone_enabled: file.peek_phone_enabled !== false,
+    peek_phone_l1_enabled: !!file.peek_phone_l1_enabled,
+    phone_device_enabled: file.phone_device_enabled !== false,
+    auto_memory_enabled: !!file.auto_memory_enabled,
+    auto_memory_mute: !!file.auto_memory_mute,
+    auto_memory_budget: Math.max(
+      300,
+      Math.min(
+        6000,
+        Math.floor(Number(file.auto_memory_budget) || 2000)
+      )
+    ),
+    moments_ai_enabled: !!file.moments_ai_enabled,
+    moments_ai_mode:
+      String(file.moments_ai_mode || "confirm").toLowerCase() === "auto"
+        ? "auto"
+        : "confirm",
+    geo_tool_enabled: !!file.geo_tool_enabled,
+    weather_tool_enabled: !!file.weather_tool_enabled,
+    weather_city: String(file.weather_city || "")
+      .trim()
+      .slice(0, 48),
     netease_api_base_url: String(
       file.netease_api_base_url != null
         ? file.netease_api_base_url
@@ -557,12 +760,21 @@ function patchSettings(patch) {
     "name_bot",
     "mcp_url",
     "mcp_token",
+    "mcp_url_2",
+    "mcp_token_2",
     "sentinel_model",
   ];
   let mcpTouched = false;
   for (const key of stringKeys) {
     if (Object.prototype.hasOwnProperty.call(patch, key) && typeof patch[key] === "string") {
-      if (key === "mcp_url" || key === "mcp_token") mcpTouched = true;
+      if (
+        key === "mcp_url" ||
+        key === "mcp_token" ||
+        key === "mcp_url_2" ||
+        key === "mcp_token_2"
+      ) {
+        mcpTouched = true;
+      }
       file[key] = patch[key];
     }
   }
@@ -586,6 +798,14 @@ function patchSettings(patch) {
     else if (typeof v === "string") {
       file.mcp_enabled = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
     } else file.mcp_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "mcp_heartbeat")) {
+    mcpTouched = true;
+    const v = patch.mcp_heartbeat;
+    if (typeof v === "boolean") file.mcp_heartbeat = v;
+    else if (typeof v === "string") {
+      file.mcp_heartbeat = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else file.mcp_heartbeat = !!v;
   }
   if (Object.prototype.hasOwnProperty.call(patch, "avatar_user")) {
     file.avatar_user = normalizeAvatar(patch.avatar_user, file.avatar_user || DEFAULTS.avatar_user);
@@ -708,6 +928,39 @@ function patchSettings(patch) {
   if (Object.prototype.hasOwnProperty.call(patch, "app_hidden")) {
     file.app_hidden = normalizeAppHidden(patch.app_hidden);
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "desk_widget_token")) {
+    const v = patch.desk_widget_token;
+    if (typeof v === "boolean") file.desk_widget_token = v;
+    else if (typeof v === "string") {
+      file.desk_widget_token = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.desk_widget_token = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "desk_widget_sticky")) {
+    const v = patch.desk_widget_sticky;
+    if (typeof v === "boolean") file.desk_widget_sticky = v;
+    else if (typeof v === "string") {
+      file.desk_widget_sticky = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.desk_widget_sticky = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "desk_deco_enabled")) {
+    const v = patch.desk_deco_enabled;
+    if (typeof v === "boolean") file.desk_deco_enabled = v;
+    else if (typeof v === "string") {
+      file.desk_deco_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.desk_deco_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "desk_decos")) {
+    file.desk_decos = normalizeDeskDecos(patch.desk_decos);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "desk_layout")) {
+    file.desk_layout = normalizeDeskLayout(patch.desk_layout);
+  }
   if (Object.prototype.hasOwnProperty.call(patch, "default_follow_mode")) {
     file.default_follow_mode = normalizeFollowMode(patch.default_follow_mode);
   }
@@ -766,6 +1019,131 @@ function patchSettings(patch) {
       );
     } else file.activity_enabled = !!v;
   }
+  if (Object.prototype.hasOwnProperty.call(patch, "peek_phone_enabled")) {
+    const v = patch.peek_phone_enabled;
+    if (typeof v === "boolean") file.peek_phone_enabled = v;
+    else if (typeof v === "string") {
+      file.peek_phone_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.peek_phone_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "peek_phone_l1_enabled")) {
+    const v = patch.peek_phone_l1_enabled;
+    if (typeof v === "boolean") file.peek_phone_l1_enabled = v;
+    else if (typeof v === "string") {
+      file.peek_phone_l1_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.peek_phone_l1_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "phone_device_enabled")) {
+    const v = patch.phone_device_enabled;
+    if (typeof v === "boolean") file.phone_device_enabled = v;
+    else if (typeof v === "string") {
+      file.phone_device_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.phone_device_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "auto_memory_enabled")) {
+    const v = patch.auto_memory_enabled;
+    if (typeof v === "boolean") file.auto_memory_enabled = v;
+    else if (typeof v === "string") {
+      file.auto_memory_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.auto_memory_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "auto_memory_mute")) {
+    const v = patch.auto_memory_mute;
+    if (typeof v === "boolean") file.auto_memory_mute = v;
+    else if (typeof v === "string") {
+      file.auto_memory_mute = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.auto_memory_mute = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "auto_memory_budget")) {
+    const n = Math.floor(Number(patch.auto_memory_budget));
+    if (Number.isFinite(n) && n > 0) {
+      file.auto_memory_budget = Math.max(300, Math.min(6000, n));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "moments_ai_enabled")) {
+    const v = patch.moments_ai_enabled;
+    if (typeof v === "boolean") file.moments_ai_enabled = v;
+    else if (typeof v === "string") {
+      file.moments_ai_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.moments_ai_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "moments_ai_mode")) {
+    file.moments_ai_mode =
+      String(patch.moments_ai_mode || "confirm").toLowerCase() === "auto"
+        ? "auto"
+        : "confirm";
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "geo_tool_enabled")) {
+    const v = patch.geo_tool_enabled;
+    if (typeof v === "boolean") file.geo_tool_enabled = v;
+    else if (typeof v === "string") {
+      file.geo_tool_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.geo_tool_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "weather_tool_enabled")) {
+    const v = patch.weather_tool_enabled;
+    if (typeof v === "boolean") file.weather_tool_enabled = v;
+    else if (typeof v === "string") {
+      file.weather_tool_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.weather_tool_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "weather_city")) {
+    file.weather_city = String(patch.weather_city || "")
+      .trim()
+      .slice(0, 48);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "voice_bar_lang")) {
+    file.voice_bar_lang = normalizeVoiceBarLang(patch.voice_bar_lang);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "call_heartbeat_enabled")) {
+    const v = patch.call_heartbeat_enabled;
+    if (typeof v === "boolean") file.call_heartbeat_enabled = v;
+    else if (typeof v === "string") {
+      file.call_heartbeat_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.call_heartbeat_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "call_heartbeat_sec")) {
+    const n = Math.floor(Number(patch.call_heartbeat_sec));
+    file.call_heartbeat_sec = Number.isFinite(n)
+      ? Math.max(30, Math.min(120, n))
+      : 45;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "call_proactive_enabled")) {
+    const v = patch.call_proactive_enabled;
+    if (typeof v === "boolean") file.call_proactive_enabled = v;
+    else if (typeof v === "string") {
+      file.call_proactive_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.call_proactive_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "call_gift_enabled")) {
+    const v = patch.call_gift_enabled;
+    if (typeof v === "boolean") file.call_gift_enabled = v;
+    else if (typeof v === "string") {
+      file.call_gift_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.call_gift_enabled = !!v;
+  }
   if (Object.prototype.hasOwnProperty.call(patch, "netease_api_base_url")) {
     file.netease_api_base_url = String(patch.netease_api_base_url || "")
       .trim()
@@ -814,6 +1192,30 @@ function patchSettings(patch) {
       patch.sentinel_quiet_end,
       file.sentinel_quiet_end || DEFAULTS.sentinel_quiet_end
     );
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "presence_dice_enabled")) {
+    const v = patch.presence_dice_enabled;
+    if (typeof v === "boolean") file.presence_dice_enabled = v;
+    else if (typeof v === "string") {
+      file.presence_dice_enabled = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.presence_dice_enabled = !!v;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "presence_dice_chance")) {
+    const n = Number(patch.presence_dice_chance);
+    if (Number.isFinite(n) && n > 0) {
+      file.presence_dice_chance = Math.max(0.05, Math.min(1, n));
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "presence_dice_moments")) {
+    const v = patch.presence_dice_moments;
+    if (typeof v === "boolean") file.presence_dice_moments = v;
+    else if (typeof v === "string") {
+      file.presence_dice_moments = ["1", "true", "yes", "on"].includes(
+        v.trim().toLowerCase()
+      );
+    } else file.presence_dice_moments = !!v;
   }
   writeSettings(file);
   if (mcpTouched) {
@@ -973,6 +1375,7 @@ function publicSettings(s = readSettings()) {
     weread_key,
     llm_key,
     mcp_token,
+    mcp_token_2,
     fish_api_key,
     apple_music_dev_token: _amd,
     apple_music_user_token: _amu,
@@ -986,6 +1389,7 @@ function publicSettings(s = readSettings()) {
     fish_api_key: fish_api_key || "",
     /* token 回填给设定页编辑；与 llm_key 同级本机可信 */
     mcp_token: mcp_token || "",
+    mcp_token_2: mcp_token_2 || "",
     /* Cookie 不回填明文；只告诉前端有没有 */
     netease_cookie_set: !!String(_nc || "").trim(),
     gate_enabled: !!(s.gate_hash && s.gate_salt) || !!String(process.env.CABIN_GATE || "").trim(),
@@ -1018,6 +1422,9 @@ if (require.main === module) {
   console.assert(models.includes("deepseek-flash") && models.includes("deepseek-chat"));
   console.assert(shortModelLabel("deepseek-flash") === "flash");
   console.assert(shortModelLabel("deepseek-chat") === "chat");
+  console.assert(normalizeVoiceBarLang("EN") === "en");
+  console.assert(normalizeVoiceBarLang("off") === "");
+  console.assert(normalizeVoiceBarLang("ja-JP") === "ja");
   const prev = isDoorLocked();
   patchSettings({ door_locked: true });
   console.assert(isDoorLocked());
@@ -1086,6 +1493,26 @@ if (require.main === module) {
   );
   patchSettings({ app_hidden: [] });
   console.assert(readSettings().app_hidden.length === 0);
+  patchSettings({
+    desk_layout: [
+      { id: "wid-meet", col: 1, row: 2 },
+      { id: "app-chat", col: 9, row: -1 },
+      { id: "nope", col: 1, row: 1 },
+      { id: "wid-meet", col: 0, row: 0 },
+    ],
+  });
+  {
+    const dl = readSettings().desk_layout;
+    console.assert(dl.length === 2 && dl[0].id === "wid-meet" && dl[0].col === 1 && dl[0].row === 2);
+    console.assert(dl[1].id === "app-chat" && dl[1].col === 3 && dl[1].row === 0);
+    console.assert(dl[0].page === 0);
+  }
+  patchSettings({
+    desk_layout: [{ id: "wid-peer", col: 0, row: 0, page: 2 }],
+  });
+  console.assert(readSettings().desk_layout[0].page === 2);
+  patchSettings({ desk_layout: [] });
+  console.assert(readSettings().desk_layout.length === 0);
   patchSettings({ chat_tool_labels: { calendar_list_events: "日历", "坏 key": "x", x: "" } });
   console.assert(readSettings().chat_tool_labels.calendar_list_events === "日历");
   console.assert(!Object.prototype.hasOwnProperty.call(readSettings().chat_tool_labels, "坏 key"));
@@ -1133,6 +1560,7 @@ module.exports = {
   sanitizeNeteaseCookie,
   healthFlags,
   publicSettings,
+  normalizeVoiceBarLang,
   normalizeMcpToolHidden,
   listLlmModels,
   shortModelLabel,
@@ -1155,13 +1583,20 @@ module.exports = {
   normalizeAvatar,
   normalizeMeetDate,
   normalizeAppHidden,
+  normalizeDeskDecos,
+  normalizeDeskLayout,
+  DESK_DECO_IDS,
   normalizeChatToolLabels,
   APP_IDS,
   APP_ALWAYS_VISIBLE,
   AVATAR_PRESETS,
   FOLLOW_MODES,
   FOLLOW_TONES,
-  RMB_PER_M_TOKEN,
+  get RMB_PER_M_TOKEN() {
+    const { blendRmbPerMOffFor } = require("../../额度app/gateway/deepseek-pricing");
+    const model = String(readSettings().llm_model || "").trim() || "deepseek-flash";
+    return blendRmbPerMOffFor(model) || 1.75;
+  },
   SETTINGS_PATH,
   DEFAULTS,
 };

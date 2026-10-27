@@ -5,8 +5,9 @@
  */
 const MCP_TOOL_CAP = 32;
 const CACHE_TTL_MS = 30_000;
-/** 空闲多久关掉复用连接；无常驻心跳 */
+/** 空闲多久关掉复用连接；开保活心跳时会周期性探测续命 */
 const SESSION_IDLE_MS = 60_000;
+const HEARTBEAT_MS = 5 * 60 * 1000;
 
 let cache = { key: "", at: 0, tools: null };
 
@@ -14,6 +15,12 @@ let cache = { key: "", at: 0, tools: null };
 let session = null;
 /** 串行化同进程内 MCP 调用，避免双连 */
 let gate = Promise.resolve();
+/** @type {{ ok: boolean, at: number, label: string, count: number, error: string } | null} */
+let lastStatus = null;
+/** @type {ReturnType<typeof setInterval> | null} */
+let heartbeatTimer = null;
+/** @type {(() => object) | null} */
+let heartbeatGetSettings = null;
 
 function mcpCacheKey(url, token) {
   return String(url || "").trim() + "\0" + String(token || "").trim();
@@ -202,6 +209,173 @@ async function callMcpTool({ url, token }, name, args) {
   });
 }
 
+/**
+ * 主 URL + 备用 URL（settings.mcp_url / mcp_url_2）
+ * @returns {{ url: string, token: string, label: string }[]}
+ */
+function endpointsFromSettings(settings) {
+  const s = settings || {};
+  const out = [];
+  const primary = String(s.mcp_url || "").trim();
+  if (primary) {
+    out.push({
+      url: primary,
+      token: String(s.mcp_token || "").trim(),
+      label: "主",
+    });
+  }
+  const backup = String(s.mcp_url_2 || "").trim();
+  if (backup) {
+    out.push({
+      url: backup,
+      token: String(s.mcp_token_2 || "").trim(),
+      label: "备",
+    });
+  }
+  return out;
+}
+
+function getMcpStatus() {
+  return lastStatus ? Object.assign({}, lastStatus) : null;
+}
+
+function setMcpStatus(partial) {
+  lastStatus = Object.assign(
+    {
+      ok: false,
+      at: Date.now(),
+      label: "",
+      count: 0,
+      error: "",
+    },
+    partial || {}
+  );
+  return getMcpStatus();
+}
+
+/**
+ * 按主→备依次拉工具表；成功则记下 lastStatus。
+ * @returns {Promise<{ tools: object[], endpoint: object }>}
+ */
+async function fetchMcpToolsMulti(endpoints, { force } = {}) {
+  const list = Array.isArray(endpoints) ? endpoints.filter((e) => e && e.url) : [];
+  if (!list.length) {
+    const err = new Error("未填 MCP URL");
+    err.code = "mcp_no_url";
+    throw err;
+  }
+  const errs = [];
+  for (const ep of list) {
+    try {
+      const tools = await fetchMcpTools({
+        url: ep.url,
+        token: ep.token,
+        force,
+      });
+      setMcpStatus({
+        ok: true,
+        at: Date.now(),
+        label: ep.label || ep.url,
+        count: (tools || []).length,
+        error: "",
+      });
+      return { tools, endpoint: ep };
+    } catch (e) {
+      errs.push(
+        (ep.label || ep.url) + "：" + ((e && e.message) || "失败")
+      );
+    }
+  }
+  const msg = errs.join(" · ") || "MCP 全部失败";
+  setMcpStatus({
+    ok: false,
+    at: Date.now(),
+    label: "",
+    count: 0,
+    error: msg,
+  });
+  const err = new Error(msg);
+  err.code = "mcp_all_failed";
+  throw err;
+}
+
+/** 调用：先试当前缓存会话对应端，再主→备 */
+async function callMcpToolMulti(endpoints, name, args) {
+  const list = Array.isArray(endpoints) ? endpoints.filter((e) => e && e.url) : [];
+  if (!list.length) {
+    const err = new Error("未填 MCP URL");
+    err.code = "mcp_no_url";
+    throw err;
+  }
+  const ordered = list.slice();
+  if (session && session.key) {
+    const live = ordered.find((ep) => mcpCacheKey(ep.url, ep.token) === session.key);
+    if (live) {
+      ordered.splice(ordered.indexOf(live), 1);
+      ordered.unshift(live);
+    }
+  }
+  const errs = [];
+  for (const ep of ordered) {
+    try {
+      const text = await callMcpTool(
+        { url: ep.url, token: ep.token },
+        name,
+        args
+      );
+      setMcpStatus({
+        ok: true,
+        at: Date.now(),
+        label: ep.label || ep.url,
+        count: (lastStatus && lastStatus.count) || 0,
+        error: "",
+      });
+      return text;
+    } catch (e) {
+      errs.push((ep.label || ep.url) + "：" + ((e && e.message) || "失败"));
+    }
+  }
+  const msg = errs.join(" · ") || "MCP 调用失败";
+  setMcpStatus({
+    ok: false,
+    at: Date.now(),
+    label: "",
+    count: 0,
+    error: msg,
+  });
+  const err = new Error(msg);
+  err.code = "mcp_all_failed";
+  throw err;
+}
+
+function stopMcpHeartbeat() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+  heartbeatGetSettings = null;
+}
+
+/** 保活：约 5 分钟强制拉一次工具表（仅 mcp_enabled + mcp_heartbeat） */
+function startMcpHeartbeat(getSettings) {
+  stopMcpHeartbeat();
+  if (typeof getSettings !== "function") return;
+  heartbeatGetSettings = getSettings;
+  heartbeatTimer = setInterval(() => {
+    let s;
+    try {
+      s = heartbeatGetSettings();
+    } catch (_) {
+      return;
+    }
+    if (!s || !s.mcp_enabled || !s.mcp_heartbeat) return;
+    const eps = endpointsFromSettings(s);
+    if (!eps.length) return;
+    fetchMcpToolsMulti(eps, { force: true }).catch(() => {});
+  }, HEARTBEAT_MS);
+  if (typeof heartbeatTimer.unref === "function") heartbeatTimer.unref();
+}
+
 function hasLiveSession() {
   return !!(session && session.client);
 }
@@ -211,6 +385,14 @@ if (require.main === module) {
   console.assert(sanitizeToolName("9bad").startsWith("t_"));
   console.assert(sanitizeToolName("") === "tool");
   console.assert(SESSION_IDLE_MS === 60_000);
+  console.assert(HEARTBEAT_MS === 5 * 60 * 1000);
+  const eps = endpointsFromSettings({
+    mcp_url: "http://127.0.0.1:9/mcp",
+    mcp_url_2: "http://127.0.0.1:8/mcp",
+    mcp_token_2: "t",
+  });
+  console.assert(eps.length === 2 && eps[0].label === "主" && eps[1].label === "备");
+  console.assert(endpointsFromSettings({}).length === 0);
   clearMcpToolsCache();
   console.assert(!hasLiveSession());
   console.log("mcp-remote ok");
@@ -219,10 +401,17 @@ if (require.main === module) {
 module.exports = {
   MCP_TOOL_CAP,
   SESSION_IDLE_MS,
+  HEARTBEAT_MS,
   sanitizeToolName,
   clearMcpToolsCache,
   fetchMcpTools,
   callMcpTool,
+  fetchMcpToolsMulti,
+  callMcpToolMulti,
+  endpointsFromSettings,
+  getMcpStatus,
+  startMcpHeartbeat,
+  stopMcpHeartbeat,
   withMcpClient,
   hasLiveSession,
 };

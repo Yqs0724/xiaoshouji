@@ -154,8 +154,22 @@ function cosineSim(a, b) {
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }
 
-/** AionsHome 风格：vec×0.6 + kw×0.3 + importance×0.1；再轻叠待办/鲜活 */
-function compositeScore(m, tokens, qVec) {
+/**
+ * H2.16：V/A 共鸣——查询情绪与记忆坐标越近加分越高（教程「今天难过→浮现以前难过」）。
+ * qMood: { valence, arousal }；无则 0。
+ */
+function vaResonance(m, qMood) {
+  if (!qMood || qMood.valence == null) return 0;
+  const qV = clamp(qMood.valence, -1, 1);
+  const qA = clamp(qMood.arousal != null ? qMood.arousal : 0.4, 0, 1);
+  const mV = clamp(m.valence, -1, 1);
+  const mA = clamp(m.arousal, 0, 1);
+  const dist = (Math.abs(mV - qV) + Math.abs(mA - qA)) / 2;
+  return Math.max(0, 0.15 * (1 - dist));
+}
+
+/** AionsHome 风格：vec×0.6 + kw×0.3 + importance×0.1；再轻叠待办/鲜活/共鸣 */
+function compositeScore(m, tokens, qVec, qMood) {
   const kw = keywordHitScore(m, tokens);
   const kwN = Math.min(1, kw / 3);
   const impN = clamp(m.importance, 1, 10) / 10;
@@ -173,6 +187,7 @@ function compositeScore(m, tokens, qVec) {
   }
   if (m.unresolved) base += 0.12;
   base += Math.min(0.08, (Number(m.decay_score) || 0) * 0.02);
+  base += vaResonance(m, qMood);
   return base;
 }
 
@@ -538,12 +553,33 @@ async function recallForTurn(peerId, queryText, k, opts) {
     }
   }
 
+  /* H2.16：查询句词典坐标优先；否则用角色当前心情作共鸣锚 */
+  let qMood = null;
+  try {
+    const { scanText, readMood } = require("./mood");
+    const sc = scanText(queryText);
+    if (sc && sc.hits && sc.hits.length && (Math.abs(sc.avgV) >= 0.15 || sc.negCount || sc.posCount)) {
+      qMood = {
+        valence: clamp(sc.avgV, -1, 1),
+        arousal: clamp(sc.hitArousal != null ? sc.hitArousal : 0.4, 0, 1),
+      };
+    } else {
+      const mood = readMood();
+      if (mood && (Math.abs(mood.valence) >= 0.12 || mood.na >= 0.35 || mood.pa >= 0.45)) {
+        qMood = { valence: mood.valence, arousal: mood.arousal };
+      }
+    }
+  } catch (_) {
+    qMood = null;
+  }
+
   const rank = (a, b) =>
-    compositeScore(b, tokens, qVec) - compositeScore(a, tokens, qVec);
+    compositeScore(b, tokens, qVec, qMood) - compositeScore(a, tokens, qVec, qMood);
 
   const openPool = list.filter((m) => m.unresolved).sort(rank);
   const picked = [];
   const used = new Set();
+  const flashIds = new Set();
   for (const m of openPool) {
     if (picked.length >= UNRESOLVED_CAP || picked.length >= want) break;
     picked.push(m);
@@ -571,16 +607,22 @@ async function recallForTurn(peerId, queryText, k, opts) {
       used.add(m.id);
     }
 
+    /* 「忽然想起」：结果不够时 40% 从旧记忆随机捞 1～3 条 */
     if (
       picked.length < want &&
       list.length > picked.length &&
       Math.random() < 0.4
     ) {
       const pool = list.filter((m) => !used.has(m.id));
-      if (pool.length) {
+      const room = Math.min(3, want - picked.length, pool.length);
+      let take = room > 0 ? 1 + Math.floor(Math.random() * room) : 0;
+      while (take > 0 && pool.length) {
         const j = Math.floor(Math.random() * pool.length);
-        picked.push(pool[j]);
-        used.add(pool[j].id);
+        const m = pool.splice(j, 1)[0];
+        picked.push(m);
+        used.add(m.id);
+        flashIds.add(m.id);
+        take -= 1;
       }
     }
   }
@@ -598,7 +640,10 @@ async function recallForTurn(peerId, queryText, k, opts) {
   writeStore(store);
   return picked
     .map((p) => list.find((m) => m.id === p.id) || p)
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((m) =>
+      flashIds.has(m.id) ? Object.assign({}, m, { flash: true }) : m
+    );
 }
 
 /** @deprecated 用 recallForTurn；保留给旧调用 */
@@ -620,15 +665,19 @@ async function buildMemoryPrompt(peerId, queryText) {
   if (!hits.length) return "";
   const lines = hits.map((m, i) => {
     const pin = m.unresolved ? "📌" : "";
+    const flash = m.flash ? "✧忽然想起 " : "";
     const tag = m.category ? "[" + m.category + "] " : "";
-    return i + 1 + ". " + pin + tag + m.content;
+    return i + 1 + ". " + pin + flash + tag + m.content;
   });
   const topicBit = sent.topic ? " · 话题线索：" + sent.topic : "";
   const modeBit = sent.mode === "open_only" ? "（本轮只带待办）" : "";
+  const hasFlash = hits.some((m) => m.flash);
   return (
     "[MEMORY] 你记得与对方相关的这些事" +
     modeBit +
-    "（📌=待办/未了结，优先自然提起；勿逐条复读）" +
+    "（📌=待办/未了结，优先自然提起；勿逐条复读" +
+    (hasFlash ? "；✧=忽然想起的旧事，可偶然带一句" : "") +
+    "）" +
     topicBit +
     "：\n" +
     lines.join("\n")
@@ -887,16 +936,96 @@ function digestStatus(peerId) {
  * 手动总结：锚点之后最多 DIGEST_BATCH 条 → LLM 抽 0～8 条 → 写入 + 推进锚点。
  * 无最低条数限制（点了就跑）；额度不足 / 无 Key 抛错。
  */
+async function runDigestOnLines(pid, lines, opts) {
+  const { addTokensUsed } = require("./daily-chat");
+  const { chatCompletion } = require("../../共读app/gateway/llm");
+  const advanceAnchor = !(opts && opts.skipAnchor);
+  const tag = String((opts && opts.tag) || "digest");
+
+  const system =
+    "你是陪伴对话的记忆整理员。从对话摘出值得长期记住的事实/偏好/约定/待办。" +
+    "只输出一个 JSON 数组，不要解释、不要 markdown。" +
+    "每项：{\"content\":\"一句中文短记\",\"keywords\":[\"词\"],\"importance\":1到10," +
+    "\"category\":\"偏好|叮嘱|身份|日程|日常\",\"unresolved\":true或false}。" +
+    "无值得记的就输出 []。最多 " +
+    DIGEST_MAX_ITEMS +
+    " 条。content 不超过 80 字。";
+  const user =
+    "以下是对话（按时间）：\n" + lines.map((x) => x.line).join("\n");
+
+  let raw;
+  try {
+    raw = await chatCompletion({
+      system,
+      user,
+      think: false,
+      replyKind: "chat",
+    });
+  } catch (e) {
+    const err = new Error((e && e.message) || "总结请求失败");
+    err.code = (e && e.code) || "llm_failed";
+    throw err;
+  }
+
+  const used =
+    (Number(raw && raw.tokens_in) || 0) +
+      (Number(raw && raw.tokens_out) || 0) || 600;
+  addTokensUsed(used);
+
+  const drafts = parseDigestItems(raw && raw.content);
+  const added = [];
+  let skipped_dupes = 0;
+  const source_start_ts = lines[0].ts;
+  const source_end_ts = lines[lines.length - 1].ts;
+  let batchEndTs = source_end_ts;
+  for (const d of drafts) {
+    if (looksDuplicate(pid, d.content)) {
+      skipped_dupes += 1;
+      continue;
+    }
+    const saved = addMemory(pid, {
+      content: d.content,
+      keywords: d.keywords,
+      importance: d.importance,
+      category: d.category,
+      unresolved: d.unresolved,
+      layer: d.layer,
+      tags: [tag],
+      source_start_ts,
+      source_end_ts,
+      valence: 0,
+      arousal: 0.4,
+    });
+    if (saved && saved.memory) added.push(saved.memory);
+  }
+
+  if (advanceAnchor) setAnchorTs(pid, batchEndTs);
+  const after = digestStatus(pid);
+  return {
+    ok: true,
+    peerId: pid,
+    added,
+    skipped_dupes,
+    pending_left: after.pending,
+    anchor_ts: advanceAnchor ? batchEndTs : getAnchorTs(pid),
+    tokens_used: used,
+    message:
+      added.length > 0
+        ? "记入 " + added.length + " 条"
+        : skipped_dupes
+          ? "没有新内容（与已有重复）"
+          : "模型认为这段没什么要记的",
+  };
+}
+
 async function digestNewMemories(peerId) {
   const {
     withPeer,
     listMessages,
     llmContent,
-    addTokensUsed,
     budgetExhausted,
     readAll,
   } = require("./daily-chat");
-  const { chatCompletion } = require("../../共读app/gateway/llm");
   const pid = normalizePeerId(peerId);
 
   return withPeer(pid, async () => {
@@ -909,7 +1038,6 @@ async function digestNewMemories(peerId) {
     const anchorTs = getAnchorTs(pid);
     const msgs = listMessages().messages || [];
     const lines = [];
-    let batchEndTs = anchorTs;
     for (const m of msgs) {
       const ts = Number(m && m.ts) || 0;
       if (ts <= anchorTs) continue;
@@ -920,7 +1048,6 @@ async function digestNewMemories(peerId) {
         ts,
         line: who + "：" + text.slice(0, 220),
       });
-      if (ts > batchEndTs) batchEndTs = ts;
       if (lines.length >= DIGEST_BATCH) break;
     }
     if (!lines.length) {
@@ -934,81 +1061,67 @@ async function digestNewMemories(peerId) {
         message: "没有新对话可总结",
       };
     }
+    return runDigestOnLines(pid, lines, { tag: "digest" });
+  });
+}
 
-    const system =
-      "你是陪伴对话的记忆整理员。从对话摘出值得长期记住的事实/偏好/约定/待办。" +
-      "只输出一个 JSON 数组，不要解释、不要 markdown。" +
-      "每项：{\"content\":\"一句中文短记\",\"keywords\":[\"词\"],\"importance\":1到10," +
-      "\"category\":\"偏好|叮嘱|身份|日程|日常\",\"unresolved\":true或false}。" +
-      "无值得记的就输出 []。最多 " +
-      DIGEST_MAX_ITEMS +
-      " 条。content 不超过 80 字。";
-    const user =
-      "以下是锚点之后的对话（按时间）：\n" +
-      lines.map((x) => x.line).join("\n");
-
-    let raw;
-    try {
-      raw = await chatCompletion({
-        system,
-        user,
-        think: false,
-        replyKind: "chat",
-      });
-    } catch (e) {
-      const err = new Error((e && e.message) || "总结请求失败");
-      err.code = (e && e.code) || "llm_failed";
-      throw err;
-    }
-
-    const used =
-      (Number(raw && raw.tokens_in) || 0) +
-        (Number(raw && raw.tokens_out) || 0) || 600;
-    addTokensUsed(used);
-
-    const drafts = parseDigestItems(raw && raw.content);
-    const added = [];
-    let skipped_dupes = 0;
-    const source_start_ts = lines[0].ts;
-    const source_end_ts = lines[lines.length - 1].ts;
-    for (const d of drafts) {
-      if (looksDuplicate(pid, d.content)) {
-        skipped_dupes += 1;
-        continue;
-      }
-      const saved = addMemory(pid, {
-        content: d.content,
-        keywords: d.keywords,
-        importance: d.importance,
-        category: d.category,
-        unresolved: d.unresolved,
-        layer: d.layer,
-        tags: ["digest"],
-        source_start_ts,
-        source_end_ts,
-        valence: 0,
-        arousal: 0.4,
-      });
-      if (saved && saved.memory) added.push(saved.memory);
-    }
-
-    setAnchorTs(pid, batchEndTs);
-    const after = digestStatus(pid);
+/**
+ * IB M7：只用选中消息生成记忆（不推进 digest 锚点）。
+ * 须在 withPeer / withPeerTopic 上下文中调用。
+ */
+async function digestFromMessageIds(messageIds) {
+  const {
+    listMessages,
+    llmContent,
+    budgetExhausted,
+    readAll,
+    currentPeerId,
+  } = require("./daily-chat");
+  const pid = normalizePeerId(currentPeerId());
+  const state = readAll();
+  if (budgetExhausted(state)) {
+    const err = new Error("额度不足，无法总结记忆");
+    err.code = "budget_exhausted";
+    throw err;
+  }
+  const idSet = new Set(
+    (Array.isArray(messageIds) ? messageIds : [])
+      .map((x) => String(x || "").trim())
+      .filter(Boolean)
+  );
+  if (!idSet.size) {
+    const err = new Error("先选中消息");
+    err.code = "bad_digest_ids";
+    throw err;
+  }
+  const msgs = (listMessages().messages || [])
+    .filter((m) => m && idSet.has(String(m.id)))
+    .sort((a, b) => (Number(a.ts) || 0) - (Number(b.ts) || 0));
+  const lines = [];
+  for (const m of msgs) {
+    const text = String(llmContent(m) || "").trim();
+    if (!text) continue;
+    const who = m.from === "bot" ? "家机" : "用户";
+    lines.push({
+      ts: Number(m.ts) || 0,
+      line: who + "：" + text.slice(0, 220),
+    });
+    if (lines.length >= DIGEST_BATCH) break;
+  }
+  if (!lines.length) {
     return {
       ok: true,
       peerId: pid,
-      added,
-      skipped_dupes,
-      pending_left: after.pending,
-      anchor_ts: batchEndTs,
-      tokens_used: used,
-      message:
-        added.length > 0
-          ? "记入 " + added.length + " 条"
-          : skipped_dupes
-            ? "没有新内容（与已有重复）"
-            : "模型认为这段没什么要记的",
+      added: [],
+      skipped_dupes: 0,
+      pending_left: digestStatus(pid).pending,
+      anchor_ts: getAnchorTs(pid),
+      message: "选中的消息没有可总结正文",
     };
+  }
+  return runDigestOnLines(pid, lines, {
+    skipAnchor: true,
+    tag: "digest-select",
   });
 }
 
@@ -1036,6 +1149,14 @@ async function digestNewMemories(peerId) {
   );
   if (!old || !(fake.decay_score > old.decay_score)) {
     throw new Error("memory rank");
+  }
+  {
+    const j = parseDehydrateJson(
+      '废话\n```json\n{"content":"合一条","keywords":["a"],"importance":5,"drop_ids":["1","2"]}\n```'
+    );
+    if (!j || j.content !== "合一条" || j.drop_ids.length !== 2) {
+      throw new Error("dehydrate json");
+    }
   }
   const draft = draftExtract("我喜欢草莓蛋糕");
   if (!draft || draft.content.indexOf("草莓") < 0) throw new Error("memory extract");
@@ -1101,6 +1222,253 @@ async function digestNewMemories(peerId) {
   }
 })();
 
+/**
+ * 原文追溯：按记忆上的 source_start/end_ts 回聊天消息窗口。
+ */
+function traceMemorySource(peerId, memoryId) {
+  const pid = normalizePeerId(peerId);
+  const mid = String(memoryId || "").trim();
+  const store = readStore();
+  const list = Array.isArray(store.peers[pid]) ? store.peers[pid] : [];
+  const m = list.map((x) => normalizeMemory(x)).find((x) => x && x.id === mid);
+  if (!m) {
+    const err = new Error("记忆不存在");
+    err.code = "memory_missing";
+    throw err;
+  }
+  const start = Math.max(0, Number(m.source_start_ts) || 0);
+  const end = Math.max(start, Number(m.source_end_ts) || start);
+  let messages = [];
+  try {
+    const { withPeer, listMessages, llmContent } = require("./daily-chat");
+    messages = withPeer(pid, () => {
+      const msgs = (listMessages().messages || []).filter((msg) => {
+        const ts = Number(msg && msg.ts) || 0;
+        if (!start && !end) return false;
+        if (start && ts < start - 1000) return false;
+        if (end && ts > end + 1000) return false;
+        return !!String(llmContent(msg) || "").trim();
+      });
+      return msgs.slice(0, 40).map((msg) => ({
+        id: msg.id,
+        from: msg.from,
+        ts: msg.ts,
+        kind: msg.kind,
+        preview: String(llmContent(msg) || "").slice(0, 160),
+      }));
+    });
+  } catch (_) {
+    messages = [];
+  }
+  return {
+    ok: true,
+    peerId: pid,
+    memory: m,
+    source_start_ts: start,
+    source_end_ts: end,
+    messages,
+  };
+}
+
+/** 从模型正文抠出脱水 JSON（容错 markdown / 前后废话） */
+function parseDehydrateJson(raw) {
+  let t = String(raw || "")
+    .replace(/```json/gi, "```")
+    .replace(/```/g, "")
+    .trim();
+  if (!t) return null;
+  try {
+    const o = JSON.parse(t);
+    if (o && typeof o === "object") return o;
+  } catch (_) {}
+  const start = t.indexOf("{");
+  const end = t.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const o = JSON.parse(t.slice(start, end + 1));
+    return o && typeof o === "object" ? o : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * 脱水合并：挑 decay 低、内容相近的条，LLM 合并成一条并删旧（计额度）。
+ */
+async function dehydrateMemories(peerId, opts) {
+  const {
+    withPeer,
+    addTokensUsed,
+    budgetExhausted,
+    readAll,
+  } = require("./daily-chat");
+  const chatCompletion =
+    (opts && typeof opts.chatCompletion === "function" && opts.chatCompletion) ||
+    require("../../共读app/gateway/llm").chatCompletion;
+  const pid = normalizePeerId(peerId);
+  const limit = Math.max(2, Math.min(12, Number((opts && opts.limit) || 8)));
+
+  return withPeer(pid, async () => {
+    const state = readAll();
+    if (budgetExhausted(state)) {
+      const err = new Error("额度不足，无法脱水");
+      err.code = "budget_exhausted";
+      throw err;
+    }
+    const listed = listPeerMemories(pid, {}).memories || [];
+    const candidates = listed
+      .filter((m) => {
+        const tags = m.tags || [];
+        return !tags.includes("digest") && !tags.includes("dehydrate");
+      })
+      .filter((m) => !m.pinned && !m.must_read)
+      .sort((a, b) => (a.decay_score || 0) - (b.decay_score || 0))
+      .slice(0, limit);
+    if (candidates.length < 2) {
+      return {
+        ok: true,
+        peerId: pid,
+        merged: null,
+        removed: [],
+        message: "可脱水条数不足",
+      };
+    }
+    const system =
+      "你是记忆库脱水员。把多条相近记忆合并成 1 条短记。" +
+      "只输出 JSON：{\"content\":\"合并后一句\",\"keywords\":[\"词\"],\"importance\":1到10," +
+      "\"drop_ids\":[\"应删除的原id\"]}。" +
+      "drop_ids 填全部候选 id（至少 2 个）；content≤80字；不要 markdown。";
+    const user =
+      "候选：\n" +
+      candidates
+        .map(
+          (m) =>
+            m.id +
+            " | " +
+            (m.content || "").slice(0, 80) +
+            " | kw=" +
+            (m.keywords || []).slice(0, 4).join(",")
+        )
+        .join("\n");
+    let raw;
+    try {
+      raw = await chatCompletion({
+        system,
+        user,
+        think: false,
+        replyKind: "chat",
+      });
+    } catch (e) {
+      const err = new Error((e && e.message) || "脱水请求失败");
+      err.code = (e && e.code) || "llm_failed";
+      throw err;
+    }
+    const used =
+      (Number(raw && raw.tokens_in) || 0) +
+        (Number(raw && raw.tokens_out) || 0) || 400;
+    addTokensUsed(used);
+    let parsed = parseDehydrateJson(raw && raw.content);
+    if (!parsed || !String(parsed.content || "").trim()) {
+      return {
+        ok: true,
+        peerId: pid,
+        merged: null,
+        removed: [],
+        message: "模型未给出可合并结果",
+      };
+    }
+    const idSet = new Set(candidates.map((m) => m.id));
+    let toDrop = Array.isArray(parsed.drop_ids)
+      ? parsed.drop_ids.map(String).filter((id) => idSet.has(id))
+      : [];
+    /* 模型漏 drop：有正文就删掉全部候选（合并结果另存） */
+    if (toDrop.length < 2) {
+      toDrop = candidates.map((m) => m.id);
+    }
+    const srcStart = Math.min(
+      ...candidates.map((m) => Number(m.source_start_ts) || m.ts || Date.now())
+    );
+    const srcEnd = Math.max(
+      ...candidates.map((m) => Number(m.source_end_ts) || m.ts || Date.now())
+    );
+    const saved = addMemory(pid, {
+      content: String(parsed.content).trim().slice(0, 80),
+      keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
+      importance: parsed.importance,
+      category: "日常",
+      tags: ["dehydrate"],
+      source_start_ts: srcStart,
+      source_end_ts: srcEnd,
+      valence: 0,
+      arousal: 0.35,
+    });
+    const removed = [];
+    for (const id of toDrop) {
+      try {
+        deleteMemory(pid, id);
+        removed.push(id);
+      } catch (_) {}
+    }
+    return {
+      ok: true,
+      peerId: pid,
+      merged: saved && saved.memory,
+      removed,
+    };
+  });
+}
+
+/**
+ * LLM 哨兵：规则版 instantSentinel 不够时，用短模型判是否该立刻记一条。
+ */
+async function llmSentinelRoute(peerId, text) {
+  const q = String(text || "").trim().slice(0, 400);
+  if (!q) return { ok: true, route: "skip", via: "empty" };
+  const rule = instantSentinel(q);
+  if (rule && rule.force) {
+    return { ok: true, route: "write", via: "rule", rule };
+  }
+  try {
+    const { chatCompletion } = require("../../共读app/gateway/llm");
+    const { readSettings } = require("../../共读app/gateway/settings");
+    const s = readSettings();
+    const model = String(s.sentinel_model || "").trim() || undefined;
+    const raw = await chatCompletion({
+      system:
+        '判断这句话是否值得立刻写入长期记忆。只输出 JSON：{"write":true或false,"reason":"短"}',
+      user: q,
+      think: false,
+      replyKind: "chat",
+      model,
+    });
+    let parsed = null;
+    try {
+      parsed = JSON.parse(
+        String((raw && raw.content) || "")
+          .replace(/```json|```/g, "")
+          .trim()
+      );
+    } catch (_) {
+      parsed = null;
+    }
+    return {
+      ok: true,
+      route: parsed && parsed.write ? "write" : "skip",
+      via: "llm",
+      reason: parsed && parsed.reason,
+      rule,
+    };
+  } catch (e) {
+    return {
+      ok: true,
+      route: rule && rule.hint ? "hint" : "skip",
+      via: "rule_fallback",
+      rule,
+      error: (e && e.message) || "llm",
+    };
+  }
+}
+
 module.exports = {
   listPeerMemories,
   addMemory,
@@ -1116,6 +1484,11 @@ module.exports = {
   maybeExtractMemory,
   digestStatus,
   digestNewMemories,
+  digestFromMessageIds,
+  dehydrateMemories,
+  parseDehydrateJson,
+  traceMemorySource,
+  llmSentinelRoute,
   getAnchorTs,
   setAnchorTs,
   parseDigestItems,

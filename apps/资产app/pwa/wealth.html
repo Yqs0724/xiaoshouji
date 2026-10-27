@@ -467,6 +467,18 @@
       color: #2a2420;
       font-size: 18px;
     }
+    /* 调账另开：顶栏右上 setting，不占底栏 Concierge */
+    #ledgerFab {
+      min-width: 56px; height: 28px;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(158,201,188,.4);
+      background: rgba(42, 36, 32, 0.55);
+      color: var(--gold2);
+      font-size: 10px;
+      letter-spacing: .08em;
+      text-transform: lowercase;
+    }
     #aiDialog {
       display: none;
       position: absolute; inset: 0;
@@ -492,6 +504,51 @@
     }
     #aiDialog .acts { display: flex; gap: 8px; margin-top: 14px; }
     #aiDialog .acts button { flex: 1; padding: 8px; border-radius: 8px; font-size: 11px; color: var(--gold2); }
+
+    #adjustSheet {
+      display: none;
+      position: absolute; inset: 0;
+      z-index: 36;
+      background: rgba(0,0,0,.55);
+      align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    #adjustSheet.on { display: flex; }
+    #adjustSheet .box {
+      width: 100%; max-width: 340px;
+      padding: 18px 16px;
+      border-radius: 14px;
+      text-align: left;
+    }
+    #adjustSheet h3 { color: var(--gold2); font-size: 13px; letter-spacing: .08em; }
+    #adjustSheet label {
+      display: block; margin-top: 12px;
+      font-size: 10px; color: var(--muted); letter-spacing: .04em;
+    }
+    #adjustSheet input, #adjustSheet select {
+      width: 100%; margin-top: 6px; padding: 8px 10px;
+      border-radius: 8px; border: 1px solid rgba(158,201,188,.35);
+      background: rgba(0,0,0,.25); color: var(--text); font-size: 13px;
+    }
+    #adjustSheet .modes {
+      display: flex; gap: 6px; margin-top: 12px;
+    }
+    #adjustSheet .modes button {
+      flex: 1; padding: 7px 6px; border-radius: 8px; font-size: 10px;
+      color: var(--muted); border: 1px solid rgba(158,201,188,.25);
+    }
+    #adjustSheet .modes button.on {
+      color: var(--gold2); border-color: rgba(158,201,188,.55);
+      background: rgba(158,201,188,.08);
+    }
+    #adjustSheet .pane { display: none; }
+    #adjustSheet .pane.on { display: block; }
+    #adjustSheet .hint { margin-top: 8px; font-size: 10px; color: var(--muted); line-height: 1.4; }
+    #adjustSheet .acts { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+    #adjustSheet .acts button { flex: 1; min-width: 72px; padding: 8px; border-radius: 8px; font-size: 11px; color: var(--gold2); }
+    #adjustSheet .msg { margin-top: 8px; font-size: 11px; min-height: 1.2em; }
+    #adjustSheet .msg.bad { color: var(--danger); }
+    #adjustSheet .msg.ok { color: var(--safe); }
 
     .hint-fixed {
       position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 80;
@@ -580,7 +637,7 @@
       min-height: 28px;
     }
     #main .brand-side-l { justify-content: flex-start; }
-    #main .brand-side-r { justify-content: flex-end; visibility: hidden; pointer-events: none; }
+    #main .brand-side-r { justify-content: flex-end; }
     #main .brand-wrap .brand {
       position: static;
       display: block;
@@ -606,23 +663,7 @@
     <section class="layer on" id="gateKey">
       <h1>ENTER ASSET IDENTIFIER</h1>
       <input id="keyInput" type="text" autocomplete="off" spellcheck="false" placeholder="__________________" />
-      <div class="msg" id="keyMsg">一把钥匙一道门</div>
-      <div class="sub" id="keySub">
-        <b style="color:var(--gold2)">ARIA</b> → 剧场（要生物识别）<br/>
-        <b style="color:var(--gold2)">ME</b> → 你的零花（无识别）<br/>
-        <b style="color:var(--gold2)" id="botKeyHint">CASH</b> → 家机零花（无识别；生气可换钥）<br/>
-        密钥副本永远在下方「密码抽屉」· 不会真的永远进不去
-      </div>
-      <div class="glass" id="vault" style="margin-top:18px;padding:12px 14px;text-align:left;width:min(320px,92vw);font-size:11px;line-height:1.55">
-        <div style="letter-spacing:.12em;color:var(--muted);margin-bottom:6px">PASSWORD DRAWER · 密码抽屉（演示=设置/备忘真源）</div>
-        <div id="vaultBody"></div>
-        <div id="vaultHint" style="margin-top:8px;color:var(--gold2);display:none"></div>
-        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-          <button type="button" id="btnColdWar" style="flex:1;min-width:120px;padding:8px;border-radius:8px;font-size:10px;color:var(--gold2)">模拟冷战：家机换钥</button>
-          <button type="button" id="btnReconcile" style="flex:1;min-width:120px;padding:8px;border-radius:8px;font-size:10px;color:var(--gold2)">和好：恢复 CASH</button>
-        </div>
-        <div id="chatHint" style="margin-top:10px;padding:8px 10px;border-left:2px solid var(--gold);color:var(--text);display:none"></div>
-      </div>
+      <div class="msg" id="keyMsg"></div>
     </section>
 
     <section class="layer" id="gateFace">
@@ -663,8 +704,8 @@
             </button>
           </div>
           <div class="brand"><b>● SECURE</b> · <span id="brandOffice">PRIVATE FAMILY OFFICE</span></div>
-          <div class="brand-side brand-side-r" aria-hidden="true">
-            <span style="display:inline-block;width:64px;height:28px"></span>
+          <div class="brand-side brand-side-r" id="brandSideR">
+            <button type="button" id="ledgerFab" title="setting">setting</button>
           </div>
         </div>
         <nav id="tabs">
@@ -747,6 +788,91 @@
             <button type="button" data-q="tax">税务优化摘要</button>
             <button type="button" data-q="move">大额调拨建议</button>
             <button type="button" id="aiClose">关闭</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="adjustSheet">
+        <div class="box glass">
+          <h3 id="adjTitle">setting</h3>
+          <div class="modes">
+            <button type="button" id="adjModeSingle" class="on" data-mode="single">单边调账</button>
+            <button type="button" id="adjModeEvent" data-mode="event">剧情事件</button>
+            <button type="button" id="adjModeCards" data-mode="cards" hidden>银行卡</button>
+            <button type="button" id="adjModeTier" data-mode="tier">开局档</button>
+          </div>
+          <div class="pane on" id="adjPaneSingle">
+            <label id="adjCardLab" for="adjCard" hidden>入账到</label>
+            <select id="adjCard" hidden>
+              <option value="">聊天零花</option>
+            </select>
+            <label id="adjAmtLab" for="adjAmt">金额（可负）</label>
+            <input id="adjAmt" type="number" step="0.01" inputmode="decimal" placeholder="例 200 或 -50" />
+            <label for="adjNote">备注</label>
+            <input id="adjNote" type="text" maxlength="120" placeholder="例：手充 / 开局降净资产" />
+            <div class="hint" id="adjHint">只改当前账本（零花或剧场）。</div>
+          </div>
+          <div class="pane" id="adjPaneEvent">
+            <label for="evtTitle">事件标题</label>
+            <input id="evtTitle" type="text" maxlength="80" placeholder="例：失业 / 年终奖" />
+            <label for="evtNote">备注</label>
+            <input id="evtNote" type="text" maxlength="120" placeholder="剧情节点说明（可选）" />
+            <label for="evtPocketWho">零花对象</label>
+            <select id="evtPocketWho">
+              <option value="none">不改零花</option>
+              <option value="you">你</option>
+              <option value="bot">家机</option>
+            </select>
+            <label for="evtCard">零花入账到</label>
+            <select id="evtCard">
+              <option value="">聊天零花</option>
+            </select>
+            <label for="evtPocketDelta">零花变动 ¥（可负，空=跳过）</label>
+            <input id="evtPocketDelta" type="number" step="0.01" inputmode="decimal" placeholder="例 2000 或 -100" />
+            <label for="evtTheaterDelta">剧场净资产变动 $（可负，空=跳过）</label>
+            <input id="evtTheaterDelta" type="number" step="0.01" inputmode="decimal" placeholder="例 -5000000" />
+            <div class="hint">可同时改两边；储蓄卡进可花合计，信用卡不进。入账后同事件不重跑。</div>
+          </div>
+          <div class="pane" id="adjPaneCards">
+            <div id="cardList" class="hint" style="margin-top:10px;max-height:120px;overflow:auto"></div>
+            <label for="cardKind">类型</label>
+            <select id="cardKind">
+              <option value="debit">储蓄卡</option>
+              <option value="credit">信用卡</option>
+            </select>
+            <label for="cardLabel">名称</label>
+            <input id="cardLabel" type="text" maxlength="40" placeholder="例：工行储蓄 ****1024" />
+            <label for="cardTier">等级标签（可选）</label>
+            <input id="cardTier" type="text" maxlength="16" placeholder="例：金卡 / 黑卡" />
+            <label id="cardBalLab" for="cardBal">储蓄余额 ¥</label>
+            <input id="cardBal" type="number" step="0.01" inputmode="decimal" placeholder="0" />
+            <label id="cardLimitLab" for="cardLimit" hidden>信用额度 ¥</label>
+            <input id="cardLimit" type="number" step="0.01" inputmode="decimal" placeholder="50000" hidden />
+            <label id="cardDueLab" for="cardDue" hidden>当前应还 ¥</label>
+            <input id="cardDue" type="number" step="0.01" inputmode="decimal" placeholder="0" hidden />
+            <div class="hint">储蓄计入可花合计；信用卡只展示额度/应还。发红包仍只走聊天零花。</div>
+          </div>
+          <div class="pane" id="adjPaneTier">
+            <div class="hint" id="tierSuggest" style="margin-top:10px">加载开局档…</div>
+            <label for="tierPick">选择档位</label>
+            <select id="tierPick">
+              <option value="poor">穷</option>
+              <option value="normal">普通</option>
+              <option value="rich">富</option>
+            </select>
+            <div class="hint" id="tierBlurb">手选确认后重置剧场摘要 + 双方零花种子 + 默认卡。不要求已有人设。</div>
+            <label class="hint" style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer">
+              <input id="tierConfirm" type="checkbox" style="width:auto;margin:0" />
+              我确认覆盖当前剧场与零花（不可自动撤销）
+            </label>
+          </div>
+          <div class="msg" id="adjMsg"></div>
+          <div class="acts">
+            <button type="button" id="adjOk">确认入账</button>
+            <button type="button" id="adjAddCard" hidden>添加银行卡</button>
+            <button type="button" id="adjApplyTier" hidden>应用开局档</button>
+            <button type="button" id="adjSave" hidden>保存看板</button>
+            <button type="button" id="adjCancel">取消</button>
           </div>
         </div>
       </div>
@@ -1198,6 +1324,581 @@
         if (mode === "pocket_bot") return pocketData;
         return wealthData;
       }
+
+      function resyncPocketTotals(pocket) {
+        const a = pocket.accounts;
+        const total = a.alipay.bal + a.wechat.bal + a.bank.bal + a.cash.bal;
+        const safe = total > 0 ? total : 1;
+        pocket.totalNetWorth = Math.round(total * 100) / 100;
+        pocket.allocation = [
+          { en: a.alipay.en, cn: a.alipay.cn, pct: Math.round((a.alipay.bal / safe) * 100), color: a.alipay.color },
+          { en: a.wechat.en, cn: a.wechat.cn, pct: Math.round((a.wechat.bal / safe) * 100), color: a.wechat.color },
+          { en: a.bank.en, cn: a.bank.cn, pct: Math.round((a.bank.bal / safe) * 100), color: a.bank.color },
+          {
+            en: a.cash.en,
+            cn: a.cash.cn,
+            pct: Math.max(0, 100 - Math.round(((a.alipay.bal + a.wechat.bal + a.bank.bal) / safe) * 100)),
+            color: a.cash.color,
+          },
+        ];
+        let s = pocket.allocation.reduce(function (x, y) { return x + y.pct; }, 0);
+        if (pocket.allocation[0]) pocket.allocation[0].pct += 100 - s;
+        pocket.coreHoldings = [
+          { en: a.alipay.en, cn: a.alipay.cn, code: "ALI", cost: 1, qty: a.alipay.bal, pnl: 0, custodian: "Ant", pledged: "No", lastTrade: "今天", risk: "日常", _bal: true },
+          { en: a.wechat.en, cn: a.wechat.cn, code: "WX", cost: 1, qty: a.wechat.bal, pnl: 0, custodian: "Chat", pledged: "No", lastTrade: "今天", risk: "聊天零花", _bal: true },
+          { en: a.bank.en, cn: a.bank.cn, code: "BANK", cost: 1, qty: a.bank.bal, pnl: 0, custodian: "Bank", pledged: "No", lastTrade: "—", risk: "—", _bal: true },
+          { en: a.cash.en, cn: a.cash.cn, code: "CASH", cost: 1, qty: a.cash.bal, pnl: 0, custodian: "Wallet", pledged: "No", lastTrade: "—", risk: "现金", _bal: true },
+        ];
+      }
+
+      function ledgerSide(entry, side) {
+        if (entry.to === side) return entry.amount;
+        if (entry.from === side) return -entry.amount;
+        return 0;
+      }
+
+      let lastWalletSnap = { cards: [], you_balance: 0, bot_balance: 0, ledger: [] };
+
+      function applyPocketWallet(pocket, data, side) {
+        const chat = Math.round(Number(side === "you" ? data.you_balance : data.bot_balance) * 100) / 100;
+        const cards = (Array.isArray(data.cards) ? data.cards : []).filter(function (c) {
+          return c && c.owner === side;
+        });
+        const debits = cards.filter(function (c) { return c.kind !== "credit"; });
+        const credits = cards.filter(function (c) { return c.kind === "credit"; });
+        const debitSum = debits.reduce(function (s, c) { return s + (Number(c.bal) || 0); }, 0);
+        pocket.accounts.alipay.bal = 0;
+        pocket.accounts.wechat.bal = chat;
+        pocket.accounts.wechat.en = "Chat Wallet";
+        pocket.accounts.wechat.cn = "聊天零花";
+        pocket.accounts.bank.bal = Math.round(debitSum * 100) / 100;
+        pocket.accounts.bank.en = "Debit Cards";
+        pocket.accounts.bank.cn = debits.length ? "储蓄卡×" + debits.length : "储蓄卡";
+        pocket.accounts.cash.bal = 0;
+        pocket.change24h = 0;
+        resyncPocketTotals(pocket);
+        // 可花合计 = 聊天 + 储蓄；逐张卡进持仓
+        pocket.coreHoldings = [
+          {
+            en: "Chat Wallet",
+            cn: "聊天零花",
+            code: "CHAT",
+            cost: 1,
+            qty: chat,
+            pnl: 0,
+            custodian: "Chat",
+            pledged: "No",
+            lastTrade: "今天",
+            risk: "红包/转账",
+            _bal: true,
+          },
+        ];
+        debits.forEach(function (c) {
+          pocket.coreHoldings.push({
+            en: c.label,
+            cn: c.label + (c.tier ? " · " + c.tier : ""),
+            code: String(c.id || "").slice(0, 8) || "DEBIT",
+            cost: 1,
+            qty: Number(c.bal) || 0,
+            pnl: 0,
+            custodian: "Bank",
+            pledged: "No",
+            lastTrade: "—",
+            risk: "储蓄",
+            _bal: true,
+            _cardId: c.id,
+          });
+        });
+        credits.forEach(function (c) {
+          pocket.coreHoldings.push({
+            en: c.label,
+            cn: c.label + (c.tier ? " · " + c.tier : "") + "（信用卡）",
+            code: String(c.id || "").slice(0, 8) || "CREDIT",
+            cost: 1,
+            qty: Number(c.due) || 0,
+            pnl: 0,
+            custodian: "Bank",
+            pledged: "No",
+            lastTrade: "应还",
+            risk: "额度 ¥" + (Number(c.limit) || 0).toLocaleString("zh-CN"),
+            _bal: true,
+            _credit: true,
+            _cardId: c.id,
+          });
+        });
+        const rows = Array.isArray(data.ledger) ? data.ledger.slice(-24) : [];
+        pocket.feedPool = rows
+          .slice()
+          .reverse()
+          .map(function (e) {
+            const signed = ledgerSide(e, side);
+            const kind =
+              e.kind === "redpacket" ? "红包" : e.kind === "adjust" ? "调账" : "转账";
+            const peer = e.from === side ? e.to : e.from;
+            const peerCn =
+              peer === "you" ? "你" : peer === "bot" ? "家机" : peer === "system" ? "系统" : String(peer || "—");
+            const amt =
+              (signed >= 0 ? "+¥" : "−¥") +
+              Math.abs(signed).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return ["聊天", kind + " · " + peerCn, amt];
+          });
+        if (!pocket.feedPool.length) {
+          pocket.feedPool = [["聊天", "尚无收付", "¥0.00"]];
+        }
+      }
+
+      function fillCardSelects(owner) {
+        const cards = (lastWalletSnap.cards || []).filter(function (c) {
+          return c.owner === owner;
+        });
+        function fill(sel, withChat) {
+          if (!sel) return;
+          const cur = sel.value;
+          sel.innerHTML = withChat ? '<option value="">聊天零花</option>' : "";
+          cards.forEach(function (c) {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent =
+              (c.kind === "credit" ? "信用卡 · " : "储蓄 · ") +
+              c.label +
+              (c.tier ? " (" + c.tier + ")" : "");
+            sel.appendChild(opt);
+          });
+          if (cur && Array.prototype.some.call(sel.options, function (o) { return o.value === cur; })) {
+            sel.value = cur;
+          }
+        }
+        fill($("adjCard"), true);
+        fill($("evtCard"), true);
+      }
+
+      function renderCardList() {
+        const owner = mode === "pocket_bot" ? "bot" : "you";
+        const cards = (lastWalletSnap.cards || []).filter(function (c) {
+          return c.owner === owner;
+        });
+        const box = $("cardList");
+        if (!cards.length) {
+          box.textContent = "暂无银行卡。";
+          return;
+        }
+        box.innerHTML = cards
+          .map(function (c) {
+            const line =
+              c.kind === "credit"
+                ? c.label +
+                  (c.tier ? " · " + c.tier : "") +
+                  " · 应还 ¥" +
+                  (Number(c.due) || 0).toFixed(2) +
+                  " / 额 ¥" +
+                  (Number(c.limit) || 0).toFixed(2)
+                : c.label +
+                  (c.tier ? " · " + c.tier : "") +
+                  " · ¥" +
+                  (Number(c.bal) || 0).toFixed(2);
+            return (
+              "<div style=\"display:flex;justify-content:space-between;gap:8px;margin:4px 0;align-items:center\">" +
+              "<span>" +
+              line +
+              "</span>" +
+              "<button type=\"button\" data-del-card=\"" +
+              c.id +
+              "\" style=\"font-size:10px;color:var(--danger);padding:2px 6px\">删</button></div>"
+            );
+          })
+          .join("");
+        box.querySelectorAll("[data-del-card]").forEach(function (btn) {
+          btn.addEventListener("click", async function () {
+            try {
+              const res = await fetch("/api/v1/wallet/cards/" + encodeURIComponent(btn.getAttribute("data-del-card")), {
+                method: "DELETE",
+              });
+              const data = await res.json();
+              if (!data || !data.ok) {
+                $("adjMsg").className = "msg bad";
+                $("adjMsg").textContent = (data && data.message) || "删除失败";
+                return;
+              }
+              await hydrateWealthMode();
+              renderCardList();
+              fillCardSelects(owner);
+              renderAll();
+            } catch (_) {
+              $("adjMsg").className = "msg bad";
+              $("adjMsg").textContent = "网络错误";
+            }
+          });
+        });
+      }
+
+      function syncCardFormKind() {
+        const credit = $("cardKind").value === "credit";
+        $("cardBalLab").hidden = credit;
+        $("cardBal").hidden = credit;
+        $("cardLimitLab").hidden = !credit;
+        $("cardLimit").hidden = !credit;
+        $("cardDueLab").hidden = !credit;
+        $("cardDue").hidden = !credit;
+      }
+
+      let theaterFeedPool = null;
+
+      function theaterSnapshot() {
+        const snap = {
+          owner: wealthData.owner,
+          currency: wealthData.currency,
+          totalNetWorth: wealthData.totalNetWorth,
+          change24h: wealthData.change24h,
+          allocation: wealthData.allocation,
+        };
+        if (wealthData.tierId) snap.tierId = wealthData.tierId;
+        if (wealthData.matrix) snap.matrix = wealthData.matrix;
+        if (wealthData.categories && wealthData.matrix === "lite") {
+          snap.categories = wealthData.categories;
+        }
+        if (Array.isArray(wealthData.coreHoldings) && wealthData.matrix === "lite") {
+          snap.coreHoldings = wealthData.coreHoldings;
+        }
+        if (theaterFeedPool) snap.feedPool = theaterFeedPool;
+        return snap;
+      }
+
+      function mergeTheaterWealth(snap) {
+        if (!snap || typeof snap !== "object") return;
+        if (snap.owner) wealthData.owner = snap.owner;
+        if (snap.currency) wealthData.currency = snap.currency;
+        if (snap.totalNetWorth != null) wealthData.totalNetWorth = Number(snap.totalNetWorth) || 0;
+        if (snap.change24h != null && Number.isFinite(Number(snap.change24h))) {
+          wealthData.change24h = Number(snap.change24h);
+        }
+        if (Array.isArray(snap.allocation) && snap.allocation.length) {
+          wealthData.allocation = snap.allocation;
+        }
+        if (snap.tierId) wealthData.tierId = snap.tierId;
+        if (snap.matrix) wealthData.matrix = snap.matrix;
+        if (snap.categories && typeof snap.categories === "object") {
+          wealthData.categories = snap.categories;
+        }
+        if (Array.isArray(snap.coreHoldings) && snap.coreHoldings.length) {
+          wealthData.coreHoldings = snap.coreHoldings;
+        }
+        if (Array.isArray(snap.feedPool) && snap.feedPool.length) {
+          theaterFeedPool = snap.feedPool;
+        }
+      }
+
+      async function hydrateWealthMode() {
+        if (mode === "pocket_me" || mode === "pocket_bot") {
+          const res = await fetch("/api/v1/wallet");
+          const data = await res.json();
+          if (!data || !data.ok) return;
+          lastWalletSnap = data;
+          if (mode === "pocket_me") {
+            applyPocketWallet(pocketMeData, data, "you");
+          } else {
+            applyPocketWallet(pocketData, data, "bot");
+          }
+          return;
+        }
+        const res = await fetch("/api/v1/wealth");
+        const data = await res.json();
+        if (data && data.ok && data.wealth) {
+          mergeTheaterWealth(data.wealth);
+          return;
+        }
+        await fetch("/api/v1/wealth", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wealth: theaterSnapshot() }),
+        });
+      }
+
+      async function refreshPocketFromServer() {
+        try {
+          await hydrateWealthMode();
+          renderAll();
+        } catch (_) {}
+      }
+
+      async function saveTheaterSnapshot() {
+        try {
+          const res = await fetch("/api/v1/wealth", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wealth: theaterSnapshot() }),
+          });
+          const data = await res.json();
+          if (data && data.ok && data.wealth) mergeTheaterWealth(data.wealth);
+          aiAnswer("saved");
+        } catch (_) {
+          aiAnswer("savefail");
+        }
+      }
+
+      let adjustUiMode = "single"; // single | event | cards | tier
+      let tierMeta = [];
+
+      function setAdjustUiMode(next) {
+        adjustUiMode =
+          next === "event" ? "event" : next === "cards" ? "cards" : next === "tier" ? "tier" : "single";
+        $("adjModeSingle").classList.toggle("on", adjustUiMode === "single");
+        $("adjModeEvent").classList.toggle("on", adjustUiMode === "event");
+        $("adjModeCards").classList.toggle("on", adjustUiMode === "cards");
+        $("adjModeTier").classList.toggle("on", adjustUiMode === "tier");
+        $("adjPaneSingle").classList.toggle("on", adjustUiMode === "single");
+        $("adjPaneEvent").classList.toggle("on", adjustUiMode === "event");
+        $("adjPaneCards").classList.toggle("on", adjustUiMode === "cards");
+        $("adjPaneTier").classList.toggle("on", adjustUiMode === "tier");
+        $("adjSave").hidden = !(adjustUiMode === "single" && !isPocket());
+        $("adjOk").hidden = adjustUiMode === "cards" || adjustUiMode === "tier";
+        $("adjAddCard").hidden = adjustUiMode !== "cards";
+        $("adjApplyTier").hidden = adjustUiMode !== "tier";
+        if (adjustUiMode === "cards") renderCardList();
+        if (adjustUiMode === "tier") loadTierPane();
+      }
+
+      async function loadTierPane() {
+        $("tierSuggest").textContent = "加载开局档…";
+        $("tierConfirm").checked = false;
+        try {
+          const res = await fetch("/api/v1/economy/tiers");
+          const data = await res.json();
+          if (!data || !data.ok) {
+            $("tierSuggest").textContent = "加载失败";
+            return;
+          }
+          tierMeta = Array.isArray(data.tiers) ? data.tiers : [];
+          const sel = $("tierPick");
+          const cur = sel.value;
+          sel.innerHTML = "";
+          tierMeta.forEach(function (t) {
+            const opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.label + " · NAV≈" + t.wealth_nav;
+            sel.appendChild(opt);
+          });
+          if (data.suggested && Array.prototype.some.call(sel.options, function (o) { return o.value === data.suggested; })) {
+            sel.value = data.suggested;
+          } else if (cur) sel.value = cur;
+          else if (tierMeta[1]) sel.value = tierMeta[1].id;
+          refreshTierBlurb();
+          if (!data.has_persona) {
+            $("tierSuggest").textContent = "尚未写入人设 → 请手选档位（无影响）。";
+          } else if (data.suggested) {
+            $("tierSuggest").textContent = "根据人设关键词建议：「" + data.suggested + "」（仍须勾选确认）。";
+          } else {
+            $("tierSuggest").textContent = "有人设但未命中穷/普通/富关键词 → 请手选。";
+          }
+        } catch (_) {
+          $("tierSuggest").textContent = "网络错误";
+        }
+      }
+
+      function refreshTierBlurb() {
+        const id = $("tierPick").value;
+        const t = tierMeta.find(function (x) { return x.id === id; });
+        if (!t) {
+          $("tierBlurb").textContent = "手选确认后重置剧场 + 零花种子。";
+          return;
+        }
+        $("tierBlurb").textContent =
+          t.blurb +
+          " 你零花¥" +
+          t.you_balance +
+          " / 家机¥" +
+          t.bot_balance +
+          "。将覆盖 cards 为该档默认卡。";
+      }
+
+      function openAdjustSheet() {
+        $("adjMsg").className = "msg";
+        $("adjMsg").textContent = "";
+        $("adjNote").value = "";
+        $("evtTitle").value = "";
+        $("evtNote").value = "";
+        $("evtPocketDelta").value = "";
+        $("evtTheaterDelta").value = "";
+        $("cardLabel").value = "";
+        $("cardTier").value = "";
+        $("cardBal").value = "";
+        $("cardLimit").value = "";
+        $("cardDue").value = "";
+        $("cardKind").value = "debit";
+        syncCardFormKind();
+        $("tierConfirm").checked = false;
+        $("adjTitle").textContent = "setting";
+        $("adjModeCards").hidden = !isPocket();
+        if (isPocket()) {
+          const owner = mode === "pocket_me" ? "you" : "bot";
+          $("adjAmtLab").textContent = "变动额（¥，可负）";
+          $("adjAmt").value = "";
+          $("adjAmt").placeholder = "例 200 或 -50";
+          $("adjHint").textContent = "默认改聊天零花；可选储蓄/信用卡。发红包仍只走聊天零花。";
+          $("adjCardLab").hidden = false;
+          $("adjCard").hidden = false;
+          $("evtPocketWho").value = owner;
+          fillCardSelects(owner);
+        } else {
+          $("adjAmtLab").textContent = "设为绝对值（$）；前缀 +/− 表示相对加减";
+          $("adjAmt").value = String(wealthData.totalNetWorth);
+          $("adjAmt").placeholder = "例 1000000 或 -500000";
+          $("adjHint").textContent = "写入 wealth.json。剧情两边一起改请用「剧情事件」。";
+          $("adjCardLab").hidden = true;
+          $("adjCard").hidden = true;
+          $("evtPocketWho").value = "none";
+          fillCardSelects("you");
+        }
+        setAdjustUiMode("single");
+        $("adjustSheet").classList.add("on");
+        syncNavBack();
+        setTimeout(function () {
+          (adjustUiMode === "event" ? $("evtTitle") : $("adjAmt")).focus();
+        }, 50);
+      }
+
+      function closeAdjustSheet() {
+        $("adjustSheet").classList.remove("on");
+        syncNavBack();
+      }
+
+      async function submitEconomyEvent() {
+        const title = String($("evtTitle").value || "").trim();
+        const note = String($("evtNote").value || "").trim();
+        const who = String($("evtPocketWho").value || "none");
+        const pocketRaw = String($("evtPocketDelta").value || "").trim();
+        const theaterRaw = String($("evtTheaterDelta").value || "").trim();
+        const effects = [];
+        if (who !== "none" && pocketRaw !== "") {
+          const delta = Number(pocketRaw);
+          if (!Number.isFinite(delta) || delta === 0) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = "零花变动须为非零数，或不改零花";
+            return;
+          }
+          const fx = { book: "pocket", who: who, delta: delta };
+          const cardId = String($("evtCard").value || "").trim();
+          if (cardId) fx.cardId = cardId;
+          effects.push(fx);
+        }
+        if (theaterRaw !== "") {
+          const deltaNetWorth = Number(theaterRaw);
+          if (!Number.isFinite(deltaNetWorth) || deltaNetWorth === 0) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = "剧场变动须为非零数，或留空";
+            return;
+          }
+          effects.push({ book: "theater", deltaNetWorth: deltaNetWorth });
+        }
+        if (!title) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "请填事件标题";
+          return;
+        }
+        if (!effects.length) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "至少填一项零花或剧场变动";
+          return;
+        }
+        $("adjMsg").className = "msg";
+        $("adjMsg").textContent = "提交中…";
+        try {
+          const res = await fetch("/api/v1/economy/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title: title, note: note, effects: effects }),
+          });
+          const data = await res.json();
+          if (!data || !data.ok) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = (data && data.message) || "入账失败";
+            return;
+          }
+          await hydrateWealthMode();
+          renderAll();
+          closeAdjustSheet();
+        } catch (_) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "网络错误";
+        }
+      }
+
+      async function submitAdjust() {
+        if (adjustUiMode === "event") {
+          await submitEconomyEvent();
+          return;
+        }
+        const raw = String($("adjAmt").value || "").trim();
+        const note = String($("adjNote").value || "").trim();
+        $("adjMsg").className = "msg";
+        $("adjMsg").textContent = "提交中…";
+        try {
+          if (isPocket()) {
+            const delta = Number(raw);
+            if (!Number.isFinite(delta) || delta === 0) {
+              $("adjMsg").className = "msg bad";
+              $("adjMsg").textContent = "请输入非零金额";
+              return;
+            }
+            const body = {
+              who: mode === "pocket_me" ? "you" : "bot",
+              delta: delta,
+              note: note,
+            };
+            const cardId = String($("adjCard").value || "").trim();
+            if (cardId) body.cardId = cardId;
+            const res = await fetch("/api/v1/wallet/adjust", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!data || !data.ok) {
+              $("adjMsg").className = "msg bad";
+              $("adjMsg").textContent = (data && data.message) || "调账失败";
+              return;
+            }
+            await hydrateWealthMode();
+            renderAll();
+            closeAdjustSheet();
+            return;
+          }
+          let body;
+          if (/^[+-]/.test(raw)) {
+            const delta = Number(raw);
+            if (!Number.isFinite(delta) || delta === 0) {
+              $("adjMsg").className = "msg bad";
+              $("adjMsg").textContent = "相对变动须为非零数";
+              return;
+            }
+            body = { deltaNetWorth: delta, note: note };
+          } else {
+            const abs = Number(raw);
+            if (!Number.isFinite(abs) || abs < 0) {
+              $("adjMsg").className = "msg bad";
+              $("adjMsg").textContent = "请输入 ≥0 的绝对值，或 +/- 相对值";
+              return;
+            }
+            body = { totalNetWorth: abs, note: note };
+          }
+          const res = await fetch("/api/v1/wealth/adjust", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!data || !data.ok) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = (data && data.message) || "调账失败";
+            return;
+          }
+          mergeTheaterWealth(data.wealth);
+          renderAll();
+          closeAdjustSheet();
+        } catch (e) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "网络错误";
+        }
+      }
       function macroSrc() {
         if (mode === "pocket_me") return pocketMeMacro;
         if (mode === "pocket_bot") return pocketMacro;
@@ -1291,15 +1992,16 @@
         syncNavBack();
       }
 
-      function refreshVault() {
-        $("vaultBody").innerHTML =
-          "剧场 · <b style=\"color:var(--gold2)\">" + keyState.theater + "</b><br/>" +
-          "你的零花 · <b style=\"color:var(--gold2)\">" + keyState.me + "</b><br/>" +
-          "家机零花 · <b style=\"color:var(--gold2)\">" + keyState.bot + "</b>" +
-          (keyState.botPrev.length
-            ? "<br/><span style=\"color:var(--muted)\">已作废：" + keyState.botPrev.join(", ") + "</span>"
-            : "");
-        $("botKeyHint").textContent = keyState.bot;
+      async function loadPocketKeys() {
+        try {
+          const res = await fetch("/api/v1/wallet/pocket-keys");
+          const data = await res.json();
+          if (!data || !data.ok) return;
+          if (data.theater) keyState.theater = String(data.theater);
+          if (data.me) keyState.me = String(data.me);
+          if (data.bot) keyState.bot = String(data.bot);
+          if (Array.isArray(data.botPrev)) keyState.botPrev = data.botPrev.slice();
+        } catch (_) {}
       }
 
       function resolveKey(raw) {
@@ -1314,67 +2016,34 @@
         return null;
       }
 
-      function simColdWar() {
-        var next = "DONTLOOK";
-        if (keyState.bot.toUpperCase() === next) return;
-        keyState.botPrev.push(keyState.bot);
-        keyState.bot = next;
-        refreshVault();
-        $("vaultHint").style.display = "block";
-        $("vaultHint").textContent = "提示：家机把零花密钥换掉了。新钥在密码抽屉；聊天里也会留一句气话。";
-        $("chatHint").style.display = "block";
-        $("chatHint").textContent = "家机 · 日常聊天：「…钱包密码我改了。想看就自己去翻密码抽屉。现在别烦我。」";
-        $("keyMsg").className = "msg bad";
-        $("keyMsg").textContent = "家机已更换零花密钥（演示）";
-      }
+      loadPocketKeys();
 
-      function simReconcile() {
-        if (keyState.bot.toUpperCase() !== "CASH") keyState.botPrev.push(keyState.bot);
-        keyState.bot = "CASH";
-        refreshVault();
-        $("vaultHint").style.display = "block";
-        $("vaultHint").textContent = "和好了：家机零花密钥恢复为 CASH。";
-        $("chatHint").style.display = "block";
-        $("chatHint").textContent = "家机 · 日常聊天：「行吧……密码改回来了。下次少气我。」";
-        $("keyMsg").className = "msg";
-        $("keyMsg").textContent = "密钥已恢复";
-      }
-
-      $("btnColdWar").addEventListener("click", simColdWar);
-      $("btnReconcile").addEventListener("click", simReconcile);
-      refreshVault();
-
-      $("keyInput").addEventListener("keydown", (e) => {
+      $("keyInput").addEventListener("keydown", async (e) => {
         if (e.key !== "Enter") return;
+        await loadPocketKeys();
         const raw = $("keyInput").value.trim();
         const hit = resolveKey(raw);
         if (hit && hit.mode === "stale_bot") {
           fails += 1;
           $("keyMsg").className = "msg bad";
-          $("keyMsg").textContent = "ACCESS DENIED · 这是旧密钥";
-          $("vaultHint").style.display = "block";
-          $("vaultHint").textContent =
-            "家机换过钥了。「" + hit.old + "」已作废 → 打开密码抽屉看现行密钥，或去聊天看提示。";
+          $("keyMsg").textContent = "密码错误";
           return;
         }
         if (hit) {
           mode = hit.mode;
           fails = 0;
           $("keyMsg").className = "msg";
+          $("keyMsg").textContent = "";
           if (mode === "pocket_me" || mode === "pocket_bot") {
-            $("keyMsg").textContent =
-              "ACCESS GRANTED · " + (mode === "pocket_me" ? "YOUR POCKET" : "CHAR POCKET") + "（无生物识别）";
             setTimeout(function () { enterMain(); }, 320);
           } else {
-            $("keyMsg").textContent = "ACCESS GRANTED · THEATER VAULT";
             setTimeout(function () { runFace(); }, 500);
           }
         } else {
           fails += 1;
           $("keyMsg").className = "msg bad";
-          $("keyMsg").textContent = "ACCESS DENIED";
+          $("keyMsg").textContent = "密码错误";
           if (fails >= 2) {
-            $("keyMsg").textContent = "SECURITY PROTOCOL ACTIVE";
             $("gateKey").classList.add("redflash");
             setTimeout(function () { $("gateKey").classList.remove("redflash"); }, 1000);
           }
@@ -1425,7 +2094,10 @@
         }, 4000);
       }
 
-      function enterMain() {
+      async function enterMain() {
+        try {
+          await hydrateWealthMode();
+        } catch (_) { /* 离线仍用 DEMO */ }
         ["gateKey", "gateFace", "gateFp", "gateIris"].forEach((x) => $(x).classList.remove("on"));
         $("main").classList.add("on");
         $("playerName").textContent = PLAYER;
@@ -1447,7 +2119,7 @@
             : "CHAR POCKET";
         $("netLab").innerHTML = theater
           ? "TOTAL NET WORTH<em>总资产估值</em>"
-          : "TOTAL POCKET<em>" + (mine ? "你的" : "家机的") + "零花合计（支付宝+微信+卡+现金）</em>";
+          : "TOTAL POCKET<em>" + (mine ? "你的" : "家机的") + "可花合计（聊天零花+储蓄卡）</em>";
         $("holdsLab").textContent = theater ? "CORE HOLDINGS · 核心持仓" : "ACCOUNTS · 账户";
         $("catsLab").textContent = theater ? "ASSET MATRIX · 资产矩阵" : "CHANNELS · 支付通道";
         $("cfOffice").textContent = theater
@@ -1472,13 +2144,14 @@
         $("drill").classList.remove("on");
         $("modal").classList.remove("on");
         $("aiDialog").classList.remove("on");
+        $("adjustSheet").classList.remove("on");
         setWealthBlur(true);
         wealthRevealed = false;
         $("keyInput").value = "";
         $("keyMsg").className = "msg";
-        $("keyMsg").textContent = "一把钥匙一道门";
+        $("keyMsg").textContent = "";
         fails = 0;
-        refreshVault();
+        loadPocketKeys();
         showLayer("gateKey");
       }
 
@@ -1550,7 +2223,6 @@
           b.addEventListener("click", () => aiAnswer(id));
           $("aiActions").appendChild(b);
         });
-
         let inflow = 0, outflow = 0;
         macros.forEach((x) => {
           if (x.dir === "in") inflow += x.amt;
@@ -1591,7 +2263,7 @@
         $("aiHello").textContent = mode === "pocket_me"
           ? "这是你的零花。聊天转账从这儿出；和家机零花、剧场资本都分账。"
           : mode === "pocket_bot"
-            ? "这是家机的零花。冷战换钥后旧密码会提示作废；真钥在密码抽屉。"
+            ? "这是家机的零花。冷战换钥后旧钥作废。"
             : "「" + PLAYER + "」，晚上好。您的私人 AI 财富顾问已上线，随时为您执行大额交易或税务优化分析。";
       }
 
@@ -1733,7 +2405,7 @@
       function startFeed() {
         const box = $("feedInner");
         function showOne() {
-          const pool = isPocket() ? dataset().feedPool : feedPool;
+          const pool = isPocket() ? dataset().feedPool : theaterFeedPool || feedPool;
           const [loc, ev, num] = pool[(Math.random() * pool.length) | 0];
           const now = new Date();
           box.innerHTML =
@@ -1771,9 +2443,11 @@
           hedge: "结论：下行对冲报价：3M put spread 成本约 $6.4M，覆盖组合 8% 尾部。",
           tax: "结论：本季预计应税事件 $42M；可通过慈善信托抵消约 $11M。",
           move: "结论：开曼→新加坡调拨 $75M 需二次生物识别；预计 T+1 清算。",
-          salary: "结论：已记工行工资卡 +¥12,800（演示）。聊天红包不会写进剧场资本。",
-          today: "结论：今日零花支出约 ¥219；最大头是超市与外卖，均在支付宝。",
-          xfer: "结论：建议银行卡 → 微信 ¥200 作社交零花；与剧场资产无关。",
+          salary: "结论：演示文案，不改真账。要改余额请点右侧「调账」。",
+          today: "结论：今日流水见情报流；真余额以调账/聊天为准。",
+          xfer: "结论：演示建议；真转账请走聊天红包/转账。",
+          saved: "结论：剧场摘要已写入 wealth.json。",
+          savefail: "结论：保存失败，请检查网关是否在线。",
         };
         $("aiAns").textContent = map[kind] || (isPocket() ? map.today : map.liquidity);
         syncNavBack();
@@ -1789,6 +2463,102 @@
       });
       document.querySelectorAll("#aiDialog [data-q]").forEach((b) => {
         b.addEventListener("click", () => aiAnswer(b.getAttribute("data-q")));
+      });
+      $("ledgerFab").addEventListener("click", openAdjustSheet);
+      $("adjModeSingle").addEventListener("click", function () { setAdjustUiMode("single"); });
+      $("adjModeEvent").addEventListener("click", function () { setAdjustUiMode("event"); });
+      $("adjModeCards").addEventListener("click", function () { setAdjustUiMode("cards"); });
+      $("adjModeTier").addEventListener("click", function () { setAdjustUiMode("tier"); });
+      $("tierPick").addEventListener("change", refreshTierBlurb);
+      $("cardKind").addEventListener("change", syncCardFormKind);
+      $("adjApplyTier").addEventListener("click", async function () {
+        if (!$("tierConfirm").checked) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "请先勾选确认覆盖";
+          return;
+        }
+        $("adjMsg").className = "msg";
+        $("adjMsg").textContent = "应用中…";
+        try {
+          const res = await fetch("/api/v1/economy/tiers/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tier: $("tierPick").value, confirm: true }),
+          });
+          const data = await res.json();
+          if (!data || !data.ok) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = (data && data.message) || "应用失败";
+            return;
+          }
+          if (data.wealth) mergeTheaterWealth(data.wealth);
+          await hydrateWealthMode();
+          renderAll();
+          closeAdjustSheet();
+        } catch (_) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "网络错误";
+        }
+      });
+      $("evtPocketWho").addEventListener("change", function () {
+        const who = $("evtPocketWho").value;
+        if (who === "you" || who === "bot") fillCardSelects(who);
+      });
+      $("adjOk").addEventListener("click", function () { submitAdjust(); });
+      $("adjAddCard").addEventListener("click", async function () {
+        $("adjMsg").className = "msg";
+        $("adjMsg").textContent = "提交中…";
+        try {
+          const kind = $("cardKind").value === "credit" ? "credit" : "debit";
+          const body = {
+            owner: mode === "pocket_bot" ? "bot" : "you",
+            kind: kind,
+            label: String($("cardLabel").value || "").trim(),
+            tier: String($("cardTier").value || "").trim(),
+          };
+          if (kind === "credit") {
+            body.limit = Number($("cardLimit").value) || 0;
+            body.due = Number($("cardDue").value) || 0;
+          } else {
+            body.bal = Number($("cardBal").value) || 0;
+          }
+          const res = await fetch("/api/v1/wallet/cards", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json();
+          if (!data || !data.ok) {
+            $("adjMsg").className = "msg bad";
+            $("adjMsg").textContent = (data && data.message) || "添加失败";
+            return;
+          }
+          $("cardLabel").value = "";
+          $("cardTier").value = "";
+          $("cardBal").value = "";
+          $("cardLimit").value = "";
+          $("cardDue").value = "";
+          await hydrateWealthMode();
+          renderCardList();
+          fillCardSelects(mode === "pocket_bot" ? "bot" : "you");
+          renderAll();
+          $("adjMsg").className = "msg ok";
+          $("adjMsg").textContent = "已添加";
+        } catch (_) {
+          $("adjMsg").className = "msg bad";
+          $("adjMsg").textContent = "网络错误";
+        }
+      });
+      $("adjSave").addEventListener("click", async function () {
+        await saveTheaterSnapshot();
+        closeAdjustSheet();
+      });
+      $("adjCancel").addEventListener("click", closeAdjustSheet);
+      $("adjAmt").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") submitAdjust();
+      });
+      $("evtTitle").addEventListener("keydown", function (e) {
+        if (e.key === "Enter") submitAdjust();
       });
       const embedded = window.parent && window.parent !== window;
       if (embedded) document.body.classList.add("embedded");
@@ -1809,6 +2579,10 @@
         if ($("aiDialog").classList.contains("on")) {
           $("aiDialog").classList.remove("on");
           syncNavBack();
+          return;
+        }
+        if ($("adjustSheet").classList.contains("on")) {
+          closeAdjustSheet();
           return;
         }
         if ($("drill").classList.contains("on")) {
@@ -1836,6 +2610,7 @@
           $("drill").classList.contains("on") ||
           $("modal").classList.contains("on") ||
           $("aiDialog").classList.contains("on") ||
+          $("adjustSheet").classList.contains("on") ||
           $("gateFace").classList.contains("on") ||
           $("gateFp").classList.contains("on") ||
           $("gateIris").classList.contains("on") ||
@@ -1844,7 +2619,8 @@
         const onOverlay =
           onDrill ||
           $("modal").classList.contains("on") ||
-          $("aiDialog").classList.contains("on");
+          $("aiDialog").classList.contains("on") ||
+          $("adjustSheet").classList.contains("on");
         /* 仅概览顶栏时把 BACK 嵌进 brand-wrap 对齐；钻取/弹层时改 fixed 以免被盖住 */
         const nestInBrand = !!(show && onMain && !onOverlay);
         document.body.classList.toggle("has-nav", !!show);

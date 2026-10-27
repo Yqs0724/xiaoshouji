@@ -41,7 +41,8 @@
             <span>Recently Played</span>
           </div>
           <p class="cl-home-note" id="colistenHomeNote" hidden></p>
-          <ul class="cl-home-list" id="colistenHomeList"></ul>
+          <div class="cl-recent-rail" id="colistenRecentRail" aria-label="最近播放"></div>
+          <ul class="cl-home-list" id="colistenHomeList" hidden></ul>
         </div>
 
         <div class="cl-page" id="clPagePlaylists" data-page="playlists" hidden>
@@ -49,6 +50,10 @@
             <button type="button" id="btnColistenHomeUp" hidden title="返回歌单列表" aria-label="返回">‹</button>
             <span id="colistenHomeTitle">Playlists</span>
             <button type="button" class="cl-home-plus" id="btnColistenHomeImport" title="导入歌单" aria-label="导入歌单">＋</button>
+          </div>
+          <div class="cl-pl-tools" id="colistenPlTools">
+            <button type="button" class="cl-pl-queue-chip" id="btnColistenPlQueue" title="打开队列">队列空 · 点歌入队</button>
+            <input type="search" id="colistenPlSearch" maxlength="60" placeholder="搜索已导入歌单…" autocomplete="off" />
           </div>
           <p class="cl-home-note" id="colistenPlNote" hidden></p>
           <ul class="cl-home-list" id="colistenPlList"></ul>
@@ -162,13 +167,6 @@
             <button type="button" id="btnColistenProposeOk">确认</button>
             <button type="button" class="ghost" id="btnColistenProposeNo">忽略</button>
           </div>
-        </div>
-        <div class="cl-history" id="colistenHistory" hidden>
-          <div class="cl-history-head">
-            <span>最近场次</span>
-            <button type="button" id="btnColistenHistoryClose" title="关闭" aria-label="关闭">×</button>
-          </div>
-          <ul id="colistenHistoryList"></ul>
         </div>
         <div class="cl-chat" aria-label="本场吐槽">
           <div class="thread" id="colistenSpitThread"></div>
@@ -298,6 +296,24 @@
           </div>
           <button type="button" class="primary cl-addto-submit" id="btnColistenAddToSubmit">加入所选</button>
           <p class="cl-modal-hint">可多选；新建会同时写入该曲</p>
+        </div>
+      </div>
+
+      <div class="cl-history" id="colistenHistory" hidden>
+        <div class="cl-history-head">
+          <span>最近场次</span>
+          <button type="button" id="btnColistenHistoryClose" title="关闭" aria-label="关闭">×</button>
+        </div>
+        <ul id="colistenHistoryList"></ul>
+      </div>
+
+      <!-- 音源未就绪：整页引导去设置 -->
+      <div class="cl-auth-gate" id="colistenAuthGate" hidden>
+        <div class="cl-auth-gate-card" role="dialog" aria-labelledby="colistenAuthGateTitle">
+          <h2 id="colistenAuthGateTitle">还不能听</h2>
+          <p id="colistenAuthGateMsg">网易云兼容 API 未就绪 · 去设置里填地址并扫码</p>
+          <button type="button" class="primary" id="btnColistenAuthSettings">去设置</button>
+          <button type="button" class="ghost" id="btnColistenAuthRetry">重试</button>
         </div>
       </div>
     </div>

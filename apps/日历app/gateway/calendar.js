@@ -86,7 +86,7 @@ function normalizeNote(raw) {
   } catch {
     return null;
   }
-  return {
+  const out = {
     id,
     date,
     body,
@@ -95,6 +95,14 @@ function normalizeNote(raw) {
     created_at: Number(raw.created_at) || Date.now(),
     updated_at: Number(raw.updated_at) || Date.now(),
   };
+  /* H4：可挂关联行程（署名已有 owner） */
+  const eventId = String(raw.event_id || "").trim().slice(0, 64);
+  if (eventId) {
+    out.event_id = eventId;
+    const et = String(raw.event_title || "").trim().slice(0, 40);
+    if (et) out.event_title = et;
+  }
+  return out;
 }
 
 function readAll() {
@@ -159,6 +167,13 @@ function getNote(opts) {
   return { ok: true, note: notes.length ? notes[notes.length - 1] : null };
 }
 
+function resolveEventTitle(eventId) {
+  const eid = String(eventId || "").trim();
+  if (!eid) return "";
+  const hit = readAll().events.find((e) => e && e.id === eid);
+  return hit && hit.title ? String(hit.title).trim().slice(0, 40) : "";
+}
+
 function createNote(patch) {
   const date = normalizeDate(patch && patch.date);
   const body = String(patch && patch.body != null ? patch.body : "").trim().slice(0, 500);
@@ -168,12 +183,17 @@ function createNote(patch) {
     throw err;
   }
   const now = Date.now();
+  const eventId = String((patch && patch.event_id) || "").trim().slice(0, 64);
+  let eventTitle = String((patch && patch.event_title) || "").trim().slice(0, 40);
+  if (eventId && !eventTitle) eventTitle = resolveEventTitle(eventId);
   const note = normalizeNote({
     id: randomUUID(),
     date,
     body,
     owner: normalizeOwner(patch && patch.owner),
     liked: false,
+    event_id: eventId || undefined,
+    event_title: eventTitle || undefined,
     created_at: now,
     updated_at: now,
   });
@@ -202,6 +222,21 @@ function updateNote(id, patch) {
     writeAll(all);
     return { ok: true, note: null, deleted: nid };
   }
+  let eventId = cur.event_id || "";
+  let eventTitle = cur.event_title || "";
+  if (patch && Object.prototype.hasOwnProperty.call(patch, "event_id")) {
+    eventId = String(patch.event_id || "").trim().slice(0, 64);
+    eventTitle = eventId
+      ? String(patch.event_title || "").trim().slice(0, 40) ||
+        resolveEventTitle(eventId)
+      : "";
+  } else if (
+    patch &&
+    Object.prototype.hasOwnProperty.call(patch, "event_title") &&
+    eventId
+  ) {
+    eventTitle = String(patch.event_title || "").trim().slice(0, 40);
+  }
   const next = normalizeNote({
     ...cur,
     body:
@@ -220,6 +255,8 @@ function updateNote(id, patch) {
       patch && Object.prototype.hasOwnProperty.call(patch, "liked")
         ? !!patch.liked
         : cur.liked,
+    event_id: eventId || undefined,
+    event_title: eventTitle || undefined,
     updated_at: Date.now(),
   });
   all.notes[i] = next;
@@ -631,13 +668,21 @@ if (require.main === module) {
     console.assert(prop.ok && prop.source === "mock" && prop.proposals.length >= 1);
     console.assert(prop.noteProposals && prop.noteProposals.length >= 1);
     const noteDay = "2026-10-03";
+    const linkEv = createEvent({
+      title: "挂笺-" + stamp,
+      date: noteDay,
+      owner: "companion",
+    });
     const yours = createNote({ date: noteDay, body: "便签-" + stamp, owner: "you" });
     const bots = createNote({
       date: noteDay,
       body: "家机便签-" + stamp,
       owner: "companion",
+      event_id: linkEv.event.id,
     });
     console.assert(yours.note.owner === "you" && bots.note.owner === "companion");
+    console.assert(bots.note.event_id === linkEv.event.id);
+    console.assert(bots.note.event_title === linkEv.event.title);
     console.assert(yours.note.liked === false);
     const liked = updateNote(yours.note.id, { liked: true });
     console.assert(liked.note && liked.note.liked === true);
@@ -645,6 +690,7 @@ if (require.main === module) {
     console.assert(listNotes({ date: noteDay }).notes.length >= 2);
     deleteNote(yours.note.id);
     deleteNote(bots.note.id);
+    deleteEvent(linkEv.event.id);
     console.assert(listNotes({ date: noteDay }).notes.length === 0);
     const packed = parseProposePayload(
       '{"events":[{"title":"散步","date":"2026-10-11"}],"notes":[{"body":"带伞","date":"2026-10-11"}]}',

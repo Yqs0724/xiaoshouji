@@ -36,10 +36,14 @@ const {
   deleteNote,
   upsertNote,
 } = require("../../日历app/gateway/calendar");
-const { getBudgetSummary } = require("../../额度app/gateway/budget");
+const { getBudgetSummary, patchModelRates } = require("../../额度app/gateway/budget");
 const {
   listMessages,
   listPeers,
+  createPeer,
+  updatePeer,
+  renamePeer,
+  deletePeer,
   searchMessages,
   createMessageWithReplyStream,
   recallMessageWithReplyStream,
@@ -68,14 +72,19 @@ const {
   setChatCallPhase,
   finishChatCallStream,
   MEDIA_MAX_BYTES,
+  FILE_MAX_BYTES,
   addTokensUsed,
   withPeer,
   normalizePeerId,
   DEFAULT_PEER_ID,
   resolvePeerForMessage,
+  setArchiveAtMessage,
+  setArchiveBeforeTs,
 } = require("../../聊天app/gateway/daily-chat");
 const { ttsStatus, synthesizeSpeech } = require("../../聊天app/gateway/tts");
 const { runVoiceTurn } = require("../../聊天app/gateway/voice-turn");
+const { runCallHeartbeat } = require("../../聊天app/gateway/call-heartbeat");
+const { listGifts, giftByTier } = require("../../聊天app/gateway/call-gifts");
 
 function peerFromRequest(req, body) {
   try {
@@ -89,12 +98,57 @@ function peerFromRequest(req, body) {
   return DEFAULT_PEER_ID;
 }
 
+function topicFromRequest(req, body) {
+  try {
+    const u = new URL(req.url || "/", "http://local");
+    const q = u.searchParams.get("topic") || u.searchParams.get("topicId");
+    if (q) {
+      const { normalizeTopicId } = require("../../聊天app/gateway/daily-chat");
+      return normalizeTopicId(q);
+    }
+  } catch (_) {}
+  if (body && (body.topic || body.topicId)) {
+    const { normalizeTopicId } = require("../../聊天app/gateway/daily-chat");
+    return normalizeTopicId(body.topic || body.topicId);
+  }
+  return "";
+}
+
+function withChatRequest(req, body, fn) {
+  const { withPeerTopic } = require("../../聊天app/gateway/daily-chat");
+  return withPeerTopic(
+    peerFromRequest(req, body),
+    topicFromRequest(req, body),
+    fn
+  );
+}
+
 function peerForMessageOp(req, body, msgId) {
   const found = resolvePeerForMessage(msgId);
   if (found) return found;
   return peerFromRequest(req, body);
 }
-const { getMoodPublic } = require("../../聊天app/gateway/mood");
+
+function withMessageOp(req, body, msgId, fn) {
+  const { withPeerTopic, resolveChatCtxForMessage } = require(
+    "../../聊天app/gateway/daily-chat"
+  );
+  const ctx = resolveChatCtxForMessage(msgId);
+  if (ctx) return withPeerTopic(ctx.peerId, ctx.topicId, fn);
+  return withPeerTopic(
+    peerFromRequest(req, body),
+    topicFromRequest(req, body),
+    fn
+  );
+}
+const {
+  getMoodPublic,
+  runMoodBatch,
+  startMoodBatchScheduler,
+  listLexiconPublic,
+  addLexiconExtra,
+  removeLexiconExtra,
+} = require("../../聊天app/gateway/mood");
 const {
   listPeerMemories,
   addMemory,
@@ -103,6 +157,10 @@ const {
   toggleUnresolved,
   digestStatus,
   digestNewMemories,
+  digestFromMessageIds,
+  dehydrateMemories,
+  traceMemorySource,
+  llmSentinelRoute,
 } = require("../../聊天app/gateway/memory");
 const {
   addUserSticker,
@@ -123,13 +181,42 @@ const {
   addFavorite,
   removeFavorite,
 } = require("../../聊天app/gateway/favorites");
-const { getWallet } = require("../../资产app/gateway/wallet");
+const {
+  getWallet,
+  walletAdjust,
+  addCard,
+  patchCard,
+  removeCard,
+} = require("../../资产app/gateway/wallet");
+const {
+  getPocketKeys,
+  ensureMemoSeeded,
+} = require("../../资产app/gateway/pocket-keys");
+const { getWealth, putWealth, wealthAdjust } = require("../../资产app/gateway/wealth");
+const {
+  listEvents: listEconomyEvents,
+  createAndApply: createAndApplyEconomyEvent,
+  applyEvent: applyEconomyEvent,
+} = require("../../资产app/gateway/economy-events");
+const {
+  listTiers: listEconomyTiers,
+  suggestFromPersona: suggestEconomyTier,
+  applyTier: applyEconomyTier,
+} = require("../../资产app/gateway/economy-tiers");
+const {
+  listMemo,
+  upsertKey: upsertMemoKey,
+  removeKey: removeMemoKey,
+  upsertNote: upsertMemoNote,
+  removeNote: removeMemoNote,
+} = require("../../备忘录app/gateway/memo");
 const { listCards, createCard, deleteCard } = require("./lore");
 const {
   listTitles,
   getTitle,
   getWatchPresence,
   addTitleFromStream,
+  scanMediaLibrary,
   deleteTitle,
   streamMedia,
   listSpit,
@@ -1470,12 +1557,29 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && urlPath === "/api/v1/budget/summary") {
     try {
-      sendJson(res, 200, getBudgetSummary());
+      sendJson(res, 200, await getBudgetSummary());
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
         error: e.code || "budget_summary_failed",
         message: e.message || "读取额度失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath === "/api/v1/budget/rates") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const card = patchModelRates(body);
+      sendJson(res, 200, { ok: true, card });
+    } catch (e) {
+      const bad = e.code === "bad_rates" || e instanceof SyntaxError;
+      sendJson(res, bad ? 400 : 500, {
+        ok: false,
+        error: e.code || "budget_rates_failed",
+        message: e.message || "保存价卡失败",
       });
     }
     return;
@@ -1671,6 +1775,48 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/moments/pending/") &&
+    urlPath.endsWith("/confirm")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/moments/pending/".length, -"/confirm".length)
+      );
+      const { confirmPending } = require("../../聊天app/gateway/moments");
+      sendJson(res, 200, confirmPending(id));
+    } catch (e) {
+      sendJson(res, e.code === "pending_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "moments_confirm_failed",
+        message: e.message || "确认失败",
+      });
+    }
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/moments/pending/") &&
+    urlPath.endsWith("/reject")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/moments/pending/".length, -"/reject".length)
+      );
+      const { rejectPending } = require("../../聊天app/gateway/moments");
+      sendJson(res, 200, rejectPending(id));
+    } catch (e) {
+      sendJson(res, e.code === "pending_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "moments_reject_failed",
+        message: e.message || "拒绝失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/moments") {
     try {
       const raw = await readBody(req);
@@ -1835,8 +1981,270 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && urlPath === "/api/v1/chat/peers") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, createPeer(body || {}));
+    } catch (e) {
+      const bad =
+        e.code === "peer_name_required" ||
+        e.code === "peer_avatar_invalid" ||
+        e.code === "peer_avatar_too_long" ||
+        e.code === "peer_id_invalid";
+      sendJson(res, bad ? 400 : 500, {
+        ok: false,
+        error: e.code || "chat_peer_create_failed",
+        message: e.message || "创建会话失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath.startsWith("/api/v1/chat/peers/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/chat/peers/".length).split("/")[0] || "");
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, updatePeer(id, body || {}));
+    } catch (e) {
+      const code =
+        e.code === "peer_missing"
+          ? 404
+          : e.code === "peer_name_required" ||
+              e.code === "peer_avatar_invalid" ||
+              e.code === "peer_avatar_too_long"
+            ? 400
+            : 500;
+      sendJson(res, code, {
+        ok: false,
+        error: e.code || "chat_peer_update_failed",
+        message: e.message || "更新会话失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/file-excerpt") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const name = String((body && body.name) || "").trim().slice(0, 120);
+      const b64 = String((body && body.data_base64) || "").replace(/\s/g, "");
+      if (!name || !b64) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "bad_request",
+          message: "需要 name 与 data_base64",
+        });
+        return;
+      }
+      if (b64.length > 2.8e6) {
+        sendJson(res, 413, {
+          ok: false,
+          error: "too_large",
+          message: "文件太大（摘录上限约 2MB）",
+        });
+        return;
+      }
+      const buf = Buffer.from(b64, "base64");
+      const { excerptByName, TEXT_MAX } = require("../../聊天app/gateway/file-excerpt");
+      const text = excerptByName(name, buf);
+      sendJson(res, 200, {
+        ok: true,
+        name,
+        text: text || "",
+        has_text: !!text,
+        max: TEXT_MAX,
+        message: text
+          ? "已摘录"
+          : "未能从该格式抽出正文（可改发 txt/md）",
+      });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "file_excerpt_failed",
+        message: e.message || "摘录失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/chat/peers/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/chat/peers/".length).split("/")[0] || "");
+      sendJson(res, 200, deletePeer(id));
+    } catch (e) {
+      const code =
+        e.code === "peer_protected"
+          ? 403
+          : e.code === "peer_missing"
+            ? 404
+            : 500;
+      sendJson(res, code, {
+        ok: false,
+        error: e.code || "chat_peer_delete_failed",
+        message: e.message || "删除失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/archive") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      const out = withChatRequest(req, body, () => {
+        if (Object.prototype.hasOwnProperty.call(body, "archive_before_ts") && !body.message_id) {
+          return setArchiveBeforeTs(body.archive_before_ts);
+        }
+        const mid = body.message_id || body.messageId || "";
+        if (!mid && (body.clear || body.archive_before_ts === 0)) {
+          return setArchiveBeforeTs(0);
+        }
+        return setArchiveAtMessage(mid);
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const code = e.code || "archive_failed";
+      const status =
+        code === "msg_missing" || code === "topic_missing" || code === "bad_archive"
+          ? 400
+          : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: code,
+        message: e.message || "封档失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/chat/messages") {
-    withPeer(peerFromRequest(req), () => sendJson(res, 200, listMessages()));
+    withChatRequest(req, null, () => sendJson(res, 200, listMessages()));
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/topics") {
+    try {
+      const {
+        listTopics,
+      } = require("../../聊天app/gateway/daily-chat");
+      sendJson(res, 200, listTopics(peerFromRequest(req)));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "topics_list_failed",
+        message: e.message || "读取话题失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/topics") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const {
+        createTopic,
+        setActiveTopic,
+      } = require("../../聊天app/gateway/daily-chat");
+      const peer = peerFromRequest(req, body);
+      const out = createTopic(peer, body);
+      if (body && body.activate !== false && out.topic && out.topic.id) {
+        setActiveTopic(peer, out.topic.id);
+      }
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "topics_full" ? 400 : 500, {
+        ok: false,
+        error: e.code || "topics_create_failed",
+        message: e.message || "新建话题失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath.startsWith("/api/v1/chat/topics/")) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/topics/".length).split("/")[0] || ""
+      );
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const {
+        updateTopic,
+        setActiveTopic,
+      } = require("../../聊天app/gateway/daily-chat");
+      const peer = peerFromRequest(req, body);
+      if (body && body.activate) {
+        sendJson(res, 200, setActiveTopic(peer, id));
+        return;
+      }
+      sendJson(res, 200, updateTopic(peer, id, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "topic_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "topics_update_failed",
+        message: e.message || "更新话题失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/chat/topics/")) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/topics/".length).split("/")[0] || ""
+      );
+      const { deleteTopic } = require("../../聊天app/gateway/daily-chat");
+      sendJson(res, 200, deleteTopic(peerFromRequest(req), id));
+    } catch (e) {
+      sendJson(res, e.code === "topic_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "topics_delete_failed",
+        message: e.message || "删除话题失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/topics/activate") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { setActiveTopic } = require("../../聊天app/gateway/daily-chat");
+      sendJson(
+        res,
+        200,
+        setActiveTopic(
+          peerFromRequest(req, body),
+          body.topicId != null ? body.topicId : body.topic
+        )
+      );
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "topic_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "topics_activate_failed",
+        message: e.message || "切换话题失败",
+      });
+    }
     return;
   }
 
@@ -1847,11 +2255,10 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "DELETE" && urlPath === "/api/v1/chat/messages") {
     try {
-      const peer = peerFromRequest(req);
       sendJson(
         res,
         200,
-        withPeer(peer, () => clearChatMessages())
+        withChatRequest(req, null, () => clearChatMessages())
       );
     } catch (e) {
       sendJson(res, 500, {
@@ -1872,6 +2279,332 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "mood_failed",
         message: e.message || "读取心情失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/mood/lexicon") {
+    try {
+      sendJson(res, 200, listLexiconPublic());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "lexicon_failed",
+        message: e.message || "读取词表失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/mood/lexicon") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      sendJson(res, 200, addLexiconExtra(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_lexicon" ? 400 : 500, {
+        ok: false,
+        error: e.code || "lexicon_add_failed",
+        message: e.message || "加词失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/chat/mood/lexicon/")) {
+    try {
+      const w = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/mood/lexicon/".length)
+      );
+      sendJson(res, 200, removeLexiconExtra(w));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "lexicon_del_failed",
+        message: e.message || "删词失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/letters") {
+    try {
+      const peer = peerFromRequest(req);
+      const sp = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const { listLetters } = require("../../聊天app/gateway/letters");
+      sendJson(
+        res,
+        200,
+        listLetters(peer, {
+          q: String(sp.get("q") || "").trim() || undefined,
+          limit: Number(sp.get("limit") || 80),
+        })
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "letters_list_failed",
+        message: e.message || "读取邮局失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/letters/draft") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { saveDraft } = require("../../聊天app/gateway/letters");
+      sendJson(res, 200, saveDraft(peer, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "bad_letter" ||
+          e.code === "drafts_full" ||
+          e.code === "letters_full" ||
+          e.code === "letter_locked"
+          ? 400
+          : 500,
+        {
+          ok: false,
+          error: e.code || "letters_draft_failed",
+          message: e.message || "存草稿失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/letters/send") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { sendLetter, receiveLetter } = require("../../聊天app/gateway/letters");
+      const out = sendLetter(peer, body);
+      if (body && body.await_reply) {
+        try {
+          const reply = await receiveLetter(peer, {
+            reply_to: out.letter && out.letter.id,
+          });
+          sendJson(res, 200, { ...out, reply: reply.letter });
+          return;
+        } catch (re) {
+          sendJson(res, 200, {
+            ...out,
+            reply_error: (re && re.message) || "回信失败",
+          });
+          return;
+        }
+      }
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "bad_letter" ||
+          e.code === "letters_full" ||
+          e.code === "letter_locked"
+          ? 400
+          : 500,
+        {
+          ok: false,
+          error: e.code || "letters_send_failed",
+          message: e.message || "寄信失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/letters/receive") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { receiveLetter } = require("../../聊天app/gateway/letters");
+      sendJson(res, 200, await receiveLetter(peer, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const code = e && e.code;
+      sendJson(
+        res,
+        code === "budget_exhausted" || code === "bad_reply_to"
+          ? 400
+          : code === "letter_missing"
+            ? 404
+            : 500,
+        {
+          ok: false,
+          error: code || "letters_receive_failed",
+          message: e.message || "收信失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/chat/letters/") &&
+    urlPath.endsWith("/open")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/letters/".length, -"/open".length)
+      );
+      const raw = await readBody(req).catch(() => "");
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { openLetter } = require("../../聊天app/gateway/letters");
+      sendJson(res, 200, openLetter(peer, id));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "letter_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "letters_open_failed",
+        message: e.message || "拆信失败",
+      });
+    }
+    return;
+  }
+
+  if (
+    req.method === "POST" &&
+    urlPath.startsWith("/api/v1/chat/letters/") &&
+    urlPath.endsWith("/memory")
+  ) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/letters/".length, -"/memory".length)
+      );
+      const raw = await readBody(req).catch(() => "");
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { letterToMemory } = require("../../聊天app/gateway/letters");
+      sendJson(res, 200, letterToMemory(peer, id));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "letter_missing"
+          ? 404
+          : e.code === "bad_memory"
+            ? 400
+            : 500,
+        {
+          ok: false,
+          error: e.code || "letters_memory_failed",
+          message: e.message || "写入记忆失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/chat/letters/")) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/letters/".length).split("/")[0] || ""
+      );
+      const { deleteLetter } = require("../../聊天app/gateway/letters");
+      sendJson(res, 200, deleteLetter(peerFromRequest(req), id));
+    } catch (e) {
+      sendJson(res, e.code === "letter_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "letters_delete_failed",
+        message: e.message || "删信失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/auto-memory") {
+    try {
+      const peer = peerFromRequest(req);
+      const sp = new URL(req.url || "/", "http://127.0.0.1").searchParams;
+      const { listEntries } = require("../../聊天app/gateway/auto-memory");
+      sendJson(
+        res,
+        200,
+        listEntries(peer, {
+          q: String(sp.get("q") || "").trim() || undefined,
+          category: String(sp.get("category") || "").trim() || undefined,
+          limit: Number(sp.get("limit") || 80),
+        })
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "auto_memory_list_failed",
+        message: e.message || "读取档案失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/auto-memory") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const { upsertEntry } = require("../../聊天app/gateway/auto-memory");
+      sendJson(res, 200, upsertEntry(peer, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(
+        res,
+        e.code === "bad_auto_memory" || e.code === "auto_memory_always_full"
+          ? 400
+          : 500,
+        {
+          ok: false,
+          error: e.code || "auto_memory_write_failed",
+          message: e.message || "写入档案失败",
+        }
+      );
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/chat/auto-memory/")) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/auto-memory/".length)
+      );
+      const peer = peerFromRequest(req);
+      const { deleteEntry } = require("../../聊天app/gateway/auto-memory");
+      sendJson(res, 200, deleteEntry(peer, id));
+    } catch (e) {
+      sendJson(res, e.code === "auto_memory_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "auto_memory_delete_failed",
+        message: e.message || "删除档案失败",
       });
     }
     return;
@@ -1933,7 +2666,14 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw || "{}") : {};
       const peer = peerFromRequest(req, body);
-      const out = await digestNewMemories(peer);
+      const ids = Array.isArray(body.message_ids)
+        ? body.message_ids
+        : Array.isArray(body.messageIds)
+          ? body.messageIds
+          : null;
+      const out = ids
+        ? await withChatRequest(req, body, () => digestFromMessageIds(ids))
+        : await digestNewMemories(peer);
       sendJson(res, 200, out);
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -1944,13 +2684,87 @@ const server = http.createServer(async (req, res) => {
       const status =
         code === "budget_exhausted"
           ? 402
-          : code === "bad_memory"
+          : code === "bad_memory" || code === "bad_digest_ids"
             ? 400
             : 500;
       sendJson(res, status, {
         ok: false,
         error: code,
         message: e.message || "总结记忆失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/memory/dehydrate") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      const peer = peerFromRequest(req, body);
+      const out = await dehydrateMemories(peer, body);
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const code = e.code || "dehydrate_failed";
+      sendJson(res, code === "budget_exhausted" ? 402 : 500, {
+        ok: false,
+        error: code,
+        message: e.message || "脱水失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath.startsWith("/api/v1/chat/memory/") && urlPath.endsWith("/source")) {
+    try {
+      const id = decodeURIComponent(
+        urlPath.slice("/api/v1/chat/memory/".length, -"/source".length)
+      );
+      const peer = peerFromRequest(req);
+      sendJson(res, 200, traceMemorySource(peer, id));
+    } catch (e) {
+      sendJson(res, e.code === "memory_missing" ? 404 : 500, {
+        ok: false,
+        error: e.code || "memory_source_failed",
+        message: e.message || "追溯失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/memory/sentinel") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      const peer = peerFromRequest(req, body);
+      sendJson(
+        res,
+        200,
+        await llmSentinelRoute(peer, body && (body.text || body.content))
+      );
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "sentinel_route_failed",
+        message: e.message || "哨兵失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/mood/batch") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw || "{}") : {};
+      sendJson(res, 200, await runMoodBatch(body));
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "mood_batch_failed",
+        message: e.message || "批处理失败",
       });
     }
     return;
@@ -2022,7 +2836,7 @@ const server = http.createServer(async (req, res) => {
     try {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
-      const out = await translateChatText(body && body.text);
+      const out = await translateChatText(body && body.text, body && body.to);
       sendJson(res, 200, out);
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -2058,6 +2872,20 @@ const server = http.createServer(async (req, res) => {
   }
 
   /* H1.23：MCP 一键测连通（可用未保存的表单值） */
+  if (req.method === "GET" && urlPath === "/api/v1/chat/mcp/status") {
+    try {
+      const { getMcpStatus } = require("./mcp-remote");
+      sendJson(res, 200, { ok: true, status: getMcpStatus() });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "mcp_status_failed",
+        message: e.message || "读取 MCP 状态失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat/mcp/ping") {
     try {
       const raw = await readBody(req);
@@ -2071,7 +2899,15 @@ const server = http.createServer(async (req, res) => {
         body && body.token != null
           ? String(body.token)
           : String(settings.mcp_token || "");
-      const out = await pingMcpConnection({ url, token });
+      const url_2 =
+        body && body.url_2 != null
+          ? String(body.url_2)
+          : String(settings.mcp_url_2 || "");
+      const token_2 =
+        body && body.token_2 != null
+          ? String(body.token_2)
+          : String(settings.mcp_token_2 || "");
+      const out = await pingMcpConnection({ url, token, url_2, token_2 });
       sendJson(res, 200, out);
     } catch (e) {
       if (e instanceof SyntaxError) {
@@ -2121,6 +2957,8 @@ const server = http.createServer(async (req, res) => {
           kind: u.searchParams.get("kind") || "all",
           from: u.searchParams.get("from") || "",
           to: u.searchParams.get("to") || "",
+          peer: u.searchParams.get("peer") || "",
+          topic: u.searchParams.get("topic") || "",
         })
       );
     } catch (e) {
@@ -2141,6 +2979,347 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "wallet_failed",
         message: e.message || "读取钱包失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/wallet/pocket-keys") {
+    try {
+      sendJson(res, 200, getPocketKeys());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "pocket_keys_failed",
+        message: e.message || "读取零花钥失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/wallet/adjust") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, walletAdjust(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "bad_wallet_amount" ||
+        e.code === "wallet_insufficient" ||
+        e.code === "card_missing" ||
+        e.code === "bad_wallet_party"
+          ? 400
+          : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "wallet_adjust_failed",
+        message: e.message || "零花调账失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/wallet/cards") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, addCard(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "bad_card" || e.code === "cards_full" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "card_add_failed",
+        message: e.message || "添加银行卡失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PATCH" && urlPath.startsWith("/api/v1/wallet/cards/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/wallet/cards/".length));
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, patchCard(id, body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "card_missing" || e.code === "bad_card" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "card_patch_failed",
+        message: e.message || "更新银行卡失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/wallet/cards/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/wallet/cards/".length));
+      sendJson(res, 200, removeCard(id));
+    } catch (e) {
+      const status = e.code === "card_missing" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "card_delete_failed",
+        message: e.message || "删除银行卡失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/wealth") {
+    try {
+      sendJson(res, 200, getWealth());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "wealth_failed",
+        message: e.message || "读取剧场资产失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "PUT" && urlPath === "/api/v1/wealth") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, putWealth(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "bad_wealth" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "wealth_save_failed",
+        message: e.message || "保存剧场资产失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/wealth/adjust") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, wealthAdjust(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status = e.code === "bad_wealth_adjust" || e.code === "bad_wealth" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "wealth_adjust_failed",
+        message: e.message || "剧场调账失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/memo") {
+    try {
+      try {
+        ensureMemoSeeded();
+      } catch (_) {}
+      sendJson(res, 200, listMemo());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "memo_failed",
+        message: e.message || "读取备忘录失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/memo/keys") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, upsertMemoKey(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "memo_missing" || e.code === "memo_full" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "memo_key_failed",
+        message: e.message || "保存密钥失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/memo/keys/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/memo/keys/".length));
+      sendJson(res, 200, removeMemoKey(id));
+    } catch (e) {
+      const status = e.code === "memo_missing" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "memo_key_delete_failed",
+        message: e.message || "删除密钥失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/memo/notes") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, upsertMemoNote(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "memo_missing" || e.code === "memo_full" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "memo_note_failed",
+        message: e.message || "保存杂记失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "DELETE" && urlPath.startsWith("/api/v1/memo/notes/")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/memo/notes/".length));
+      sendJson(res, 200, removeMemoNote(id));
+    } catch (e) {
+      const status = e.code === "memo_missing" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "memo_note_delete_failed",
+        message: e.message || "删除杂记失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/economy/tiers") {
+    try {
+      const { resolveAppPersona } = require("./settings");
+      const persona = resolveAppPersona("chat");
+      const text = String((persona && persona.persona_card) || "").trim();
+      const suggest = suggestEconomyTier(text);
+      sendJson(res, 200, {
+        ok: true,
+        tiers: listEconomyTiers(),
+        suggested: suggest.suggested,
+        suggest_reason: suggest.reason,
+        has_persona: !!text,
+      });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "economy_tiers_failed",
+        message: e.message || "读取开局档失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/economy/tiers/apply") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, applyEconomyTier(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "confirm_required" || e.code === "bad_tier" || e.code === "bad_wealth" ? 400 : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "economy_tier_apply_failed",
+        message: e.message || "应用开局档失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/economy/events") {
+    try {
+      sendJson(res, 200, listEconomyEvents());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "economy_events_failed",
+        message: e.message || "读取经济事件失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/economy/events") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      sendJson(res, 200, createAndApplyEconomyEvent(body));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "bad_economy_event" ||
+        e.code === "bad_wallet_amount" ||
+        e.code === "wallet_insufficient" ||
+        e.code === "bad_wealth_adjust"
+          ? 400
+          : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "economy_event_failed",
+        message: e.message || "经济事件入账失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath.startsWith("/api/v1/economy/events/") && urlPath.endsWith("/apply")) {
+    try {
+      const id = decodeURIComponent(urlPath.slice("/api/v1/economy/events/".length, -"/apply".length));
+      sendJson(res, 200, applyEconomyEvent(id));
+    } catch (e) {
+      const status =
+        e.code === "bad_economy_event" ||
+        e.code === "economy_event_missing" ||
+        e.code === "bad_wallet_amount" ||
+        e.code === "wallet_insufficient" ||
+        e.code === "bad_wealth_adjust"
+          ? 400
+          : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "economy_apply_failed",
+        message: e.message || "应用经济事件失败",
       });
     }
     return;
@@ -2188,8 +3367,20 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "POST" && urlPath === "/api/v1/chat/media") {
     try {
-      const buf = await readBodyBuffer(req, MEDIA_MAX_BYTES);
-      const out = saveChatMedia(buf, req.headers["content-type"]);
+      let originalName = "";
+      try {
+        const hdr = req.headers["x-filename"];
+        if (hdr) originalName = decodeURIComponent(String(hdr));
+      } catch (_) {
+        originalName = "";
+      }
+      const cap = originalName ? FILE_MAX_BYTES : MEDIA_MAX_BYTES;
+      const buf = await readBodyBuffer(req, cap);
+      const out = saveChatMedia(
+        buf,
+        req.headers["content-type"],
+        originalName || undefined
+      );
       sendJson(res, 200, out);
     } catch (e) {
       const status =
@@ -2302,6 +3493,120 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/phone/presence") {
+    try {
+      const {
+        getPresence,
+        summarizePeek,
+        summarizeDevice,
+      } = require("../../聊天app/gateway/phone-presence");
+      const { readSettings } = require("./settings");
+      const s = readSettings();
+      sendJson(res, 200, {
+        ok: true,
+        presence: getPresence(),
+        peek: summarizePeek({ l1: !!s.peek_phone_l1_enabled }),
+        device: summarizeDevice(),
+      });
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "phone_presence_failed",
+        message: e.message || "读手机状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/phone/presence") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { putPresence } = require("../../聊天app/gateway/phone-presence");
+      sendJson(res, 200, putPresence(body || {}));
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "phone_presence_write_failed",
+        message: e.message || "写手机状态失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/geo") {
+    try {
+      const { readGeo } = require("../../聊天app/gateway/weather");
+      sendJson(res, 200, readGeo());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "geo_read_failed",
+        message: e.message || "读取定位失败",
+      });
+    }
+    return;
+  }
+
+  /* IB M8：抽屉天气（复用 H10 Open-Meteo 缓存；不要求 AI 天气工具已开） */
+  if (req.method === "GET" && urlPath === "/api/v1/chat/weather") {
+    try {
+      const u = new URL(req.url || "/", "http://127.0.0.1");
+      const { getWeatherTool } = require("../../聊天app/gateway/weather");
+      const s = readSettings();
+      const city = String(u.searchParams.get("city") || "").trim();
+      const out = await getWeatherTool({
+        city: city || undefined,
+        manualCity: s.weather_city || "",
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      sendJson(res, 200, {
+        ok: false,
+        error: e.code || "weather_failed",
+        message: e.message || "天气暂不可用",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/geo") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { writeGeo, clearGeo } = require("../../聊天app/gateway/weather");
+      if (body && body.clear) {
+        sendJson(res, 200, clearGeo());
+        return;
+      }
+      sendJson(
+        res,
+        200,
+        writeGeo({
+          lat: body.lat,
+          lon: body.lon != null ? body.lon : body.lng,
+          label: body.label,
+          source: body.source || "browser",
+        })
+      );
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, e.code === "bad_geo" ? 400 : 500, {
+        ok: false,
+        error: e.code || "geo_write_failed",
+        message: e.message || "写入定位失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "POST" && urlPath === "/api/v1/chat/sentinel/tick") {
     try {
       const raw = await readBody(req);
@@ -2321,6 +3626,31 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "sentinel_tick_failed",
         message: e.message || "哨兵 tick 失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/presence/dice") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { runPresenceDiceTick } = require("../../聊天app/gateway/presence");
+      const out = runPresenceDiceTick({
+        force: !!(body && body.force),
+        forceKind: body && body.kind ? String(body.kind) : undefined,
+        roll: body && body.roll != null ? Number(body.roll) : undefined,
+      });
+      sendJson(res, 200, out);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "presence_dice_failed",
+        message: e.message || "骰子 tick 失败",
       });
     }
     return;
@@ -2462,7 +3792,8 @@ const server = http.createServer(async (req, res) => {
       const raw = await readBody(req);
       const body = raw ? JSON.parse(raw) : {};
       const text = String((body && body.text) || "").trim();
-      const audio = await synthesizeSpeech(text);
+      const language = String((body && (body.language || body.lang)) || "zh").trim();
+      const audio = await synthesizeSpeech(text, { language });
       res.writeHead(200, {
         "Content-Type": audio.contentType || "audio/mpeg",
         "Cache-Control": "no-store",
@@ -2497,11 +3828,14 @@ const server = http.createServer(async (req, res) => {
       const peer = peerFromRequest(req);
       const ctype = String(req.headers["content-type"] || "audio/webm");
       const buf = await readBodyBuffer(req, MEDIA_MAX_BYTES);
+      const videoHdr = String(req.headers["x-call-media"] || "").toLowerCase();
+      const isVideo = videoHdr === "video";
       const result = await withPeer(peer, () =>
         runVoiceTurn({
           buf,
           contentType: ctype,
           filename: "call.webm",
+          video: isVideo,
         })
       );
       if (result && result.used) addTokensUsed(result.used);
@@ -2519,6 +3853,94 @@ const server = http.createServer(async (req, res) => {
         ok: false,
         error: e.code || "voice_turn_failed",
         message: e.message || "通话回合失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/call/heartbeat") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const peer = peerFromRequest(req, body);
+      const result = await withPeer(peer, () =>
+        runCallHeartbeat({
+          streak: body && body.streak,
+          video: !!(body && (body.video || body.media === "video")),
+        })
+      );
+      if (result && result.used) addTokensUsed(result.used);
+      sendJson(res, 200, result);
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      const status =
+        e.code === "llm_not_configured" || e.code === "llm_empty"
+          ? 400
+          : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "call_heartbeat_failed",
+        message: e.message || "通话心跳失败",
+      });
+    }
+    return;
+  }
+
+  if (req.method === "GET" && urlPath === "/api/v1/chat/call/gifts") {
+    sendJson(res, 200, { ok: true, gifts: listGifts() });
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/chat/call/gift") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const { readSettings } = require("./settings");
+      if (!readSettings().call_gift_enabled) {
+        sendJson(res, 403, {
+          ok: false,
+          error: "gift_disabled",
+          message: "礼物未开启",
+        });
+        return;
+      }
+      const gift = giftByTier(body && body.tier);
+      if (!gift) {
+        sendJson(res, 400, {
+          ok: false,
+          error: "bad_gift",
+          message: "礼物档位无效",
+        });
+        return;
+      }
+      const peer = peerFromRequest(req, body);
+      const message = withPeer(peer, () => {
+        const { appendMessage } = require("../../聊天app/gateway/daily-chat");
+        return appendMessage(
+          "you",
+          gift.emoji + " 送出了" + gift.name,
+          "text",
+          {
+            payload: {
+              source: "call_gift",
+              gift: { tier: gift.tier, id: gift.id, name: gift.name },
+            },
+          }
+        );
+      });
+      sendJson(res, 200, { ok: true, gift, message });
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        sendJson(res, 400, { ok: false, error: "invalid_json" });
+        return;
+      }
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "gift_failed",
+        message: e.message || "送礼失败",
       });
     }
     return;
@@ -2683,8 +4105,13 @@ const server = http.createServer(async (req, res) => {
         });
         return;
       }
-      const peer = peerFromRequest(req, body);
-      await withPeer(peer, async () => {
+      await withChatRequest(req, body, async () => {
+        let { youBlockedPeer } = require("../../聊天app/gateway/daily-chat");
+        /* 你已拉黑：强制 noreply + blocked_send，保证气泡有感叹号 */
+        if (youBlockedPeer()) {
+          body.noreply = true;
+          body.blocked_send = true;
+        }
         if (body.noreply) {
           sendJson(res, 200, createMessage(body));
           return;
@@ -3115,6 +4542,19 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && urlPath === "/api/v1/watch/titles") {
     sendJson(res, 200, listTitles());
+    return;
+  }
+
+  if (req.method === "POST" && urlPath === "/api/v1/watch/titles/scan") {
+    try {
+      sendJson(res, 200, scanMediaLibrary());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "watch_scan_failed",
+        message: e.message || "扫库失败",
+      });
+    }
     return;
   }
 
@@ -4634,8 +6074,23 @@ server.listen(PORT, HOST, () => {
     console.warn("activity loop skipped:", (e && e.message) || e);
   }
   try {
+    startMoodBatchScheduler();
+  } catch (e) {
+    console.warn("mood batch skipped:", (e && e.message) || e);
+  }
+  try {
+    ensureMemoSeeded();
+  } catch (e) {
+    console.warn("pocket-keys memo seed skipped:", (e && e.message) || e);
+  }
+  try {
     require("../../聊天app/gateway/schedule-monitor").startMonitorLoop();
   } catch (e) {
     console.warn("schedule-monitor loop skipped:", (e && e.message) || e);
+  }
+  try {
+    require("./mcp-remote").startMcpHeartbeat(() => readSettings());
+  } catch (e) {
+    console.warn("mcp heartbeat skipped:", (e && e.message) || e);
   }
 });

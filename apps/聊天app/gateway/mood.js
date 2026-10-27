@@ -2,7 +2,8 @@
  * 家机心情：H1.14 门控 + H2.3 V/A + H2.5 事件池 + H2.6 装饰 + H2.7 中表词典。
  * 词典命中 → events[] → 幂律加权合成 PA/NA/V/A → 软互抑 → 门控/prompt。
  * H2.6：限频 ambient；H2.7：薄词典；H2.9：LLM 选词；H2.10：隐喻/防御话术→弱事件。
- * 全量 CVAW / 30 分钟批处理评分另刀。
+ * H2.13：30min 批处理；H2.15：urgentPhrases / 脏位 / 反讨好·前景指令。
+ * 全量 CVAW 重训另刀。
  */
 const fs = require("node:fs");
 const path = require("node:path");
@@ -12,6 +13,10 @@ const {
   matchMetaphor,
   LEXICON,
   LEXICON_SIZE,
+  listLexiconPublic,
+  addLexiconExtra,
+  removeLexiconExtra,
+  saveLexiconExtra,
 } = require("./mood-lexicon");
 
 const DATA_DIR = path.join(__dirname, "..", "data");
@@ -41,6 +46,25 @@ const AMBIENT_POOL = [
 const AMBIENT_MIN_GAP_MS = 2.5 * 3600 * 1000;
 const AMBIENT_FRESH_MS = 3 * 3600 * 1000;
 const AMBIENT_CHANCE = 0.55;
+
+/* Wave14 漏斗口语兜底：词典盖不住的伤害/拒绝短句 */
+const URGENT_PHRASES = [
+  "分手",
+  "滚",
+  "别找我",
+  "不想理你",
+  "去死",
+  "讨厌你",
+  "拉黑",
+  "删了吧",
+  "我不爱你了",
+  "我们完了",
+  "你烦不烦",
+  "闭嘴",
+  "求你别",
+  "再见吧",
+  "不理你了",
+];
 
 const DEFAULT_MOOD = {
   pa: 0.35,
@@ -230,13 +254,35 @@ function readMood() {
   return fuseFromEvents(events, Date.now());
 }
 
+function readMoodDirty() {
+  const raw = readMoodRaw();
+  return !!(raw && raw.dirty);
+}
+
+function moodPayload(fused, dirty) {
+  return {
+    pa: fused.pa,
+    na: fused.na,
+    valence: fused.valence,
+    arousal: fused.arousal,
+    events: fused.events,
+    updatedAt: fused.updatedAt,
+    dirty: !!dirty,
+  };
+}
+
 function writeMood(m) {
   ensureFile();
+  const prev = readMoodRaw() || {};
+  const dirty =
+    m && Object.prototype.hasOwnProperty.call(m, "dirty")
+      ? !!m.dirty
+      : !!prev.dirty;
   const fused =
     m && Array.isArray(m.events)
       ? fuseFromEvents(m.events, Number(m.updatedAt) || Date.now())
       : fuseFromEvents(
-          (m && m.events) || (readMoodRaw() || {}).events || [],
+          (m && m.events) || prev.events || [],
           Date.now()
         );
   /* 允许测试直接塞 pa/na（无 events 时）种 seed */
@@ -258,39 +304,36 @@ function writeMood(m) {
     const again = fuseFromEvents(events, Date.now());
     fs.writeFileSync(
       MOOD_PATH,
-      JSON.stringify(
-        {
-          pa: again.pa,
-          na: again.na,
-          valence: again.valence,
-          arousal: again.arousal,
-          events: again.events,
-          updatedAt: again.updatedAt,
-        },
-        null,
-        2
-      ),
+      JSON.stringify(moodPayload(again, dirty), null, 2),
       "utf8"
     );
     return again;
   }
   fs.writeFileSync(
     MOOD_PATH,
-    JSON.stringify(
-      {
-        pa: fused.pa,
-        na: fused.na,
-        valence: fused.valence,
-        arousal: fused.arousal,
-        events: fused.events,
-        updatedAt: fused.updatedAt,
-      },
-      null,
-      2
-    ),
+    JSON.stringify(moodPayload(fused, dirty), null, 2),
     "utf8"
   );
   return fused;
+}
+
+function markMoodDirty() {
+  const cur = readMood();
+  writeMood({ events: cur.events, updatedAt: cur.updatedAt, dirty: true });
+}
+
+function clearMoodDirty() {
+  const cur = readMood();
+  writeMood({ events: cur.events, updatedAt: cur.updatedAt, dirty: false });
+}
+
+function hitUrgentPhrase(text) {
+  const s = String(text || "");
+  if (!s) return false;
+  for (const p of URGENT_PHRASES) {
+    if (s.indexOf(p) >= 0) return true;
+  }
+  return false;
 }
 
 /** 幂律衰减 = 重算事件池（Wave14）；保留函数名兼容旧调用 */
@@ -429,7 +472,11 @@ function observeUserText(text) {
     }
   }
 
-  const mood = writeMood({ events, updatedAt: Date.now() });
+  const mood = writeMood({
+    events,
+    updatedAt: Date.now(),
+    dirty: true,
+  });
   return {
     mood,
     scan: sc,
@@ -449,6 +496,7 @@ function shouldCalibrate(scan, mood, text) {
   const sc = scan || { minV: 0, maxV: 0, negCount: 0, posCount: 0, avgV: 0, hits: [] };
   const m = mood || readMood();
   const intensity = scanIntensity(text, sc);
+  if (hitUrgentPhrase(text)) return true;
   if (sc.minV < -0.5) return true;
   if (sc.maxV > 0.7) return true;
   if (sc.negCount >= 2 && sc.avgV < -0.2) return true;
@@ -550,6 +598,7 @@ async function maybeCalibrateMood(userText, opts) {
   const vocab = LEXICON.map((e) => e.w).join("、");
   const system =
     "你是情绪选词器。只从给定词表里选 0～5 个最能概括「用户这句话对角色心情冲击」的词。" +
+    "反讨好：冷场就选低唤醒中性/淡漠词，敷衍就别美化成甜蜜；伤害/拒绝必须如实偏负，禁止每次都往正面美化。" +
     "不要解释。只输出一行 JSON：{\"words\":[\"词1\",\"词2\"]}。" +
     "词必须出自词表；没有合适的就 {\"words\":[]}。";
   const user =
@@ -638,6 +687,9 @@ function buildMoodPrompt(mood) {
   if (m.latest) {
     parts.push("最近情绪线索：「" + String(m.latest).slice(0, 16) + "」。");
   }
+  parts.push(
+    "预设心情是背景色；对方当前这条消息才是前景——若这话带伤害/拒绝/怒意，必须先对这话做出真实反应，即使之前心情不错；对方示好时也可以被融化。"
+  );
   return (
     "【当下心情】\n" +
     parts.join("\n") +
@@ -740,12 +792,30 @@ function moodPoints(mood, now) {
   });
 }
 
+/** H2.17：幂律衰减预览曲线（小时轴）；三档 importance，valence=-0.2 */
+const DECAY_HOURS = [0, 1, 4, 12, 24, 48, 72, 168, 360, 720];
+function decayCurvePreview(now) {
+  const t = Number(now) || Date.now();
+  const series = [1, 5, 9].map((imp) => ({
+    importance: imp,
+    points: DECAY_HOURS.map((h) => {
+      const w = eventWeight(
+        { valence: -0.2, importance: imp, ts: t - h * 3600000 },
+        t
+      );
+      return { h, w: Math.round(w * 1000) / 1000 };
+    }),
+  }));
+  return { hours: DECAY_HOURS.slice(), series };
+}
+
 /** 对外快照：胶囊 / GET /api/v1/chat/mood */
 function getMoodPublic(opts) {
   maybeAmbient();
   let mood = readMood();
   mood = nudgeFromMemory(mood, opts && opts.peerId);
-  const points = moodPoints(mood, Date.now());
+  const now = Date.now();
+  const points = moodPoints(mood, now);
   return {
     ok: true,
     pa: Math.round(mood.pa * 1000) / 1000,
@@ -757,6 +827,7 @@ function getMoodPublic(opts) {
     latest: mood.latest || "",
     events: (mood.events || []).length,
     points,
+    decayCurve: decayCurvePreview(now),
     updatedAt: mood.updatedAt,
   };
 }
@@ -791,6 +862,14 @@ function decideReplyGate(opts) {
   } else {
     delayMs = Math.max(400, Math.min(22000, delayMs));
   }
+  try {
+    require("../../资产app/gateway/pocket-keys").syncPocketKeysFromMoodLabel(
+      moodLabel(mood),
+      mood
+    );
+  } catch (_) {
+    /* 零花换钥可选 */
+  }
   return {
     delayMs,
     skip,
@@ -802,6 +881,88 @@ function decideReplyGate(opts) {
 function sleep(ms) {
   const n = Math.max(0, Number(ms) || 0);
   return new Promise((r) => setTimeout(r, n));
+}
+
+const BATCH_MS = 30 * 60 * 1000;
+let batchTimer = null;
+let lastBatchAt = 0;
+
+/**
+ * 30min 批处理：脏位才跑（无对话不耗）；扫近句喂词典；小波动补 1 次 LLM 选词。
+ * ponytail: 非全量 CVAW 重训；额外词表见 data/cvaw-extra.json（可选）。
+ */
+async function runMoodBatch(opts) {
+  const force = !!(opts && opts.force);
+  const now = Date.now();
+  const wasDirty = readMoodDirty();
+  if (!force && !wasDirty) {
+    return { ok: true, skipped: true, reason: "clean", lastBatchAt };
+  }
+  if (!force && lastBatchAt && now - lastBatchAt < BATCH_MS - 5000) {
+    return { ok: true, skipped: true, reason: "cooldown", lastBatchAt };
+  }
+  lastBatchAt = now;
+  let scanned = 0;
+  let hits = 0;
+  let latestYou = "";
+  try {
+    const { listPeers, withPeer, listMessages, llmContent } = require("./daily-chat");
+    const peers = (listPeers().peers || []).slice(0, 8);
+    for (const p of peers) {
+      withPeer(p.id, () => {
+        const msgs = (listMessages().messages || []).slice(-30);
+        for (const m of msgs) {
+          if (!m || m.from !== "you") continue;
+          const t = String(llmContent(m) || "").trim();
+          if (!t || t.length < 2) continue;
+          scanned += 1;
+          latestYou = t;
+          const out = observeUserText(t);
+          if (out && (out.event || out.metaphorEvent)) hits += 1;
+        }
+      });
+    }
+  } catch (_) {}
+  let calibrated = null;
+  /* 有情绪命中才补 1 次选词（小波动）；纯寒暄不烧 token */
+  if (hits > 0 && latestYou && latestYou.length >= 2 && latestYou.length <= 500) {
+    try {
+      calibrated = await maybeCalibrateMood(latestYou, { force: true });
+    } catch (_) {
+      calibrated = null;
+    }
+  }
+  try {
+    maybeAmbient();
+  } catch (_) {}
+  try {
+    const m = readMood();
+    require("../../资产app/gateway/pocket-keys").syncPocketKeysFromMoodLabel(
+      moodLabel(m),
+      m
+    );
+  } catch (_) {}
+  clearMoodDirty();
+  return {
+    ok: true,
+    scanned,
+    hits,
+    calibrated: !!(calibrated && calibrated.ok),
+    lastBatchAt,
+    lexicon: LEXICON_SIZE,
+  };
+}
+
+function startMoodBatchScheduler() {
+  if (batchTimer) return { ok: true, running: true };
+  batchTimer = setInterval(() => {
+    Promise.resolve(runMoodBatch()).catch(() => {});
+  }, BATCH_MS);
+  if (batchTimer.unref) batchTimer.unref();
+  setTimeout(() => {
+    Promise.resolve(runMoodBatch({ force: true })).catch(() => {});
+  }, 12_000).unref?.();
+  return { ok: true, running: true, interval_ms: BATCH_MS };
 }
 
 module.exports = {
@@ -816,76 +977,128 @@ module.exports = {
   maybeAmbient,
   maybeCalibrateMood,
   shouldCalibrate,
+  hitUrgentPhrase,
+  readMoodDirty,
+  markMoodDirty,
+  clearMoodDirty,
   applyCalibratedWords,
   scanText,
   eventWeight,
   fuseFromEvents,
+  decayCurvePreview,
+  listLexiconPublic,
+  addLexiconExtra,
+  removeLexiconExtra,
+  saveLexiconExtra,
   sleep,
+  runMoodBatch,
+  startMoodBatchScheduler,
   MOOD_PATH,
   AMBIENT_POOL,
   LEXICON_SIZE,
+  BATCH_MS,
+  URGENT_PHRASES,
 };
 
 if (require.main === module) {
-  writeMood({ pa: 0.4, na: 0.1, valence: 0.3, arousal: 0.3, updatedAt: Date.now() });
-  const bad = observeUserText("你滚吧 我受够了 分手");
-  console.assert(bad.mood.na > 0.25, "fight na");
-  console.assert(bad.mood.valence < 0.2, "fight v");
-  console.assert(bad.event && bad.event.kind === "score", "score event");
-  console.assert(Array.isArray(bad.mood.events) && bad.mood.events.length >= 1);
-  console.assert(LEXICON_SIZE >= 80, "lexicon");
-  const soft = scanText("我很难过也很失望");
-  console.assert(soft.negCount >= 1 && soft.avgV < 0, "lexicon soft neg");
-  console.assert(soft.hits.some((h) => h.arousal > 0), "lexicon arousal");
-  const w0 = eventWeight(
-    { valence: -0.7, importance: 5, ts: Date.now() },
-    Date.now()
-  );
-  const w24 = eventWeight(
-    { valence: -0.7, importance: 5, ts: Date.now() - 24 * 3600000 },
-    Date.now()
-  );
-  console.assert(w0 > w24 && w24 > 0.2, "power-law decay");
-  const gateCold = decideReplyGate();
-  console.assert(gateCold.delayMs >= 1200);
-  const gateFast = decideReplyGate({ slowReply: false });
-  console.assert(gateFast.delayMs <= 180);
-  writeMood({ pa: 0.5, na: 0.1, valence: 0.4, arousal: 0.35, updatedAt: Date.now() });
-  const good = observeUserText("对不起 抱抱 想你了 和好吧");
-  console.assert(good.mood.pa > 0.25, "patch pa");
-  console.assert(buildMoodPrompt(good.mood).includes("valence="));
-  const pub = getMoodPublic();
-  console.assert(pub.ok && pub.label && pub.valence != null && pub.arousal != null);
-  console.assert(pub.events >= 1);
-  console.assert(Array.isArray(pub.points) && pub.points.length >= 1, "points");
-  console.assert(pub.points[0].valence != null && pub.points[0].arousal != null);
-  const amb = maybeAmbient({ force: true });
-  console.assert(amb && amb.kind === "ambient" && amb.label, "ambient");
-  const afterAmb = readMood();
-  console.assert(publicLabel(afterAmb) === amb.label, "public ambient label");
-  const amb2 = maybeAmbient();
-  console.assert(amb2 == null, "ambient gap");
-  /* 软互抑：极端双高会被压 */
-  const extreme = softMutual(1, 1);
-  console.assert(extreme.pa < 0.8 && extreme.na < 0.8, "esm");
-  const calScan = scanText("你滚 分手吧 我受够了");
-  console.assert(shouldCalibrate(calScan, { pa: 0.6, na: 0.1 }, "你滚 分手吧"), "calibrate gate");
-  const applied = applyCalibratedWords(["难过", "失望", "不存在的词"]);
-  console.assert(applied && applied.words.includes("难过"), "calibrate apply");
-  writeMood({ pa: 0.5, na: 0.15, valence: 0.35, arousal: 0.35, updatedAt: Date.now() });
-  const meta = observeUserText("没事，随便");
-  console.assert(meta.metaphorEvent && meta.metaphorEvent.importance <= 4, "metaphor weak");
-  console.assert(meta.mood.valence < 0.35, "metaphor pulls v");
-  const skipMeta = observeUserText("没事，我就是这个意思");
-  console.assert(!skipMeta.metaphorEvent, "metaphor opt-out");
-  console.log("mood selfcheck ok", {
-    afterFightNa: bad.mood.na,
-    afterFightV: bad.mood.valence,
-    afterPatchPa: good.mood.pa,
-    label: pub.label,
-    ambient: amb.label,
-    events: readMood().events.length,
-    w0: Math.round(w0 * 100) / 100,
-    w24: Math.round(w24 * 100) / 100,
+  (async () => {
+    writeMood({
+      pa: 0.4,
+      na: 0.1,
+      valence: 0.3,
+      arousal: 0.3,
+      updatedAt: Date.now(),
+      dirty: false,
+    });
+    const bad = observeUserText("你滚吧 我受够了 分手");
+    console.assert(bad.mood.na > 0.25, "fight na");
+    console.assert(bad.mood.valence < 0.2, "fight v");
+    console.assert(bad.event && bad.event.kind === "score", "score event");
+    console.assert(Array.isArray(bad.mood.events) && bad.mood.events.length >= 1);
+    console.assert(readMoodDirty(), "dirty after observe");
+    console.assert(LEXICON_SIZE >= 80, "lexicon");
+    const soft = scanText("我很难过也很失望");
+    console.assert(soft.negCount >= 1 && soft.avgV < 0, "lexicon soft neg");
+    console.assert(soft.hits.some((h) => h.arousal > 0), "lexicon arousal");
+    const w0 = eventWeight(
+      { valence: -0.7, importance: 5, ts: Date.now() },
+      Date.now()
+    );
+    const w24 = eventWeight(
+      { valence: -0.7, importance: 5, ts: Date.now() - 24 * 3600000 },
+      Date.now()
+    );
+    console.assert(w0 > w24 && w24 > 0.2, "power-law decay");
+    const gateCold = decideReplyGate();
+    console.assert(gateCold.delayMs >= 1200);
+    const gateFast = decideReplyGate({ slowReply: false });
+    console.assert(gateFast.delayMs <= 180);
+    writeMood({
+      pa: 0.5,
+      na: 0.1,
+      valence: 0.4,
+      arousal: 0.35,
+      updatedAt: Date.now(),
+      dirty: false,
+    });
+    const good = observeUserText("对不起 抱抱 想你了 和好吧");
+    console.assert(good.mood.pa > 0.25, "patch pa");
+    console.assert(buildMoodPrompt(good.mood).includes("valence="));
+    console.assert(buildMoodPrompt(good.mood).includes("前景"), "foreground");
+    const pub = getMoodPublic();
+    console.assert(pub.ok && pub.label && pub.valence != null && pub.arousal != null);
+    console.assert(pub.events >= 1);
+    console.assert(Array.isArray(pub.points) && pub.points.length >= 1, "points");
+    console.assert(pub.points[0].valence != null && pub.points[0].arousal != null);
+    const amb = maybeAmbient({ force: true });
+    console.assert(amb && amb.kind === "ambient" && amb.label, "ambient");
+    const afterAmb = readMood();
+    console.assert(publicLabel(afterAmb) === amb.label, "public ambient label");
+    const amb2 = maybeAmbient();
+    console.assert(amb2 == null, "ambient gap");
+    const extreme = softMutual(1, 1);
+    console.assert(extreme.pa < 0.8 && extreme.na < 0.8, "esm");
+    const calScan = scanText("你滚 分手吧 我受够了");
+    console.assert(
+      shouldCalibrate(calScan, { pa: 0.6, na: 0.1 }, "你滚 分手吧"),
+      "calibrate gate"
+    );
+    console.assert(hitUrgentPhrase("我要拉黑你了"), "urgent phrase");
+    console.assert(
+      shouldCalibrate(scanText("嗯"), { pa: 0.3, na: 0.1 }, "我要拉黑你了"),
+      "urgent gate"
+    );
+    const applied = applyCalibratedWords(["难过", "失望", "不存在的词"]);
+    console.assert(applied && applied.words.includes("难过"), "calibrate apply");
+    writeMood({
+      pa: 0.5,
+      na: 0.15,
+      valence: 0.35,
+      arousal: 0.35,
+      updatedAt: Date.now(),
+      dirty: false,
+    });
+    const meta = observeUserText("没事，随便");
+    console.assert(meta.metaphorEvent && meta.metaphorEvent.importance <= 4, "metaphor weak");
+    console.assert(meta.mood.valence < 0.35, "metaphor pulls v");
+    const skipMeta = observeUserText("没事，我就是这个意思");
+    console.assert(!skipMeta.metaphorEvent, "metaphor opt-out");
+    clearMoodDirty();
+    lastBatchAt = 0;
+    const cleanBatch = await runMoodBatch();
+    console.assert(cleanBatch && cleanBatch.skipped && cleanBatch.reason === "clean", "dirty skip");
+    console.log("mood selfcheck ok", {
+      afterFightNa: bad.mood.na,
+      afterFightV: bad.mood.valence,
+      afterPatchPa: good.mood.pa,
+      label: pub.label,
+      ambient: amb.label,
+      events: readMood().events.length,
+      w0: Math.round(w0 * 100) / 100,
+      w24: Math.round(w24 * 100) / 100,
+    });
+  })().catch((e) => {
+    console.error("mood selfcheck fail", e);
+    process.exit(1);
   });
 }

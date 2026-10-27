@@ -1,8 +1,11 @@
 /**
  * H2.7 情绪中表 + H2.10 隐喻/防御话术薄表。
  * 每条：词 / valence(-1~1) / arousal(0~1) / importance(1~10)。
- * ponytail: ~百级够扫日常吵架哄；隐喻表专扫「没事/随便」类；要准再换全量 CVAW。
+ * ponytail: 内置百级；可选 data/cvaw-extra.json 追加（数组 [词,v,a,imp]）；真全量 CVAW 需自备词表。
  */
+const fs = require("node:fs");
+const path = require("node:path");
+
 const RAW = [
   /* —— 关系 / 冲突（偏长优先） —— */
   ["不想跟你说", -0.55, 0.4, 6],
@@ -199,6 +202,108 @@ function matchMetaphor(text) {
   return hits;
 }
 
+const EXTRA_PATH = path.join(__dirname, "..", "data", "cvaw-extra.json");
+const BUILTIN_N = LEXICON.length;
+
+function readExtraFile() {
+  try {
+    if (!fs.existsSync(EXTRA_PATH)) return [];
+    const arr = JSON.parse(fs.readFileSync(EXTRA_PATH, "utf8"));
+    return Array.isArray(arr) ? arr : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function normalizeExtraRow(row) {
+  const w = String((row && (row[0] || row.w)) || "").trim().slice(0, 24);
+  if (!w) return null;
+  const v = Number(row[1] != null ? row[1] : row.v != null ? row.v : row.valence);
+  const a = Number(row[2] != null ? row[2] : row.a != null ? row.a : row.arousal);
+  const imp = Number(
+    row[3] != null ? row[3] : row.i != null ? row.i : row.importance
+  );
+  if (!Number.isFinite(v) || !Number.isFinite(a)) return null;
+  return {
+    w,
+    v: Math.max(-1, Math.min(1, v)),
+    a: Math.max(0, Math.min(1, a)),
+    i: Math.max(1, Math.min(10, Math.round(Number.isFinite(imp) ? imp : 4))),
+  };
+}
+
+function rebuildLexiconFromExtra() {
+  const base = buildLexicon(RAW);
+  LEXICON.length = 0;
+  for (const e of base) LEXICON.push(e);
+  const seen = new Set(LEXICON.map((e) => e.w));
+  for (const row of readExtraFile()) {
+    const e = normalizeExtraRow(row);
+    if (!e || seen.has(e.w)) continue;
+    LEXICON.push(e);
+    seen.add(e.w);
+  }
+  LEXICON.sort((a, b) => b.w.length - a.w.length || a.w.localeCompare(b.w, "zh"));
+}
+
+(function loadCvawExtra() {
+  rebuildLexiconFromExtra();
+})();
+
+function listLexiconPublic() {
+  const extra = readExtraFile()
+    .map(normalizeExtraRow)
+    .filter(Boolean);
+  return {
+    ok: true,
+    builtin: BUILTIN_N,
+    total: LEXICON.length,
+    extra,
+  };
+}
+
+function saveLexiconExtra(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const out = [];
+  const seen = new Set();
+  for (const row of list) {
+    const e = normalizeExtraRow(row);
+    if (!e || seen.has(e.w)) continue;
+    seen.add(e.w);
+    out.push([e.w, e.v, e.a, e.i]);
+    if (out.length >= 200) break;
+  }
+  const dir = path.dirname(EXTRA_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(EXTRA_PATH, JSON.stringify(out, null, 2), "utf8");
+  rebuildLexiconFromExtra();
+  return listLexiconPublic();
+}
+
+function addLexiconExtra(row) {
+  const e = normalizeExtraRow(row);
+  if (!e) {
+    const err = new Error("词条无效");
+    err.code = "bad_lexicon";
+    throw err;
+  }
+  const cur = readExtraFile()
+    .map(normalizeExtraRow)
+    .filter(Boolean)
+    .filter((x) => x.w !== e.w);
+  cur.push(e);
+  return saveLexiconExtra(cur);
+}
+
+function removeLexiconExtra(word) {
+  const w = String(word || "").trim();
+  const cur = readExtraFile()
+    .map(normalizeExtraRow)
+    .filter(Boolean)
+    .filter((x) => x.w !== w);
+  return saveLexiconExtra(cur);
+}
+
 (function selfCheck() {
   if (LEXICON.length < 80) throw new Error("lexicon size");
   const h = matchLexicon("分手吧 我很难过");
@@ -218,6 +323,14 @@ module.exports = {
   METAPHOR,
   matchLexicon,
   matchMetaphor,
-  LEXICON_SIZE: LEXICON.length,
+  listLexiconPublic,
+  saveLexiconExtra,
+  addLexiconExtra,
+  removeLexiconExtra,
+  rebuildLexiconFromExtra,
+  get LEXICON_SIZE() {
+    return LEXICON.length;
+  },
   METAPHOR_SIZE: METAPHOR.length,
+  BUILTIN_N,
 };

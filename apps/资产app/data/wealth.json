@@ -1,0 +1,29 @@
+{
+  "owner": "ARIA",
+  "currency": "USD",
+  "totalNetWorth": 12800,
+  "change24h": -0.012,
+  "allocation": [
+    {
+      "en": "Cash & Deposit",
+      "cn": "现金存款",
+      "pct": 55,
+      "color": "#9ec9bc"
+    },
+    {
+      "en": "Daily Spend",
+      "cn": "日常开支备用",
+      "pct": 30,
+      "color": "#6fa896"
+    },
+    {
+      "en": "Other",
+      "cn": "其它",
+      "pct": 15,
+      "color": "#c4a574"
+    }
+  ],
+  "savedAt": 1793005380254,
+  "lastAdjustNote": "开局档 · 穷",
+  "lastAdjustAt": 1793005101019
+}

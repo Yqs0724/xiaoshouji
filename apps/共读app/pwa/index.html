@@ -72,12 +72,14 @@
     }
     body.phone-status-app .cal-bar,
     body.phone-status-app .cabin-top,
+    body.phone-status-app .ps-top,
     body.phone-status-app .cr-top,
     body.phone-status-app .wx-bar,
     body.phone-status-app .cw-bar,
     body.phone-status-app .bud-bar,
     body.phone-status-app .chat-top,
-    body.phone-status-app .wx-hist-top {
+    body.phone-status-app .wx-hist-top,
+    body.phone-status-app .memo-bar {
       margin-top: var(--phone-status-pad);
     }
     #phoneStatus .phone-status-time {
@@ -281,22 +283,203 @@
       border-radius: 12px;
       background: rgba(139, 90, 60, .08);
     }
-    /* 手机设置：主列表 + 子页 */
-    #phoneSettingsSub {
-      display: none;
+    /* 手机设置：主列表/子页互斥整页；薄巧=巧克力描边字 + 薄荷点缀（2026-10-21 大改；勿回退成 cabin 框） */
+    #view-phone-settings {
+      --bq-choco: #6b4a36;
+      flex-direction: column;
+      background:
+        linear-gradient(180deg, rgba(107, 74, 54, .08), rgba(225, 246, 241, .32)),
+        url("/assets/settings/settings-wall.jpg?v=1") center / cover no-repeat;
+      color: var(--bq-choco);
+    }
+    #view-phone-settings .ps-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px 10px;
+      font-size: 22px;
+      font-weight: 700;
+      flex-shrink: 0;
+      color: var(--bq-choco);
+    }
+    #view-phone-settings .ps-top .spacer { flex: 1; }
+    #view-phone-settings .ps-top .down {
+      color: var(--bq-choco);
+      cursor: pointer;
+      font-weight: 400;
+      font-size: 22px;
+      padding: 4px 8px 4px 0;
+      line-height: 1;
+    }
+    #view-phone-settings .ps-body {
+      position: relative;
       flex: 1;
       min-height: 0;
-      overflow: auto;
+      overflow: hidden;
+      padding: 0;
     }
-    #phoneSettingsSub.is-open { display: block; }
-    #phoneSettingsList.is-hidden { display: none; }
-    #phoneSettingsSub .conn-panel.open {
+    #view-phone-settings #phoneSettingsList.ps-list.settings {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+      margin: 0;
+      padding: 4px 14px calc(18px + var(--safe-bottom, 0px));
+      height: 100%;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      box-sizing: border-box;
+    }
+    #view-phone-settings #phoneSettingsList.ps-list.settings.is-hidden {
+      display: none !important;
+    }
+    #view-phone-settings #phoneSettingsSub.ps-sub.settings {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      padding: 8px 14px calc(14px + var(--safe-bottom, 0px));
+      background: linear-gradient(180deg, #f3ebe3 0%, #e8f4ef 48%, #efe6dc 100%);
+      border: 0;
+      box-shadow: none;
+      gap: 0;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      box-sizing: border-box;
+      z-index: 2;
+    }
+    #view-phone-settings #phoneSettingsSub.ps-sub.settings.is-open {
+      display: flex !important;
+    }
+    #view-phone-settings #phoneSettingsList .row {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 16px;
+      border: 2px solid var(--bq-choco);
+      border-radius: 20px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, .55), transparent 42%),
+        linear-gradient(135deg, #f7f1ea 0%, #efe4d8 52%, #e5f3ed 100%);
+      color: var(--bq-choco);
+      box-shadow: 0 2px 0 rgba(107, 74, 54, .22);
+      overflow: hidden;
+    }
+    #view-phone-settings #phoneSettingsList .row:last-child {
+      border-bottom: 2px solid var(--bq-choco);
+    }
+    #view-phone-settings #phoneSettingsList .row::before {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      width: 78%;
+      height: 70%;
+      background: linear-gradient(135deg, rgba(255, 255, 255, .5) 0%, rgba(255, 255, 255, 0) 70%);
+      border-radius: 18px;
+      pointer-events: none;
+    }
+    #view-phone-settings #phoneSettingsList .row > * {
+      position: relative;
+      z-index: 1;
+    }
+    #view-phone-settings #phoneSettingsList .row > div:first-child {
+      flex: 1;
+      min-width: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: .01em;
+      color: var(--bq-choco);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+    }
+    #view-phone-settings #phoneSettingsList .row small {
       display: block;
+      color: rgba(107, 74, 54, .62);
+      font-weight: 400;
+      font-size: 12px;
+      margin-top: 0;
+    }
+    #view-phone-settings #phoneSettingsList .row .val {
+      color: #5c4033;
+      font-weight: 700;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    #view-phone-settings #phoneSettingsList .row .chev {
+      color: var(--bq-choco);
+      font-weight: 700;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    #view-phone-settings #phoneSettingsList .row.tap:active {
+      filter: brightness(.97);
+      transform: translateY(1px);
+    }
+    #view-phone-settings #phoneSettingsSub .conn-panel {
+      display: none;
       margin: 0;
       border: 0;
+      border-radius: 0;
       background: transparent;
-      padding: 4px 2px 16px;
+      padding: 2px 0 8px;
+      box-shadow: none;
     }
+    #view-phone-settings #phoneSettingsSub .conn-panel.open {
+      display: block !important;
+    }
+    #view-phone-settings .settings .hint,
+    #view-phone-settings .settings .field label small {
+      color: rgba(92, 64, 51, .72);
+    }
+    #view-phone-settings .settings .field label {
+      color: var(--bq-choco);
+      font-weight: 700;
+    }
+    #view-phone-settings .settings .field input,
+    #view-phone-settings .settings .field textarea,
+    #view-phone-settings .settings .field select {
+      border: 2px solid var(--bq-choco);
+      border-radius: 999px;
+      background: #fffaf5;
+      color: var(--bq-choco);
+      font-weight: 600;
+    }
+    #view-phone-settings .settings .field textarea {
+      border-radius: 16px;
+    }
+    #view-phone-settings .settings .field input:focus,
+    #view-phone-settings .settings .field textarea:focus {
+      border-color: var(--bq-choco);
+      box-shadow: 0 0 0 3px rgba(165, 239, 217, .45);
+    }
+    #view-phone-settings .settings .field input[type="checkbox"] {
+      border-radius: 6px;
+      accent-color: #7ed9c4;
+      width: 18px;
+      height: 18px;
+    }
+    #view-phone-settings .settings .save-row .primary {
+      background: linear-gradient(180deg, #a5efd9, #7ed9c4);
+      color: var(--bq-choco);
+      border: 2px solid var(--bq-choco);
+      font-weight: 800;
+      box-shadow: 0 2px 0 rgba(107, 74, 54, .28);
+    }
+    #view-phone-settings .settings .save-row .ghost {
+      color: var(--bq-choco);
+      border: 2px solid var(--bq-choco);
+      background: #fffaf5;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+
     .settings .world-entry {
       margin-bottom: 12px;
       padding-bottom: 10px;
@@ -695,12 +878,245 @@
       flex-direction: column;
       gap: 8px;
       padding: calc(28px + env(safe-area-inset-top, 0px)) 18px 0;
+      isolation: isolate;
     }
-    .home-widget-row {
-      display: grid;
-      grid-template-columns: 1.12fr 0.88fr;
-      gap: 8px;
+    .home-main > .home-desk,
+    .home-main > .home-desk-dots,
+    .home-main > .home-cal-remind,
+    .home-main > .home-desk-editbar {
+      position: relative;
+      z-index: 3;
+    }
+    .home-desk {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      overflow: visible;
+      touch-action: none;
+    }
+    .home-desk-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      padding: 2px 0 0;
       flex-shrink: 0;
+    }
+    .home-desk-dots button {
+      width: 7px;
+      height: 7px;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(92, 64, 51, 0.28);
+      cursor: pointer;
+    }
+    .home-desk-dots button.on {
+      background: #5c4033;
+    }
+    .desk-item.desk-offpage:not(.is-drag) {
+      display: none !important;
+    }
+    .home-desk.is-edit {
+      background-image:
+        linear-gradient(to right, rgba(92, 64, 51, 0.1) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(92, 64, 51, 0.1) 1px, transparent 1px);
+      background-size: var(--desk-stride, 74px) var(--desk-stride, 74px);
+      background-position: var(--desk-origin-x, 0) 0;
+    }
+    .home-desk.is-edit .desk-item {
+      outline: 1.5px dashed rgba(92, 64, 51, 0.28);
+      outline-offset: -2px;
+      cursor: grab;
+    }
+    .home-desk.is-edit .desk-item.is-drag {
+      cursor: grabbing;
+      z-index: 8 !important;
+      outline-color: #7eb8a8;
+      opacity: 0.92;
+    }
+    .desk-item {
+      position: absolute;
+      box-sizing: border-box;
+      margin: 0;
+      z-index: 1;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+    }
+    .desk-item[hidden] { display: none !important; }
+    .desk-item.desk-peer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      color: inherit;
+      overflow: hidden;
+    }
+    .desk-item.desk-peer .home-av .face {
+      width: 44px;
+      height: 44px;
+    }
+    .desk-item.desk-peer .home-avatars {
+      width: 100%;
+      padding: 0;
+    }
+    .desk-item.desk-peer .home-capsule {
+      margin-bottom: 0;
+    }
+    .desk-item.desk-app {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      font: inherit;
+      color: #5c4033;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 3px;
+      max-width: none;
+      overflow: visible !important;
+    }
+    .desk-item.desk-app .ico-wrap {
+      width: 60px;
+      height: 60px;
+      flex: 0 0 60px;
+    }
+    /* 文字在图标下；格子碰撞仍按 60×60，行距另留标签高 */
+    .desk-item.desk-app .lab {
+      display: block !important;
+      flex: 0 0 auto;
+      line-height: 1.15;
+      font-size: 10px;
+      font-weight: 600;
+      color: #5c4033;
+      max-width: 72px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.55);
+    }
+    .desk-item.desk-wid {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .desk-item.desk-wid > .home-wid,
+    .desk-item.desk-wid.home-wid {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+    }
+    .home-desk-editbar {
+      display: none;
+      flex-shrink: 0;
+      justify-content: center;
+      gap: 10px;
+      padding: 4px 0 2px;
+    }
+    .home-main.desk-editing .home-desk-editbar {
+      display: flex;
+    }
+    .home-desk-editbar button {
+      border: 0;
+      border-radius: 999px;
+      padding: 7px 14px;
+      font: inherit;
+      font-size: 12px;
+      font-weight: 650;
+      cursor: pointer;
+      background: rgba(255, 252, 247, 0.95);
+      color: #5c4033;
+      border: 1.5px solid rgba(92, 64, 51, 0.2);
+    }
+    .home-desk-editbar .is-done {
+      background: #7eb8a8;
+      color: #fff;
+      border-color: transparent;
+    }
+    .home-wid-token,
+    .home-wid-sticky {
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+      color: inherit;
+      padding: 8px 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      box-sizing: border-box;
+    }
+    .home-wid-token .tok-ring {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+    }
+    .home-wid-token .tok-ring circle.track {
+      fill: none;
+      stroke: rgba(92, 64, 51, 0.12);
+      stroke-width: 4;
+    }
+    .home-wid-token .tok-ring circle.val {
+      fill: none;
+      stroke: #7eb8a8;
+      stroke-width: 4;
+      stroke-linecap: round;
+      transform: rotate(-90deg);
+      transform-origin: 50% 50%;
+      transition: stroke-dashoffset 0.35s ease;
+    }
+    .home-wid-token .tok-ring.is-hot circle.val { stroke: #c48a6a; }
+    .home-wid-token .tok-mid {
+      min-width: 0;
+      flex: 1;
+    }
+    .home-wid-token .tok-title,
+    .home-wid-sticky .stk-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #5c4033;
+    }
+    .home-wid-token .tok-sub,
+    .home-wid-sticky .stk-sub {
+      font-size: 10px;
+      color: #8a7a6a;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .home-wid-sticky {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 4px;
+      background:
+        linear-gradient(135deg, rgba(255, 248, 220, 0.9), rgba(255, 252, 247, 0.94));
+    }
+    .home-wid-sticky .stk-body {
+      font-size: 11px;
+      line-height: 1.35;
+      color: #3a2e24;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      min-height: 2.7em;
+    }
+    .home-wid-sticky .stk-body.is-empty { color: #8a7a6a; }
+    .home-week b.has-ev {
+      box-shadow: inset 0 -2px 0 #7eb8a8;
     }
     /* 旧 S7.1 / 假岛：隐藏；状态改走悬浮窗 */
     #phoneStatus .phone-status-hint { display: none !important; }
@@ -731,6 +1147,7 @@
       user-select: none;
     }
     #homeFloat.is-off { display: none; }
+    body.phone-status-app #homeFloat { display: none !important; }
     #homeFloat.is-drag { cursor: grabbing; }
     #homeFloat .hf-orb {
       width: 100%;
@@ -790,22 +1207,34 @@
       font: inherit;
       color: inherit;
       padding: 0;
-      display: block;
+      display: flex;
+      flex-direction: column;
       width: 100%;
+      height: 100%;
+      min-height: 0;
     }
     .home-wid-cal .hero {
-      height: 52px;
+      flex: 0 0 28%;
+      min-height: 36px;
+      max-height: 52px;
       background: linear-gradient(120deg, #d8efe6, #f0ebe3);
       position: relative;
+      overflow: hidden;
     }
     .home-wid-cal .hero img {
       position: absolute;
-      right: 4px;
-      bottom: -6px;
-      height: 58px;
+      right: 2px;
+      bottom: 0;
+      height: 90%;
+      max-height: 48px;
       filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .12));
     }
-    .home-wid-cal .panel { padding: 6px 9px 8px; }
+    .home-wid-cal .panel {
+      padding: 6px 9px 8px;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
     .home-wid-cal .title {
       font-size: 12px;
       font-weight: 700;
@@ -854,6 +1283,9 @@
     }
     .home-wid-menu {
       padding: 7px 8px 8px;
+      height: 100%;
+      box-sizing: border-box;
+      overflow: hidden;
       background:
         linear-gradient(180deg, rgba(158, 201, 188, .35), transparent 40%),
         rgba(255, 252, 247, .94);
@@ -1018,17 +1450,19 @@
       max-width: 72px;
       justify-self: center;
     }
+    /* iOS ???60pt ??? + ??????????? */
     .home-app .ico-wrap {
       position: relative;
-      width: 54px;
-      height: 54px;
-      border-radius: 16px;
-      background: #fff9f3;
-      border: 2px dashed #c4a484;
-      box-shadow: 0 4px 10px rgba(58, 46, 36, .1);
+      width: 60px;
+      height: 60px;
+      border-radius: 13.4px;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
       display: flex;
       align-items: center;
       justify-content: center;
+      overflow: visible;
     }
     .home-app .ico-badge {
       position: absolute;
@@ -1045,10 +1479,11 @@
     }
     .home-app .ico-badge[hidden] { display: none !important; }
     .home-app .ico-wrap img {
-      width: 70%;
-      height: 70%;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
-      filter: drop-shadow(0 2px 3px rgba(58, 46, 36, .12));
+      object-position: center;
+      display: block;
     }
     .home-app .lab {
       font-size: 10px;
@@ -1114,12 +1549,9 @@
       backdrop-filter: blur(8px);
     }
     .home-dock .home-app .ico-wrap {
-      width: 46px;
-      height: 46px;
-    }
-    .home-dock .home-app .ico-wrap img {
-      width: 68%;
-      height: 68%;
+      width: 52px;
+      height: 52px;
+      border-radius: 11.6px;
     }
     .home-dock .home-app .lab { display: none; }
     .home-indicator {
@@ -1205,8 +1637,7 @@
       background: rgba(158, 201, 188, .28);
     }
 
-    #view-cabin,
-    #view-phone-settings {
+    #view-cabin {
       background: linear-gradient(180deg, #f3ebe0 0%, #ebe2d4 100%);
     }
 
@@ -2961,7 +3392,8 @@
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
   <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx184" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
-  <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css" />
+  <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css?v=b5" />
+  <link rel="stylesheet" href="/app-ui/备忘录app/pwa/memo.css?v=m10" />
   <link rel="stylesheet" href="/app-ui/资产app/pwa/wallet.css" />
 </head>
 <body>
@@ -3033,8 +3465,28 @@
 
   <div class="view" id="view-home">
     <div class="home-main">
-      <div class="home-widget-row">
-        <button type="button" class="home-wid home-wid-cal" id="homeWidCal" title="日历">
+      <button type="button" class="home-cal-remind" id="homeCalRemind" hidden></button>
+      <div class="home-desk" id="homeDesk" aria-label="桌面">
+        <div class="desk-item desk-peer" data-desk-id="wid-peer" data-desk-page="0" title="头像">
+          <div class="home-avatars" id="homeAvatars">
+            <button type="button" class="home-av" id="avYou" aria-label="你">
+              <div class="face">
+                <img src="/assets/cafe/avatar-you.png" alt="" />
+                <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
+              </div>
+              <div class="lab">你</div>
+            </button>
+            <button type="button" class="home-av" id="avBot" aria-label="家机">
+              <div class="face">
+                <img src="/assets/cafe/avatar-bot.png" alt="" />
+                <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
+              </div>
+              <div class="lab">家机</div>
+            </button>
+          </div>
+          <button type="button" class="home-capsule" id="btnHomeCapsule" hidden>进行中</button>
+        </div>
+        <button type="button" class="desk-item desk-wid desk-wid-meet home-wid home-wid-cal" id="homeWidCal" data-desk-id="wid-meet" data-desk-page="0" title="日历">
           <div class="hero">
             <img src="/assets/cafe/fresh-cookie-box.png?v=fresh1" alt="" />
           </div>
@@ -3045,59 +3497,56 @@
             <div class="home-week" id="homeWeek"></div>
           </div>
         </button>
-        <div class="home-wid home-wid-menu">
+        <div class="desk-item desk-wid desk-wid-today home-wid home-wid-menu" id="homeWidToday" data-desk-id="wid-today" data-desk-page="0">
           <h4>今日</h4>
           <ul id="homeTodayList"></ul>
         </div>
-      </div>
-      <button type="button" class="home-cal-remind" id="homeCalRemind" hidden></button>
-      <div class="home-avatars" id="homeAvatars">
-        <button type="button" class="home-av" id="avYou" aria-label="你">
-          <div class="face">
-            <img src="/assets/cafe/avatar-you.png" alt="" />
-            <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
+        <button type="button" class="desk-item desk-wid home-wid home-wid-token" id="homeWidToken" data-desk-id="wid-token" data-desk-page="0" title="额度">
+          <svg class="tok-ring" id="homeTokRing" viewBox="0 0 44 44" aria-hidden="true">
+            <circle class="track" cx="22" cy="22" r="17"></circle>
+            <circle class="val" id="homeTokArc" cx="22" cy="22" r="17"
+              stroke-dasharray="106.76" stroke-dashoffset="106.76"></circle>
+          </svg>
+          <div class="tok-mid">
+            <div class="tok-title">Token</div>
+            <div class="tok-sub" id="homeTokSub">加载中…</div>
           </div>
-          <div class="lab">你</div>
         </button>
-        <button type="button" class="home-av" id="avBot" aria-label="家机">
-          <div class="face">
-            <img src="/assets/cafe/avatar-bot.png" alt="" />
-            <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
-          </div>
-          <div class="lab">家机</div>
+        <button type="button" class="desk-item desk-wid home-wid home-wid-sticky" id="homeWidSticky" data-desk-id="wid-sticky" data-desk-page="0" title="便笺">
+          <div class="stk-title">便笺</div>
+          <div class="stk-body is-empty" id="homeStkBody">今日还没有家机留笺</div>
+          <div class="stk-sub" id="homeStkSub">点开日历看全部</div>
         </button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-coread" data-desk-page="0" data-go="coread"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-01.png?v=hy8" alt="" /></span><span class="lab">共读</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-chat" data-desk-page="0" data-go="chat"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-02.png?v=hy8" alt="" /></span><span class="lab">聊天</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-cal" data-desk-page="0" data-go="cal"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-03.png?v=hy8" alt="" /></span><span class="lab">日历</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-cowatch" data-desk-page="0" data-go="cowatch"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-04.png?v=hy8" alt="" /></span><span class="lab">共看</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-colisten" data-desk-page="0" data-go="colisten"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-05.png?v=hy8" alt="" /></span><span class="lab">共听</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-comic" data-desk-page="0" data-go="comic"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-06.png?v=hy8" alt="" /></span><span class="lab">共漫</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-cabin" data-desk-page="0" data-go="cabin"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-07.png?v=hy8" alt="" /></span><span class="lab">小屋</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-pet" data-desk-page="0" data-go="pet"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-08.png?v=hy8" alt="" /></span><span class="lab">花宠</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-todo" data-desk-page="1" data-go="todo"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-09.png?v=hy8" alt="" /></span><span class="lab">待办</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-shop" data-desk-page="1" data-go="shop"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-10.png?v=hy8" alt="" /></span><span class="lab">购物</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-budget" data-desk-page="1" data-go="budget"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-11.png?v=hy8" alt="" /></span><span class="lab">额度</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-wallet" data-desk-page="1" data-go="wallet"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-12.png?v=hy8" alt="" /></span><span class="lab">资产</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-memo" data-desk-page="1" data-go="memo"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-13.png?v=hy8" alt="" /></span><span class="lab">便签</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-ledger" data-desk-page="1" data-go="ledger"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-14.png?v=hy8" alt="" /></span><span class="lab">记账</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-album" data-desk-page="1" data-go="album"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-15.png?v=hy8" alt="" /></span><span class="lab">相册</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-eat" data-desk-page="1" data-go="eat"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-16.png?v=hy8" alt="" /></span><span class="lab">吃啥</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-map" data-desk-page="1" data-go="map"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-17.png?v=hy8" alt="" /></span><span class="lab">足迹</span></button>
+        <button type="button" class="desk-item desk-app home-app" data-desk-id="app-settings" data-desk-page="1" data-go="settings"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-18.png?v=hy8" alt="" /></span><span class="lab">设置</span></button>
       </div>
-      <button type="button" class="home-capsule" id="btnHomeCapsule" hidden>进行中</button>
-      <div class="home-pager" id="homePager">
-        <div class="home-page">
-          <button type="button" class="home-app" data-go="coread"><span class="ico-wrap"><img src="/assets/cafe/shelf.png" alt="" /></span><span class="lab">共读</span></button>
-          <button type="button" class="home-app" data-go="chat"><span class="ico-wrap"><img src="/assets/cafe/decor-bear.png" alt="" /></span><span class="lab">聊天</span></button>
-          <button type="button" class="home-app" data-go="cal"><span class="ico-wrap"><img src="/assets/cafe/fresh-cup.png?v=fresh1" alt="" /></span><span class="lab">日历</span></button>
-          <button type="button" class="home-app" data-go="cowatch"><span class="ico-wrap"><img src="/assets/cafe/decor-case.png" alt="" /></span><span class="lab">共看</span></button>
-          <button type="button" class="home-app" data-go="colisten"><span class="ico-wrap"><img src="/assets/cafe/deco-espresso.png" alt="" /></span><span class="lab">共听</span></button>
-          <button type="button" class="home-app" data-go="comic"><span class="ico-wrap"><img src="/assets/cafe/deco-macaron.png" alt="" /></span><span class="lab">共漫</span></button>
-          <button type="button" class="home-app" data-go="cabin"><span class="ico-wrap"><img src="/assets/cafe/deco-bag.png" alt="" /></span><span class="lab">小屋</span></button>
-          <button type="button" class="home-app" data-go="pet"><span class="ico-wrap"><img src="/assets/cafe/decor-flower.png" alt="" /></span><span class="lab">花宠</span></button>
-        </div>
-        <div class="home-page">
-          <button type="button" class="home-app" data-go="todo"><span class="ico-wrap"><img src="/assets/cafe/deco-stamp.png" alt="" /></span><span class="lab">待办</span></button>
-          <button type="button" class="home-app" data-go="shop"><span class="ico-wrap"><img src="/assets/cafe/cup.png" alt="" /></span><span class="lab">购物</span></button>
-          <button type="button" class="home-app" data-go="budget"><span class="ico-wrap"><img src="/assets/cafe/health.png" alt="" /></span><span class="lab">额度</span></button>
-          <button type="button" class="home-app" data-go="wallet"><span class="ico-wrap"><img src="/assets/cafe/treat.png" alt="" /></span><span class="lab">资产</span></button>
-          <button type="button" class="home-app" data-go="ledger"><span class="ico-wrap"><img src="/assets/cafe/deco-cookies.png" alt="" /></span><span class="lab">记账</span></button>
-          <button type="button" class="home-app" data-go="album"><span class="ico-wrap"><img src="/assets/cafe/deco-paw.png" alt="" /></span><span class="lab">相册</span></button>
-          <button type="button" class="home-app" data-go="eat"><span class="ico-wrap"><img src="/assets/cafe/decor-croissant.png" alt="" /></span><span class="lab">吃啥</span></button>
-          <button type="button" class="home-app" data-go="map"><span class="ico-wrap"><img src="/assets/cafe/sticker-flower.png" alt="" /></span><span class="lab">足迹</span></button>
-          <button type="button" class="home-app" data-go="settings"><span class="ico-wrap"><img src="/assets/cafe/settings.png" alt="" /></span><span class="lab">设置</span></button>
-        </div>
+      <div class="home-desk-dots" id="homeDeskDots" aria-label="桌面分页"></div>
+      <div class="home-desk-editbar" id="homeDeskEditBar">
+        <button type="button" id="btnDeskReset">恢复默认排布</button>
+        <button type="button" class="is-done" id="btnDeskEditDone">完成</button>
       </div>
-      <div class="home-pager-dots" id="homeDots" aria-hidden="true"><i class="on"></i><i></i></div>
     </div>
     <div class="home-dock" id="homeDock">
-      <button type="button" class="home-app" data-go="chat" title="聊天"><span class="ico-wrap"><img src="/assets/cafe/decor-bear.png" alt="" /></span><span class="lab">聊天</span></button>
-      <button type="button" class="home-app" data-go="cal" title="日历"><span class="ico-wrap"><img src="/assets/cafe/fresh-cake-ico.png?v=fresh1" alt="" /></span><span class="lab">日历</span></button>
-      <button type="button" class="home-app" data-go="cabin" title="小屋"><span class="ico-wrap"><img src="/assets/cafe/deco-bag.png" alt="" /></span><span class="lab">小屋</span></button>
-      <button type="button" class="home-app" data-go="settings" title="设置"><span class="ico-wrap"><img src="/assets/cafe/settings.png" alt="" /></span><span class="lab">设置</span></button>
+      <button type="button" class="home-app" data-go="chat" title="聊天"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-02.png?v=hy8" alt="" /></span><span class="lab">聊天</span></button>
+      <button type="button" class="home-app" data-go="cal" title="日历"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-03.png?v=hy8" alt="" /></span><span class="lab">日历</span></button>
+      <button type="button" class="home-app" data-go="cabin" title="小屋"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-07.png?v=hy8" alt="" /></span><span class="lab">小屋</span></button>
+      <button type="button" class="home-app" data-go="settings" title="设置"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-18.png?v=hy8" alt="" /></span><span class="lab">设置</span></button>
     </div>
     <div class="home-indicator" aria-hidden="true"></div>
   </div>
@@ -3145,6 +3594,7 @@
   <!--APP_VIEW:共看app:view-play.html-->
   <!--APP_VIEW:额度app:view.html-->
   <!--APP_VIEW:资产app:view.html-->
+  <!--APP_VIEW:备忘录app:view.html-->
 
 
 
@@ -3167,17 +3617,13 @@
   </div>
 
   <div class="view" id="view-phone-settings">
-    <div class="cabin-top">
+    <div class="ps-top">
       <span class="down" id="btnPhoneSettingsBack" role="button" tabindex="0" title="回桌面">←</span>
       <div class="spacer"></div>
       <div id="phoneSettingsTitle">设置</div>
     </div>
-    <div class="cabin-frame">
-      <div class="frame-washi" aria-hidden="true"></div>
-      <img class="frame-corner tl" src="/assets/cafe/bow-corner-tl.png?v=4" alt="" />
-      <img class="frame-corner br" src="/assets/cafe/deco-cupcake-mint.png" alt="" />
-      <div class="cabin-body">
-        <div class="r-card settings" id="phoneSettingsList">
+    <div class="ps-body">
+        <div class="ps-list settings" id="phoneSettingsList">
           <div class="row tap" id="rowConn" role="button" tabindex="0">
             <div>连接与健康<small id="healthStatus">检查中…</small></div>
             <span class="chev">›</span>
@@ -3216,25 +3662,13 @@
             <div>外观 · 主题<small>echoes│薄巧系 by淅沥沥</small></div>
             <span class="val">薄巧皮</span>
           </div>
-          <div class="row tap" id="rowPhoneLore" role="button" tabindex="0">
-            <div>剧情摘要<small>手贴短卡 · 可读</small></div>
-            <span class="val" id="phoneLoreVal">空</span>
-            <span class="chev">›</span>
-          </div>
           <div class="row tap" id="rowBackup" role="button" tabindex="0">
             <div>备份<small>统一导出 · 不含密钥</small></div>
             <span class="val" id="backupVal">导出</span>
             <span class="chev">›</span>
           </div>
-          <div class="row" style="align-items:center">
-            <div>顶栏时钟<small>共读中显示当前时间</small></div>
-            <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);cursor:pointer;margin:0">
-              <input id="inShowClock" type="checkbox" style="width:auto;margin:0" checked />
-              开
-            </label>
-          </div>
         </div>
-        <div class="r-card settings" id="phoneSettingsSub" aria-live="polite">
+        <div class="ps-sub settings" id="phoneSettingsSub" aria-live="polite">
           <div class="conn-panel" id="connPanel">
             <div class="hint">编辑密钥与模型</div>
             <div class="field">
@@ -3254,12 +3688,36 @@
               <input id="inLlmModel" type="text" autocomplete="off" placeholder="model id" />
               <label for="inEmbedModel">Embedding Model<small>记忆向量，空=只用关键词；硅基可填 BAAI/bge-m3</small></label>
               <input id="inEmbedModel" type="text" autocomplete="off" placeholder="可选" />
-              <label for="inFishKey">Fish Audio Key<small>通话朗读 · 明天可填</small></label>
+              <label for="inFishKey">Fish Audio Key<small>通话朗读 · 家机男声</small></label>
               <input id="inFishKey" type="password" autocomplete="off" placeholder="fish.audio API key" />
-              <label for="inFishVoice">Fish Voice ID<small>克隆音色 / 模型 reference_id</small></label>
-              <input id="inFishVoice" type="text" autocomplete="off" placeholder="voice / model id" />
+              <label for="inFishVoice">Fish Voice ID<small>须填男性音色 reference_id</small></label>
+              <input id="inFishVoice" type="text" autocomplete="off" placeholder="male voice / model id" />
               <label for="inFishModel">Fish TTS Model<small>默认 s2.1-pro-free</small></label>
               <input id="inFishModel" type="text" autocomplete="off" placeholder="s2.1-pro-free" />
+              <label for="inVoiceBarLang">语音条朗读<small>M3 · 气泡中文，条播所选语言</small></label>
+              <select id="inVoiceBarLang">
+                <option value="">关</option>
+                <option value="zh">中文</option>
+                <option value="en">英语</option>
+                <option value="ja">日语</option>
+                <option value="ko">韩语</option>
+              </select>
+              <div class="hint">未配 Fish 时用系统男声；语音/视频通话同一套。</div>
+              <button type="button" class="ghost" id="btnTtsPreview" style="align-self:flex-start;margin-top:4px">试听家机声</button>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:10px">
+                <input id="inCallHeartbeat" type="checkbox" style="width:auto" checked />
+                <label for="inCallHeartbeat" style="font-weight:500;margin:0">通话心跳<small>静默后主动开口 · M4</small></label>
+              </div>
+              <label for="inCallHeartbeatSec">心跳间隔（秒）<small>30–120，实际再随机延后</small></label>
+              <input id="inCallHeartbeatSec" type="number" min="30" max="120" step="5" placeholder="45" />
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+                <input id="inCallProactive" type="checkbox" style="width:auto" />
+                <label for="inCallProactive" style="font-weight:500;margin:0">主动来电标签<small>[[call:voice]] · 默认关</small></label>
+              </div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+                <input id="inCallGift" type="checkbox" style="width:auto" checked />
+                <label for="inCallGift" style="font-weight:500;margin:0">视频礼物<small>仪式五档 · 无支付</small></label>
+              </div>
             </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveSettings">保存</button>
@@ -3268,14 +3726,50 @@
             </div>
           </div>
           <div class="conn-panel" id="sentinelPanel">
-            <div class="hint">定时截主屏 → 轻量模型判断 → 必要时家机主动发一条。默认关；会读屏幕，仅本机。日志对齐 AionsHome JSONL（保留 3 天）。开关勾选会立刻保存；间隔/模型仍要点「保存」。PC 前台采样另开，约每分钟记窗口标题，摘要喂哨兵；聊天里可「查看动态」或「定时监控」预约到点看护（非闹钟）。</div>
+            <div class="hint">双脑：定时截主屏 → 轻量判断 → 必要时开口。骰子：同间隔掷概率 → 朋友圈 → 临近日程留笺 → 否则开口（不截屏）。默认均关；共用安静时段/冷却/日上限。开关勾选立刻保存；间隔/概率/模型要点「保存」。PC 前台采样另开。</div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inSentinelEnabled" type="checkbox" style="width:auto" />
               <label for="inSentinelEnabled" style="font-weight:500;margin:0">启用双脑监控<small>立即生效</small></label>
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPresenceDice" type="checkbox" style="width:auto" />
+              <label for="inPresenceDice" style="font-weight:500;margin:0">定时推送骰子<small>动态→日程便笺→开口 · 立即生效</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPresenceDiceMoments" type="checkbox" style="width:auto" />
+              <label for="inPresenceDiceMoments" style="font-weight:500;margin:0">骰子可发朋友圈<small>仍受 4h 间隔</small></label>
+            </div>
+            <div class="field">
+              <label for="inPresenceDiceChance">掷中概率<small>0.05–1，默认 0.35</small></label>
+              <input id="inPresenceDiceChance" type="number" min="0.05" max="1" step="0.05" placeholder="0.35" />
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inActivityEnabled" type="checkbox" style="width:auto" />
               <label for="inActivityEnabled" style="font-weight:500;margin:0">记录 PC 前台活动<small>立即生效 · 仅 Windows</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPeekPhone" type="checkbox" style="width:auto" />
+              <label for="inPeekPhone" style="font-weight:500;margin:0">允许查手机<small>App / 跟谁聊 · 立即生效</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPeekPhoneL1" type="checkbox" style="width:auto" />
+              <label for="inPeekPhoneL1" style="font-weight:500;margin:0">查手机含会话摘要<small>最近几条 · 默认关</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inPhoneDevice" type="checkbox" style="width:auto" />
+              <label for="inPhoneDevice" style="font-weight:500;margin:0">允许读手机状态<small>电量 / 网络 / 锁屏</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inGeoTool" type="checkbox" style="width:auto" />
+              <label for="inGeoTool" style="font-weight:500;margin:0">允许查定位<small>浏览器坐标 · 工具按需</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inWeatherTool" type="checkbox" style="width:auto" />
+              <label for="inWeatherTool" style="font-weight:500;margin:0">允许查天气<small>Open-Meteo · 缓存约 45 分</small></label>
+            </div>
+            <div class="field">
+              <label for="inWeatherCity">手动城市<small>定位不可用时兜底</small></label>
+              <input id="inWeatherCity" type="text" autocomplete="off" placeholder="如 厦门" maxlength="48" />
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inSentinelQuiet" type="checkbox" style="width:auto" />
@@ -3316,6 +3810,26 @@
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inChatTools" type="checkbox" style="width:auto" checked />
               <label for="inChatTools" style="font-weight:500;margin:0">聊天时可调用工具<small>日历查/改等</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inAutoMemory" type="checkbox" style="width:auto" />
+              <label for="inAutoMemory" style="font-weight:500;margin:0">Auto Memory 档案<small>你对 TA 的了解 · 工具可写</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inAutoMemoryMute" type="checkbox" style="width:auto" />
+              <label for="inAutoMemoryMute" style="font-weight:500;margin:0">档案静默<small>不注入接话，仍可写入</small></label>
+            </div>
+            <div class="field">
+              <label for="inAutoMemoryBudget">档案注入预算<small>300–6000 字，默认 2000</small></label>
+              <input id="inAutoMemoryBudget" type="number" min="300" max="6000" step="100" placeholder="2000" />
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inMomentsAi" type="checkbox" style="width:auto" />
+              <label for="inMomentsAi" style="font-weight:500;margin:0">朋友圈 AI 参与<small>授权 TA 翻/发/评/赞</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inMomentsAiAuto" type="checkbox" style="width:auto" />
+              <label for="inMomentsAiAuto" style="font-weight:500;margin:0">朋友圈自动同意<small>关=工具卡点同意才发</small></label>
             </div>
             <div class="field" style="flex-direction:row;align-items:center;gap:8px">
               <input id="inMcpEnabled" type="checkbox" style="width:auto" />
@@ -3453,6 +3967,18 @@
           <div class="conn-panel" id="appRegistryPanel">
             <div class="hint">关掉的图标从桌面/Dock 消失；业务数据仍保留。「设置」不可藏。</div>
             <div class="app-reg-list" id="appRegList"></div>
+            <div class="hint" style="margin-top:12px">桌面组件（长按图标/挂件可拖动自由摆）</div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inDeskWidToken" type="checkbox" style="width:auto" checked />
+              <label for="inDeskWidToken" style="font-weight:500;margin:0">Token 环<small>额度用量</small></label>
+            </div>
+            <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+              <input id="inDeskWidSticky" type="checkbox" style="width:auto" checked />
+              <label for="inDeskWidSticky" style="font-weight:500;margin:0">便笺块<small>今日家机留笺</small></label>
+            </div>
+            <div class="save-row" style="margin-top:4px">
+              <button type="button" class="ghost" id="btnDeskLayoutReset">恢复默认桌面排布</button>
+            </div>
             <div class="save-row">
               <button type="button" class="primary" id="btnSaveAppRegistry">保存</button>
               <button type="button" class="ghost" id="btnCloseAppRegistry">返回</button>
@@ -3469,19 +3995,6 @@
               <button type="button" class="primary" id="btnSaveAccessGate">保存</button>
               <button type="button" class="ghost" id="btnCloseAccessGate">返回</button>
               <span class="save-msg" id="accessGateMsg"></span>
-            </div>
-          </div>
-          <div class="conn-panel" id="phoneLorePanel">
-            <div class="hint">正剧在 Chatbox；这里只存可读短卡（手贴）。不注入共读跟批。MCP 写卡后开。</div>
-            <div class="phone-lore-list" id="phoneLoreList"></div>
-            <div class="field" style="margin-top:10px">
-              <label for="inPhoneLore">手贴一段</label>
-              <textarea id="inPhoneLore" rows="5" maxlength="8000" placeholder="粘贴剧情摘要…"></textarea>
-            </div>
-            <div class="save-row">
-              <button type="button" class="primary" id="btnSavePhoneLore">保存</button>
-              <button type="button" class="ghost" id="btnClosePhoneLore">返回</button>
-              <span class="save-msg" id="phoneLoreMsg"></span>
             </div>
           </div>
           <div class="conn-panel" id="backupPanel">
@@ -3501,8 +4014,6 @@
             </div>
           </div>
         </div>
-      </div>
-      <div class="frame-washi bot" aria-hidden="true"></div>
     </div>
   </div>
 
@@ -3994,10 +4505,11 @@
   <script src="/assets-colisten/cove-player.js"></script>
   <script src="/assets-colisten/colisten.js?v=7"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx187"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx191"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
-  <script src="/app-ui/额度app/pwa/budget.js"></script>
+  <script src="/app-ui/额度app/pwa/budget.js?v=b5"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
+  <script src="/app-ui/备忘录app/pwa/memo.js?v=m11"></script>
   <script>
     const TITLES = { shelf: "书架", notes: "笔记", records: "记录", settings: "设定" };
 
@@ -4153,6 +4665,14 @@
     function normalizeAvatarLocal(src, fallback) {
       const s = String(src || "").trim();
       if (AVATAR_PRESETS.some((a) => a.src === s)) return s;
+      if (s.length > 512) return fallback || AVATAR_PRESETS[0].src;
+      if (
+        s.startsWith("/api/v1/chat/media/") ||
+        s.startsWith("/assets/") ||
+        /^https?:\/\//i.test(s)
+      ) {
+        return s;
+      }
       return fallback || AVATAR_PRESETS[0].src;
     }
 
@@ -4548,8 +5068,26 @@
         if (embIn) embIn.value = s.embed_model || "";
         const senEn = document.getElementById("inSentinelEnabled");
         if (senEn) senEn.checked = !!s.sentinel_enabled;
+        const diceEn = document.getElementById("inPresenceDice");
+        if (diceEn) diceEn.checked = !!s.presence_dice_enabled;
+        const diceMo = document.getElementById("inPresenceDiceMoments");
+        if (diceMo) diceMo.checked = s.presence_dice_moments !== false;
+        const diceCh = document.getElementById("inPresenceDiceChance");
+        if (diceCh) diceCh.value = String(s.presence_dice_chance != null ? s.presence_dice_chance : 0.35);
         const actEn = document.getElementById("inActivityEnabled");
         if (actEn) actEn.checked = !!s.activity_enabled;
+        const peekEn = document.getElementById("inPeekPhone");
+        if (peekEn) peekEn.checked = s.peek_phone_enabled !== false;
+        const peekL1 = document.getElementById("inPeekPhoneL1");
+        if (peekL1) peekL1.checked = !!s.peek_phone_l1_enabled;
+        const phoneDev = document.getElementById("inPhoneDevice");
+        if (phoneDev) phoneDev.checked = s.phone_device_enabled !== false;
+        const geoTool = document.getElementById("inGeoTool");
+        if (geoTool) geoTool.checked = !!s.geo_tool_enabled;
+        const weatherTool = document.getElementById("inWeatherTool");
+        if (weatherTool) weatherTool.checked = !!s.weather_tool_enabled;
+        const weatherCity = document.getElementById("inWeatherCity");
+        if (weatherCity) weatherCity.value = s.weather_city || "";
         const senQuiet = document.getElementById("inSentinelQuiet");
         if (senQuiet) senQuiet.checked = !!s.sentinel_quiet_enabled;
         const senQs = document.getElementById("inSentinelQuietStart");
@@ -4567,6 +5105,16 @@
         if (fishKey) fishKey.value = s.fish_api_key || "";
         if (fishVoice) fishVoice.value = s.fish_voice_id || "";
         if (fishModel) fishModel.value = s.fish_tts_model || "s2.1-pro-free";
+        const voiceBar = document.getElementById("inVoiceBarLang");
+        if (voiceBar) voiceBar.value = s.voice_bar_lang || "";
+        const callHb = document.getElementById("inCallHeartbeat");
+        if (callHb) callHb.checked = s.call_heartbeat_enabled !== false;
+        const callHbSec = document.getElementById("inCallHeartbeatSec");
+        if (callHbSec) callHbSec.value = s.call_heartbeat_sec != null ? s.call_heartbeat_sec : 45;
+        const callPro = document.getElementById("inCallProactive");
+        if (callPro) callPro.checked = !!s.call_proactive_enabled;
+        const callGift = document.getElementById("inCallGift");
+        if (callGift) callGift.checked = !!s.call_gift_enabled;
         if (window.ColistenApp) ColistenApp.loadAuth();
         const hutCard = String(s.persona_card || "").trim() || String(s.persona || "").trim();
         document.getElementById("inPersonaCard").value = hutCard;
@@ -4612,12 +5160,26 @@
         applyAnnivs(s.annivs || [], s.pin_anniv_id || "");
         updateHomeMeetSub();
         applyAppRegistry(s.app_hidden || []);
+        applyDeskWidgets(s);
+        applyDeskLayout(s.desk_layout);
         updateCoreadClock();
         updateFollowUi();
         defaultModel = (s.llm_model || "").trim();
         updateModelPill();
         const chatToolsEl = document.getElementById("inChatTools");
         if (chatToolsEl) chatToolsEl.checked = s.chat_tools_enabled !== false;
+        const amEl = document.getElementById("inAutoMemory");
+        if (amEl) amEl.checked = !!s.auto_memory_enabled;
+        const amMute = document.getElementById("inAutoMemoryMute");
+        if (amMute) amMute.checked = !!s.auto_memory_mute;
+        const amBudget = document.getElementById("inAutoMemoryBudget");
+        if (amBudget) {
+          amBudget.value = String(s.auto_memory_budget != null ? s.auto_memory_budget : 2000);
+        }
+        const momAi = document.getElementById("inMomentsAi");
+        if (momAi) momAi.checked = !!s.moments_ai_enabled;
+        const momAuto = document.getElementById("inMomentsAiAuto");
+        if (momAuto) momAuto.checked = String(s.moments_ai_mode || "") === "auto";
         const mcpEn = document.getElementById("inMcpEnabled");
         if (mcpEn) mcpEn.checked = !!s.mcp_enabled;
         const mcpUrl = document.getElementById("inMcpUrl");
@@ -5077,8 +5639,28 @@
         await patchSentinelSettings({
           sentinel_enabled: !!(document.getElementById("inSentinelEnabled") || {})
             .checked,
+          presence_dice_enabled: !!(document.getElementById("inPresenceDice") || {})
+            .checked,
+          presence_dice_moments: !!(
+            document.getElementById("inPresenceDiceMoments") || {}
+          ).checked,
+          presence_dice_chance: Number(
+            (document.getElementById("inPresenceDiceChance") || {}).value || 0.35
+          ),
           activity_enabled: !!(document.getElementById("inActivityEnabled") || {})
             .checked,
+          peek_phone_enabled: !!(document.getElementById("inPeekPhone") || {})
+            .checked,
+          peek_phone_l1_enabled: !!(document.getElementById("inPeekPhoneL1") || {})
+            .checked,
+          phone_device_enabled: !!(document.getElementById("inPhoneDevice") || {})
+            .checked,
+          geo_tool_enabled: !!(document.getElementById("inGeoTool") || {}).checked,
+          weather_tool_enabled: !!(document.getElementById("inWeatherTool") || {})
+            .checked,
+          weather_city: String(
+            (document.getElementById("inWeatherCity") || {}).value || ""
+          ).trim(),
           sentinel_quiet_enabled: !!(document.getElementById("inSentinelQuiet") || {})
             .checked,
           sentinel_quiet_start:
@@ -5139,6 +5721,27 @@
       }
     }
 
+    async function onPhonePermChange(key, elId, onLabel, offLabel) {
+      const enabled = !!(document.getElementById(elId) || {}).checked;
+      const msg = document.getElementById("saveSentinelMsg");
+      try {
+        const patch = {};
+        patch[key] = enabled;
+        await patchSentinelSettings(patch, { quiet: true });
+        if (msg) {
+          msg.textContent = enabled ? onLabel : offLabel;
+          msg.className = "save-msg ok";
+        }
+      } catch (_) {
+        const el = document.getElementById(elId);
+        if (el) el.checked = !enabled;
+        if (msg) {
+          msg.textContent = "开关保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
+    }
+
     function expandMcpTools() {
       document.getElementById("mcpToolsMsg").textContent = "";
       document.getElementById("mcpToolsMsg").className = "save-msg";
@@ -5162,6 +5765,19 @@
       const mcpOn = !!document.getElementById("inMcpEnabled").checked;
       const patch = {
         chat_tools_enabled: chatOn,
+        auto_memory_enabled: !!(document.getElementById("inAutoMemory") || {})
+          .checked,
+        auto_memory_mute: !!(document.getElementById("inAutoMemoryMute") || {})
+          .checked,
+        auto_memory_budget: Number(
+          (document.getElementById("inAutoMemoryBudget") || {}).value || 2000
+        ),
+        moments_ai_enabled: !!(document.getElementById("inMomentsAi") || {})
+          .checked,
+        moments_ai_mode: (document.getElementById("inMomentsAiAuto") || {})
+          .checked
+          ? "auto"
+          : "confirm",
         chat_tool_labels: collectChatToolLabels(),
         mcp_tool_hidden: collectMcpToolHidden(),
         mcp_enabled: mcpOn,
@@ -5335,6 +5951,7 @@
       { id: "shop", lab: "购物" },
       { id: "budget", lab: "额度" },
       { id: "wallet", lab: "资产" },
+      { id: "memo", lab: "便签" },
       { id: "ledger", lab: "记账" },
       { id: "album", lab: "相册" },
       { id: "eat", lab: "吃啥" },
@@ -5353,7 +5970,7 @@
     function applyAppRegistry(hidden) {
       appHiddenCached = Array.isArray(hidden) ? hidden.slice() : [];
       const hide = new Set(appHiddenCached);
-      document.querySelectorAll("#homePager .home-app, #homeDock .home-app").forEach((btn) => {
+      document.querySelectorAll("#homeDesk .home-app, #homeDock .home-app").forEach((btn) => {
         const go = btn.getAttribute("data-go");
         if (!go || go === "settings") {
           btn.hidden = false;
@@ -5417,21 +6034,133 @@
         if (cb.disabled) return;
         if (!cb.checked) app_hidden.push(cb.dataset.appId);
       });
+      const desk_widget_token = !!(document.getElementById("inDeskWidToken") || {})
+        .checked;
+      const desk_widget_sticky = !!(document.getElementById("inDeskWidSticky") || {})
+        .checked;
       try {
         const res = await fetch("/api/v1/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ app_hidden }),
+          body: JSON.stringify({
+            app_hidden,
+            desk_widget_token,
+            desk_widget_sticky,
+            desk_deco_enabled: false,
+            desk_decos: [],
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || data.error || "http");
         applyAppRegistry(data.app_hidden || []);
+        applyDeskWidgets(data);
+        applyDeskLayout(deskLayoutCached);
         msg.textContent = "已保存";
         msg.className = "save-msg ok";
         collapseAppRegistry();
       } catch (e) {
         msg.textContent = (e && e.message) || "保存失败";
         msg.className = "save-msg bad";
+      }
+    }
+
+    function applyDeskWidgets(s) {
+      const tokOn = !s || s.desk_widget_token !== false;
+      const stkOn = !s || s.desk_widget_sticky !== false;
+      const tokEl = document.getElementById("homeWidToken");
+      const stkEl = document.getElementById("homeWidSticky");
+      if (tokEl) tokEl.hidden = !tokOn;
+      if (stkEl) stkEl.hidden = !stkOn;
+      const inTok = document.getElementById("inDeskWidToken");
+      if (inTok) inTok.checked = tokOn;
+      const inStk = document.getElementById("inDeskWidSticky");
+      if (inStk) inStk.checked = stkOn;
+      if (tokOn) refreshHomeTokenRing();
+      if (stkOn) refreshHomeSticky();
+    }
+
+    function fmtTokShort(n) {
+      const x = Math.max(0, Math.floor(Number(n) || 0));
+      if (x >= 1e6) return (x / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+      if (x >= 1e3) return (x / 1e3).toFixed(1).replace(/\.0$/, "") + "k";
+      return String(x);
+    }
+
+    async function refreshHomeTokenRing() {
+      const sub = document.getElementById("homeTokSub");
+      const arc = document.getElementById("homeTokArc");
+      const ring = document.getElementById("homeTokRing");
+      if (!sub) return;
+      try {
+        const res = await fetch("/api/v1/budget/summary", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || "额度失败");
+        const used = Math.max(0, Number(data.tokens_used) || 0);
+        const cap = Math.max(0, Number(data.default_budget_tokens) || 0);
+        const rmb = Number(data.rmb);
+        let pct = 0;
+        if (cap > 0) pct = Math.min(1, used / cap);
+        else pct = used > 0 ? 0.12 : 0;
+        const C = 2 * Math.PI * 17;
+        if (arc) {
+          arc.setAttribute("stroke-dasharray", String(C));
+          arc.setAttribute("stroke-dashoffset", String(C * (1 - pct)));
+        }
+        if (ring) ring.classList.toggle("is-hot", cap > 0 && pct >= 0.85);
+        if (cap > 0) {
+          sub.textContent =
+            fmtTokShort(used) +
+            " / " +
+            fmtTokShort(cap) +
+            (Number.isFinite(rmb) ? " · ¥" + rmb.toFixed(2) : "");
+        } else {
+          sub.textContent =
+            fmtTokShort(used) +
+            " tok" +
+            (Number.isFinite(rmb) ? " · ¥" + rmb.toFixed(2) : "");
+        }
+      } catch (_) {
+        sub.textContent = "点开额度";
+      }
+    }
+
+    async function refreshHomeSticky() {
+      const body = document.getElementById("homeStkBody");
+      const sub = document.getElementById("homeStkSub");
+      if (!body) return;
+      try {
+        if (!window.CalApp || !CalApp.fetchNotes) {
+          body.className = "stk-body is-empty";
+          body.textContent = "今日还没有家机留笺";
+          if (sub) sub.textContent = "点开日历看全部";
+          return;
+        }
+        const today = CalApp.localDateISO(new Date());
+        const notes = await CalApp.fetchNotes({ date: today });
+        const bot = (notes || []).filter(
+          (n) => n && (n.owner === "companion" || n.owner === "bot")
+        );
+        if (!bot.length) {
+          body.className = "stk-body is-empty";
+          body.textContent = "今日还没有家机留笺";
+          if (sub) sub.textContent = "点开日历看全部";
+          return;
+        }
+        const top = bot[0];
+        body.className = "stk-body";
+        body.textContent = String(top.body || "").trim() || "（空白便笺）";
+        if (sub) {
+          sub.textContent =
+            bot.length > 1
+              ? "另有 " + (bot.length - 1) + " 条 · 点开日历"
+              : "家机 · 今日";
+        }
+      } catch (_) {
+        body.className = "stk-body is-empty";
+        body.textContent = "便笺加载失败";
       }
     }
 
@@ -5604,6 +6333,11 @@
         fish_voice_id: (document.getElementById("inFishVoice") || {}).value || "",
         fish_tts_model:
           (document.getElementById("inFishModel") || {}).value || "s2.1-pro-free",
+        voice_bar_lang: (document.getElementById("inVoiceBarLang") || {}).value || "",
+        call_heartbeat_enabled: !!(document.getElementById("inCallHeartbeat") || {}).checked,
+        call_heartbeat_sec: Number((document.getElementById("inCallHeartbeatSec") || {}).value) || 45,
+        call_proactive_enabled: !!(document.getElementById("inCallProactive") || {}).checked,
+        call_gift_enabled: !!(document.getElementById("inCallGift") || {}).checked,
       };
       try {
         const res = await fetch("/api/v1/settings", {
@@ -5617,6 +6351,14 @@
         defaultModel = (patch.llm_model || "").trim();
         updateModelPill();
         await checkHealth();
+        try {
+          if (window.ChatApp && typeof ChatApp.refreshVoiceBar === "function") {
+            await ChatApp.refreshVoiceBar();
+          }
+          if (window.ChatApp && typeof ChatApp.refreshThread === "function") {
+            ChatApp.refreshThread();
+          }
+        } catch (_) {}
         collapseConn();
       } catch (_) {
         msg.textContent = "保存失败";
@@ -6904,6 +7646,77 @@
     }
 
     let lockBattBound = false;
+    let lastBattLevel = 0.78;
+    let lastBattCharging = false;
+    let phonePresenceTimer = 0;
+
+    function reportPhonePresence(extra) {
+      const view = typeof shellViewName === "string" ? shellViewName : "";
+      const online = !(typeof navigator !== "undefined" && navigator.onLine === false);
+      let net = online ? "online" : "offline";
+      try {
+        const c =
+          navigator.connection ||
+          navigator.mozConnection ||
+          navigator.webkitConnection;
+        if (c && c.effectiveType) net = String(c.effectiveType);
+      } catch (_) {}
+      const body = Object.assign(
+        {
+          view,
+          app: view === "chat" ? "chat" : view,
+          locked: view === "standby",
+          online,
+          net,
+          pwa: !!(
+            window.matchMedia &&
+            window.matchMedia("(display-mode: standalone)").matches
+          ),
+          battery_level: lastBattLevel,
+          battery_charging: lastBattCharging,
+        },
+        extra && typeof extra === "object" ? extra : {}
+      );
+      fetch("/api/v1/phone/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        keepalive: true,
+      }).catch(() => {});
+      reportGeoIfAllowed();
+    }
+
+    let lastGeoReportAt = 0;
+    function reportGeoIfAllowed() {
+      if (!navigator.geolocation) return;
+      if (Date.now() - lastGeoReportAt < 10 * 60 * 1000) return;
+      fetch("/api/v1/settings", { credentials: "same-origin", cache: "no-store" })
+        .then((r) => r.json())
+        .then((s) => {
+          if (!s || !s.geo_tool_enabled) return;
+          lastGeoReportAt = Date.now();
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              fetch("/api/v1/chat/geo", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "same-origin",
+                body: JSON.stringify({
+                  lat: pos.coords.latitude,
+                  lon: pos.coords.longitude,
+                  source: "browser",
+                }),
+                keepalive: true,
+              }).catch(() => {});
+            },
+            () => {},
+            { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 }
+          );
+        })
+        .catch(() => {});
+    }
+
     async function bindLockBattery() {
       updateLockNetStatus();
       if (lockBattBound) return;
@@ -6912,7 +7725,12 @@
       try {
         if (!navigator.getBattery) return;
         const batt = await navigator.getBattery();
-        const sync = () => paintLockBattery(batt.level, batt.charging);
+        const sync = () => {
+          lastBattLevel = batt.level;
+          lastBattCharging = !!batt.charging;
+          paintLockBattery(batt.level, batt.charging);
+          reportPhonePresence();
+        };
         sync();
         batt.addEventListener("levelchange", sync);
         batt.addEventListener("chargingchange", sync);
@@ -7347,8 +8165,9 @@
         phoneStatus.classList.toggle("is-off", off);
         phoneStatus.setAttribute("aria-hidden", off ? "true" : "false");
         if (homeFloat) {
-          homeFloat.classList.toggle("is-off", off);
-          if (off) {
+          const floatOff = off || name !== "home";
+          homeFloat.classList.toggle("is-off", floatOff);
+          if (floatOff) {
             const tip = document.getElementById("homeFloatTip");
             if (tip) tip.hidden = true;
           }
@@ -7402,6 +8221,7 @@
       }
       if (name === "budget" && window.BudgetApp) BudgetApp.onShow();
       if (name === "wallet" && window.WalletApp) WalletApp.onShow();
+      if (name === "memo" && window.MemoApp) MemoApp.onShow();
       if (name === "chat" && window.ChatApp) {
         if (typeof ChatApp.onShow === "function") ChatApp.onShow();
         else ChatApp.refreshThread();
@@ -7414,6 +8234,16 @@
       closeSheet();
       if (name !== "phone-settings") closeSettingsSub();
       collapseFollowDefaults();
+      if (name !== "chat") {
+        reportPhonePresence({
+          chat_peer_id: "",
+          chat_title: "",
+          chat_layer: "",
+          chat_is_group: false,
+        });
+      } else {
+        reportPhonePresence({ app: "chat" });
+      }
     }
 
     function showTab(name) {
@@ -7465,6 +8295,7 @@
       else if (go === "colisten") showView("colisten");
       else if (go === "budget") showView("budget");
       else if (go === "wallet") showView("wallet");
+      else if (go === "memo") showView("memo");
       else openAppStub(lab || go || "App");
     }
 
@@ -7812,6 +8643,8 @@
       refreshListenPresence();
       refreshChatUnread();
       refreshCalRemind();
+      refreshHomeTokenRing();
+      refreshHomeSticky();
       if (!ul || !window.CalApp) return;
       ul.replaceChildren();
       try {
@@ -7866,6 +8699,7 @@
     }
 
     function onHomeAppClick(e) {
+      if (!deskAllowTap()) return;
       const btn = e.target.closest(".home-app");
       if (!btn) return;
       const go = btn.getAttribute("data-go");
@@ -7877,44 +8711,567 @@
       routeHomeApp(go, lab);
     }
 
-    function bindHomePager() {
-      const pager = document.getElementById("homePager");
-      const dots = Array.from(document.querySelectorAll("#homeDots i"));
-      if (!pager || !dots.length) return;
-      const syncDots = () => {
-        const i = Math.round(pager.scrollLeft / Math.max(pager.clientWidth, 1));
-        dots.forEach((d, n) => d.classList.toggle("on", n === i));
-      };
-      pager.addEventListener("scroll", syncDots, { passive: true });
-      dots.forEach((d, n) => {
-        d.addEventListener("click", () => {
-          pager.scrollTo({ left: n * pager.clientWidth, behavior: "smooth" });
+    /* 自由桌面：1×1 = 60px 图标（碰撞不含文字）；行距另留标签；禁止重叠 */
+    const DESK_COLS = 4;
+    const DESK_UNIT = 60;
+    const DESK_GAP = 14;
+    const DESK_LABEL = 18;
+    const DESK_PAGE_MAX = 3;
+    const DESK_SPAN = {
+      "wid-peer": [4, 2],
+      "wid-meet": [2, 2],
+      "wid-today": [2, 2],
+      "wid-token": [2, 1],
+      "wid-sticky": [2, 1],
+    };
+    /* 上：日历+今日 → 中：头像胶囊 → 下：App */
+    const DESK_LAYOUT_DEFAULT = [
+      { id: "wid-meet", col: 0, row: 0, page: 0 },
+      { id: "wid-today", col: 2, row: 0, page: 0 },
+      { id: "wid-peer", col: 0, row: 2, page: 0 },
+      { id: "app-coread", col: 0, row: 4, page: 0 },
+      { id: "app-chat", col: 1, row: 4, page: 0 },
+      { id: "app-cal", col: 2, row: 4, page: 0 },
+      { id: "app-cowatch", col: 3, row: 4, page: 0 },
+      { id: "app-colisten", col: 0, row: 5, page: 0 },
+      { id: "app-comic", col: 1, row: 5, page: 0 },
+      { id: "app-cabin", col: 2, row: 5, page: 0 },
+      { id: "app-pet", col: 3, row: 5, page: 0 },
+      { id: "wid-token", col: 0, row: 0, page: 1 },
+      { id: "wid-sticky", col: 2, row: 0, page: 1 },
+      { id: "app-todo", col: 0, row: 1, page: 1 },
+      { id: "app-shop", col: 1, row: 1, page: 1 },
+      { id: "app-budget", col: 2, row: 1, page: 1 },
+      { id: "app-wallet", col: 3, row: 1, page: 1 },
+      { id: "app-memo", col: 0, row: 2, page: 1 },
+      { id: "app-ledger", col: 1, row: 2, page: 1 },
+      { id: "app-album", col: 2, row: 2, page: 1 },
+      { id: "app-eat", col: 3, row: 2, page: 1 },
+      { id: "app-map", col: 1, row: 3, page: 1 },
+      { id: "app-settings", col: 2, row: 3, page: 1 },
+    ];
+    let deskLayoutCached = DESK_LAYOUT_DEFAULT.slice();
+    let deskEditMode = false;
+    let deskSuppressTap = false;
+    let deskPage = 0;
+
+    function deskAllowTap() {
+      if (deskEditMode) return false;
+      if (deskSuppressTap) {
+        deskSuppressTap = false;
+        return false;
+      }
+      return true;
+    }
+
+    function deskPageOf(row) {
+      const p = Number(row && row.page);
+      if (!Number.isFinite(p)) return 0;
+      return Math.max(0, Math.min(DESK_PAGE_MAX - 1, Math.floor(p)));
+    }
+
+    function deskSpanOf(id) {
+      const s = DESK_SPAN[id];
+      return s ? s.slice() : [1, 1];
+    }
+
+    function deskSpanPx(span, m) {
+      return span * m.unit + Math.max(0, span - 1) * m.gap;
+    }
+
+    /** 图标与组件同一套尺寸：拖动=落位；组件按 unit 格，不另搞一层行距高 */
+    function deskItemBox(el, sc, sr, m) {
+      const w = deskSpanPx(sc, m);
+      if (el.classList.contains("desk-app")) {
+        return { w, h: m.unit + m.label };
+      }
+      return { w, h: deskSpanPx(sr, m) };
+    }
+
+    /** 横步：图标+间距；纵步：图标+标签高（标签不计入 1×1 碰撞） */
+    function deskMetrics() {
+      const desk = document.getElementById("homeDesk");
+      const r = desk ? desk.getBoundingClientRect() : { width: 320, height: 520 };
+      const unit = DESK_UNIT;
+      const gap = DESK_GAP;
+      const label = DESK_LABEL;
+      const strideX = unit + gap;
+      const strideY = unit + label;
+      const cols = DESK_COLS;
+      const gridW = cols * unit + (cols - 1) * gap;
+      const originX = Math.max(0, (r.width - gridW) / 2);
+      const rows = Math.max(8, Math.floor(r.height / strideY) || 8);
+      if (desk) {
+        desk.style.setProperty("--desk-stride", strideX + "px");
+        desk.style.setProperty("--desk-origin-x", originX + "px");
+      }
+      return { cols, rows, unit, gap, label, strideX, strideY, originX, w: r.width, h: r.height };
+    }
+
+    function deskClampCell(id, col, row, rowsOpt) {
+      const m = rowsOpt != null ? null : deskMetrics();
+      const rows = rowsOpt != null ? rowsOpt : m.rows;
+      const [sc, sr] = deskSpanOf(id);
+      col = Math.max(0, Math.min(DESK_COLS - sc, Math.floor(Number(col) || 0)));
+      row = Math.max(0, Math.min(Math.max(rows - sr, 0), Math.floor(Number(row) || 0)));
+      return { col, row, sc, sr };
+    }
+
+    function deskRectsOverlap(a, b) {
+      return (
+        a.col < b.col + b.sc &&
+        a.col + a.sc > b.col &&
+        a.row < b.row + b.sr &&
+        a.row + a.sr > b.row
+      );
+    }
+
+    function deskOccupied(excludeId, page) {
+      const desk = document.getElementById("homeDesk");
+      const list = [];
+      if (!desk) return list;
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        const id = el.getAttribute("data-desk-id");
+        if (!id || id === excludeId) return;
+        if ((Number(el.dataset.deskPage) || 0) !== page) return;
+        if (el.hidden) return;
+        if (el.dataset.deskCol === "" || el.dataset.deskCol == null) return;
+        if (el.dataset.deskRow === "" || el.dataset.deskRow == null) return;
+        const [sc, sr] = deskSpanOf(id);
+        list.push({
+          id,
+          col: Number(el.dataset.deskCol) || 0,
+          row: Number(el.dataset.deskRow) || 0,
+          sc,
+          sr,
         });
       });
-      let down = false;
-      let startX = 0;
-      let startLeft = 0;
-      pager.addEventListener("pointerdown", (e) => {
-        if (e.target.closest(".home-app")) return;
-        down = true;
-        startX = e.clientX;
-        startLeft = pager.scrollLeft;
-        try {
-          pager.setPointerCapture(e.pointerId);
-        } catch (_) {}
+      return list;
+    }
+
+    function deskCanPlace(id, col, row, page, excludeId) {
+      const wantC = Math.floor(Number(col) || 0);
+      const wantR = Math.floor(Number(row) || 0);
+      const c = deskClampCell(id, wantC, wantR);
+      if (c.col !== wantC || c.row !== wantR) return false;
+      const me = { id, col: c.col, row: c.row, sc: c.sc, sr: c.sr };
+      return !deskOccupied(excludeId || id, page).some((o) => deskRectsOverlap(me, o));
+    }
+
+    function deskFindFree(id, col, row, page, excludeId) {
+      const m = deskMetrics();
+      const [sc, sr] = deskSpanOf(id);
+      const start = deskClampCell(id, col, row, m.rows);
+      if (deskCanPlace(id, start.col, start.row, page, excludeId)) {
+        return { col: start.col, row: start.row };
+      }
+      for (let rad = 1; rad <= m.rows + DESK_COLS; rad++) {
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+            const c = deskClampCell(id, start.col + dx, start.row + dy, m.rows);
+            if (deskCanPlace(id, c.col, c.row, page, excludeId)) {
+              return { col: c.col, row: c.row };
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    function deskPlaceEl(el, col, row) {
+      const id = el.getAttribute("data-desk-id");
+      const m = deskMetrics();
+      const c = deskClampCell(id, col, row, m.rows);
+      const box = deskItemBox(el, c.sc, c.sr, m);
+      el.dataset.deskCol = String(c.col);
+      el.dataset.deskRow = String(c.row);
+      el.style.left = m.originX + c.col * m.strideX + "px";
+      el.style.top = c.row * m.strideY + "px";
+      el.style.width = box.w + "px";
+      el.style.height = box.h + "px";
+    }
+
+    function deskSnapFromPointer(el, clientX, clientY, origin) {
+      const desk = document.getElementById("homeDesk");
+      if (!desk) return false;
+      const rect = desk.getBoundingClientRect();
+      if (!rect.width || !rect.height) return false;
+      const m = deskMetrics();
+      const id = el.getAttribute("data-desk-id");
+      const [sc, sr] = deskSpanOf(id);
+      const page = Number(el.dataset.deskPage) || 0;
+      let col = Math.round((clientX - rect.left - m.originX) / m.strideX - sc / 2);
+      let row = Math.round((clientY - rect.top) / m.strideY - sr / 2);
+      const free = deskFindFree(id, col, row, page, id);
+      if (!free) {
+        if (origin) {
+          el.dataset.deskPage = String(origin.page);
+          deskPlaceEl(el, origin.col, origin.row);
+        }
+        return false;
+      }
+      deskPlaceEl(el, free.col, free.row);
+      return true;
+    }
+
+    function deskRelayoutAll() {
+      const desk = document.getElementById("homeDesk");
+      if (!desk) return;
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        deskPlaceEl(el, Number(el.dataset.deskCol) || 0, Number(el.dataset.deskRow) || 0);
       });
-      pager.addEventListener("pointermove", (e) => {
-        if (!down) return;
-        pager.scrollLeft = startLeft - (e.clientX - startX);
+    }
+
+    function deskLayoutMap(raw) {
+      const m = new Map();
+      for (const r of DESK_LAYOUT_DEFAULT) m.set(r.id, { ...r });
+      if (Array.isArray(raw)) {
+        for (const r of raw) {
+          if (!r || !r.id) continue;
+          const id = String(r.id);
+          let col = Number(r.col);
+          let row = Number(r.row);
+          if (!Number.isFinite(col) && Number.isFinite(Number(r.x))) {
+            col = Math.floor((Number(r.x) / 100) * DESK_COLS);
+          }
+          if (!Number.isFinite(row) && Number.isFinite(Number(r.y))) {
+            row = Math.floor((Number(r.y) / 100) * 6);
+          }
+          if (!Number.isFinite(col) || !Number.isFinite(row)) continue;
+          const prev = m.get(id);
+          const page = Object.prototype.hasOwnProperty.call(r, "page")
+            ? deskPageOf(r)
+            : deskPageOf(prev || { page: 0 });
+          const c = deskClampCell(id, col, row, 12);
+          m.set(id, { id, col: c.col, row: c.row, page });
+        }
+      }
+      return m;
+    }
+
+    function deskUsedPageCount() {
+      let max = 1;
+      const desk = document.getElementById("homeDesk");
+      if (desk) {
+        desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+          const p = Number(el.dataset.deskPage) || 0;
+          if (p + 1 > max) max = p + 1;
+        });
+      }
+      return Math.max(2, Math.min(DESK_PAGE_MAX, max));
+    }
+
+    function paintDeskDots() {
+      const box = document.getElementById("homeDeskDots");
+      if (!box) return;
+      const n = deskUsedPageCount();
+      box.replaceChildren();
+      for (let i = 0; i < n; i++) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("aria-label", "第 " + (i + 1) + " 页");
+        if (i === deskPage) b.className = "on";
+        b.addEventListener("click", () => setDeskPage(i));
+        box.append(b);
+      }
+    }
+
+    function syncDeskPageVisibility() {
+      const desk = document.getElementById("homeDesk");
+      if (!desk) return;
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        const p = Number(el.dataset.deskPage) || 0;
+        el.classList.toggle("desk-offpage", p !== deskPage);
       });
-      const endDrag = () => {
-        if (!down) return;
-        down = false;
-        const w = Math.max(pager.clientWidth, 1);
-        pager.scrollTo({ left: Math.round(pager.scrollLeft / w) * w, behavior: "smooth" });
+      paintDeskDots();
+    }
+
+    function setDeskPage(n) {
+      const max = deskUsedPageCount() - 1;
+      deskPage = Math.max(0, Math.min(max, Math.floor(Number(n) || 0)));
+      syncDeskPageVisibility();
+    }
+
+    function applyDeskLayout(raw) {
+      const m = deskLayoutMap(raw);
+      deskLayoutCached = Array.from(m.values());
+      const desk = document.getElementById("homeDesk");
+      if (!desk) return;
+      /* 先清坐标再逐个占位，避免重叠残留 */
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        el.dataset.deskCol = "";
+        el.dataset.deskRow = "";
+      });
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        const id = el.getAttribute("data-desk-id");
+        const pos = m.get(id) || { col: 0, row: 0, page: 0 };
+        const page = deskPageOf(pos);
+        el.dataset.deskPage = String(page);
+        const free = deskFindFree(id, pos.col, pos.row, page, id);
+        deskPlaceEl(el, free ? free.col : pos.col, free ? free.row : pos.row);
+      });
+      if (deskPage > deskUsedPageCount() - 1) deskPage = 0;
+      syncDeskPageVisibility();
+    }
+
+    function collectDeskLayout() {
+      const desk = document.getElementById("homeDesk");
+      if (!desk) return [];
+      const out = [];
+      desk.querySelectorAll(".desk-item[data-desk-id]").forEach((el) => {
+        const id = el.getAttribute("data-desk-id");
+        if (!id) return;
+        out.push({
+          id,
+          col: Number(el.dataset.deskCol) || 0,
+          row: Number(el.dataset.deskRow) || 0,
+          page: Math.max(0, Math.min(DESK_PAGE_MAX - 1, Number(el.dataset.deskPage) || 0)),
+        });
+      });
+      return out;
+    }
+
+    function persistDeskLayout(list) {
+      const body = Array.isArray(list) ? list : collectDeskLayout();
+      deskLayoutCached = body.length ? body : DESK_LAYOUT_DEFAULT.slice();
+      fetch("/api/v1/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ desk_layout: body }),
+        keepalive: true,
+      }).catch(() => {});
+    }
+
+    function setDeskEditMode(on) {
+      deskEditMode = !!on;
+      const desk = document.getElementById("homeDesk");
+      const main = document.querySelector("#view-home .home-main");
+      if (desk) desk.classList.toggle("is-edit", deskEditMode);
+      if (main) main.classList.toggle("desk-editing", deskEditMode);
+    }
+
+    function resetDeskLayout() {
+      deskPage = 0;
+      applyDeskLayout([]);
+      persistDeskLayout([]);
+      setDeskEditMode(false);
+    }
+
+    function bindDeskFreeLayout() {
+      const desk = document.getElementById("homeDesk");
+      if (!desk || desk.dataset.deskBound === "1") return;
+      desk.dataset.deskBound = "1";
+
+      let pressTimer = null;
+      let drag = null;
+      let activePid = null;
+      let edgeTimer = null;
+      let edgeDir = 0;
+      let pageSwipe = null;
+
+      const clearPress = () => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
       };
-      pager.addEventListener("pointerup", endDrag);
-      pager.addEventListener("pointercancel", endDrag);
+      const clearEdge = () => {
+        if (edgeTimer) {
+          clearTimeout(edgeTimer);
+          edgeTimer = null;
+        }
+        edgeDir = 0;
+      };
+
+      desk.addEventListener("contextmenu", (e) => {
+        if (e.target.closest(".desk-item")) e.preventDefault();
+      });
+
+      desk.addEventListener("pointerdown", (e) => {
+        if (e.button != null && e.button !== 0) return;
+        if (drag) return;
+
+        const el = e.target.closest(".desk-item[data-desk-id]");
+        if (!el) {
+          if (deskEditMode) return;
+          pageSwipe = { x: e.clientX, y: e.clientY, pid: e.pointerId };
+          try {
+            desk.setPointerCapture(e.pointerId);
+          } catch (_) {}
+          const onMove = (ev) => {
+            if (!pageSwipe || ev.pointerId !== pageSwipe.pid) return;
+          };
+          const onUp = (ev) => {
+            if (!pageSwipe || ev.pointerId !== pageSwipe.pid) return;
+            const dx = ev.clientX - pageSwipe.x;
+            const dy = ev.clientY - pageSwipe.y;
+            pageSwipe = null;
+            desk.removeEventListener("pointermove", onMove);
+            desk.removeEventListener("pointerup", onUp);
+            desk.removeEventListener("pointercancel", onUp);
+            if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy)) return;
+            setDeskPage(deskPage + (dx < 0 ? 1 : -1));
+          };
+          desk.addEventListener("pointermove", onMove);
+          desk.addEventListener("pointerup", onUp);
+          desk.addEventListener("pointercancel", onUp);
+          return;
+        }
+
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const isTouch = e.pointerType === "touch";
+        let armed = false;
+        activePid = e.pointerId;
+        const grab = el.getBoundingClientRect();
+        const ox = e.clientX - grab.left;
+        const oy = e.clientY - grab.top;
+
+        const arm = () => {
+          if (armed) return;
+          armed = true;
+          clearPress();
+          setDeskEditMode(true);
+          drag = {
+            el,
+            moved: false,
+            ox,
+            oy,
+            origin: {
+              col: Number(el.dataset.deskCol) || 0,
+              row: Number(el.dataset.deskRow) || 0,
+              page: Number(el.dataset.deskPage) || 0,
+            },
+          };
+          el.classList.add("is-drag");
+          try {
+            el.setPointerCapture(e.pointerId);
+          } catch (_) {}
+        };
+
+        if (deskEditMode) {
+          arm();
+          e.preventDefault();
+        } else if (isTouch) {
+          pressTimer = setTimeout(() => arm(), 420);
+        }
+
+        const flipByEdge = (xPct) => {
+          const dir = xPct <= 8 ? -1 : xPct >= 92 ? 1 : 0;
+          if (!dir) {
+            clearEdge();
+            return;
+          }
+          const next = deskPage + dir;
+          if (next < 0 || next >= DESK_PAGE_MAX) {
+            clearEdge();
+            return;
+          }
+          if (edgeDir === dir && edgeTimer) return;
+          clearEdge();
+          edgeDir = dir;
+          edgeTimer = setTimeout(() => {
+            edgeTimer = null;
+            edgeDir = 0;
+            const id = el.getAttribute("data-desk-id");
+            const [sc] = deskSpanOf(id);
+            const preferCol = dir > 0 ? 0 : DESK_COLS - sc;
+            const preferRow = Number(el.dataset.deskRow) || 0;
+            const free = deskFindFree(id, preferCol, preferRow, next, id);
+            if (!free) return;
+            el.dataset.deskPage = String(next);
+            deskPage = next;
+            syncDeskPageVisibility();
+            el.classList.remove("desk-offpage");
+            el.classList.add("is-drag");
+            deskPlaceEl(el, free.col, free.row);
+            drag.moved = true;
+          }, 420);
+        };
+
+        const onMove = (ev) => {
+          if (activePid != null && ev.pointerId !== activePid) return;
+          const dist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+          if (!armed) {
+            if (!isTouch && dist > 6) {
+              arm();
+              ev.preventDefault();
+            } else if (isTouch && pressTimer && dist > 14) {
+              clearPress();
+            }
+            if (!armed) return;
+          }
+          if (!drag) return;
+          const rect = desk.getBoundingClientRect();
+          if (!rect.width || !rect.height) return;
+          drag.moved = true;
+          const id = el.getAttribute("data-desk-id");
+          const [sc, sr] = deskSpanOf(id);
+          const m = deskMetrics();
+          const box = deskItemBox(el, sc, sr, m);
+          let left = ev.clientX - drag.ox - rect.left;
+          let top = ev.clientY - drag.oy - rect.top;
+          left = Math.max(0, Math.min(Math.max(0, m.w - box.w), left));
+          top = Math.max(0, Math.min(Math.max(0, m.h - box.h), top));
+          el.style.left = left + "px";
+          el.style.top = top + "px";
+          el.style.width = box.w + "px";
+          el.style.height = box.h + "px";
+          const midX = ((ev.clientX - rect.left) / rect.width) * 100;
+          flipByEdge(midX);
+        };
+
+        const onUp = (ev) => {
+          if (activePid != null && ev.pointerId !== activePid) return;
+          clearPress();
+          clearEdge();
+          desk.removeEventListener("pointermove", onMove);
+          desk.removeEventListener("pointerup", onUp);
+          desk.removeEventListener("pointercancel", onUp);
+          activePid = null;
+          if (!drag) return;
+          const moved = drag.moved;
+          const origin = drag.origin;
+          try {
+            drag.el.releasePointerCapture(ev.pointerId);
+          } catch (_) {}
+          if (moved) {
+            deskSnapFromPointer(el, ev.clientX, ev.clientY, origin);
+            deskSuppressTap = true;
+            persistDeskLayout();
+          }
+          drag.el.classList.remove("is-drag");
+          drag = null;
+          syncDeskPageVisibility();
+        };
+
+        desk.addEventListener("pointermove", onMove);
+        desk.addEventListener("pointerup", onUp);
+        desk.addEventListener("pointercancel", onUp);
+      });
+
+      const done = document.getElementById("btnDeskEditDone");
+      if (done) {
+        done.addEventListener("click", () => setDeskEditMode(false));
+      }
+      const resetBar = document.getElementById("btnDeskReset");
+      if (resetBar) {
+        resetBar.addEventListener("click", () => resetDeskLayout());
+      }
+      const resetSet = document.getElementById("btnDeskLayoutReset");
+      if (resetSet) {
+        resetSet.addEventListener("click", () => {
+          resetDeskLayout();
+          if (typeof shellToast === "function") shellToast("已恢复默认桌面排布");
+        });
+      }
+      if (typeof ResizeObserver !== "undefined") {
+        const ro = new ResizeObserver(() => deskRelayoutAll());
+        ro.observe(desk);
+      } else {
+        window.addEventListener("resize", () => deskRelayoutAll());
+      }
     }
 
     function bindHomeAvatars() {
@@ -7923,8 +9280,10 @@
         let timer = null;
         let longPress = false;
         const down = () => {
+          if (deskEditMode) return;
           longPress = false;
           timer = setTimeout(() => {
+            if (deskEditMode) return;
             longPress = true;
             openAppStub("小屋");
           }, 480);
@@ -7932,7 +9291,9 @@
         const up = () => {
           clearTimeout(timer);
           timer = null;
-          if (!longPress) showView("profile");
+          if (longPress) return;
+          if (!deskAllowTap()) return;
+          showView("profile");
         };
         const cancel = () => {
           clearTimeout(timer);
@@ -7958,6 +9319,7 @@
       const now = new Date();
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
       week.replaceChildren();
+      const dayEls = [];
       for (let i = 0; i < 7; i++) {
         const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
         const span = document.createElement("span");
@@ -7973,16 +9335,57 @@
         }
         span.append(b);
         week.append(span);
+        dayEls.push({ d, b });
       }
+      void markHomeWeekDots(dayEls);
+    }
+
+    async function markHomeWeekDots(dayEls) {
+      if (!window.CalApp || !CalApp.fetchEvents || !dayEls || !dayEls.length) return;
+      try {
+        const from = CalApp.localDateISO(dayEls[0].d);
+        const to = CalApp.localDateISO(dayEls[6].d);
+        const events = await CalApp.fetchEvents({ from, to });
+        const hit = new Set();
+        for (const ev of events || []) {
+          const day = String((ev && ev.date) || "").trim();
+          if (day) hit.add(day);
+        }
+        for (const row of dayEls) {
+          const iso = CalApp.localDateISO(row.d);
+          if (!hit.has(iso)) continue;
+          if (row.b.classList.contains("on")) continue;
+          row.b.classList.add("has-ev");
+        }
+      } catch (_) {}
     }
 
     function bindHomeWidgets() {
       fillHomeWeek();
       updateHomeMeetSub();
       refreshHomeToday();
+      refreshHomeTokenRing();
+      refreshHomeSticky();
       const cal = document.getElementById("homeWidCal");
       if (cal) {
-        cal.addEventListener("click", () => routeHomeApp("cal", "日历"));
+        cal.addEventListener("click", () => {
+          if (!deskAllowTap()) return;
+          routeHomeApp("cal", "日历");
+        });
+      }
+      const tok = document.getElementById("homeWidToken");
+      if (tok) {
+        tok.addEventListener("click", () => {
+          if (!deskAllowTap()) return;
+          routeHomeApp("budget", "额度");
+        });
+      }
+      const stk = document.getElementById("homeWidSticky");
+      if (stk) {
+        stk.addEventListener("click", () => {
+          if (!deskAllowTap()) return;
+          routeHomeApp("cal", "日历");
+        });
       }
     }
 
@@ -10053,11 +11456,12 @@
 
     document.getElementById("swipeHint").addEventListener("click", enterHome);
     document.getElementById("btnStandby").addEventListener("click", () => showView("home"));
-    document.getElementById("homePager").addEventListener("click", onHomeAppClick);
+    document.getElementById("homeDesk").addEventListener("click", onHomeAppClick);
     document.getElementById("homeDock").addEventListener("click", onHomeAppClick);
     const btnHomeCapsule = document.getElementById("btnHomeCapsule");
     if (btnHomeCapsule) {
       btnHomeCapsule.addEventListener("click", () => {
+        if (!deskAllowTap()) return;
         const go = btnHomeCapsule.dataset.go;
         if (go === "colisten") showView("colisten");
         else if (go === "cowatch") {
@@ -10089,7 +11493,8 @@
       if (phoneSettingsSubKey) closeSettingsSub();
       else showView("home");
     });
-    bindHomePager();
+    bindDeskFreeLayout();
+    applyDeskLayout([]);
     bindHomeAvatars();
     bindHomeWidgets();
     if (window.CowatchApp) {
@@ -10113,6 +11518,9 @@
     if (window.WalletApp) {
       WalletApp.mount({ showView });
     }
+    if (window.MemoApp) {
+      MemoApp.mount({ showView });
+    }
     if (window.ChatApp) {
       ChatApp.mount({
         showView,
@@ -10120,6 +11528,7 @@
         getAvatarYou: () => hutAvatarUser || "/assets/cafe/avatar-you.png",
         getAvatarBot: () => hutAvatarBot || "/assets/cafe/avatar-bot.png",
         onUnreadChange: () => refreshChatUnread(),
+        reportPhonePresence,
       });
     }
     if (window.ColistenApp) {
@@ -10310,6 +11719,88 @@
       if (card) enterCoread(card.getAttribute("data-book-id") || undefined);
     });
     document.getElementById("btnSaveSettings").addEventListener("click", saveSettings);
+    (function bindTtsPreview() {
+      const btn = document.getElementById("btnTtsPreview");
+      if (!btn) return;
+      const MALE_RE =
+        /男|male|yunyang|yunjian|yunxi|yunhao|yunfeng|yunze|kangkang|云扬|云健|云希|云皓|云枫|康康|david|mark|james|guy|alex|tom|daniel|ryan|takumi|oren|naoki|injoon/i;
+      const FEMALE_RE =
+        /女|female|xiaoxiao|xiaoyi|xiaohan|xiaomeng|xiaomo|xiaorui|xiaoshuang|xiaoxuan|xiaoyan|yaoyao|huihui|晓晓|晓伊|晓涵|瑶瑶|慧慧|zira|susan|hazel|karen|nanami|kyoko|sakura|haruka|seoyeon/i;
+      function pickMale(lang) {
+        try {
+          const voices = (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+          const pref = String(lang || "zh").slice(0, 2).toLowerCase();
+          const pool = voices.filter((v) =>
+            String(v.lang || "").toLowerCase().startsWith(pref)
+          );
+          const list = pool.length ? pool : voices;
+          const male = list.find((v) =>
+            MALE_RE.test(String(v.name || "") + " " + String(v.voiceURI || ""))
+          );
+          if (male) return male;
+          return null;
+        } catch (_) {
+          return null;
+        }
+      }
+      function speakMale(text) {
+        try {
+          if (!window.speechSynthesis) return;
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(text);
+          u.lang = "zh-CN";
+          u.rate = 1.02;
+          const v = pickMale("zh");
+          if (v) {
+            u.voice = v;
+            u.lang = v.lang || "zh-CN";
+            u.pitch = 1;
+          } else {
+            u.pitch = 0.5;
+          }
+          window.speechSynthesis.speak(u);
+        } catch (_) {}
+      }
+      btn.addEventListener("click", async () => {
+        const sample = "喂，我在。按住说话就可以了";
+        btn.disabled = true;
+        try {
+          const res = await fetch("/api/v1/tts", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: sample, language: "zh" }),
+          });
+          if (res.ok) {
+            const blob = await res.blob();
+            if (blob && blob.size) {
+              const url = URL.createObjectURL(blob);
+              const a = new Audio(url);
+              a.onended = () => {
+                try {
+                  URL.revokeObjectURL(url);
+                } catch (_) {}
+              };
+              await a.play();
+              return;
+            }
+          }
+          speakMale(sample);
+        } catch (_) {
+          speakMale(sample);
+        } finally {
+          btn.disabled = false;
+        }
+      });
+      try {
+        if (window.speechSynthesis) {
+          window.speechSynthesis.getVoices();
+          window.speechSynthesis.addEventListener("voiceschanged", () => {
+            window.speechSynthesis.getVoices();
+          });
+        }
+      } catch (_) {}
+    })();
     document.getElementById("btnCloseConn").addEventListener("click", collapseConn);
     document.getElementById("rowConn").addEventListener("click", toggleConn);
     document.getElementById("rowMcpTools").addEventListener("click", toggleMcpTools);
@@ -10318,9 +11809,64 @@
     document
       .getElementById("inSentinelEnabled")
       .addEventListener("change", onSentinelEnabledChange);
+    document.getElementById("inPresenceDice").addEventListener("change", async () => {
+      const enabled = !!(document.getElementById("inPresenceDice") || {}).checked;
+      const msg = document.getElementById("saveSentinelMsg");
+      try {
+        await patchSentinelSettings(
+          { presence_dice_enabled: enabled },
+          { quiet: true }
+        );
+        if (msg) {
+          msg.textContent = enabled ? "骰子已开" : "骰子已关";
+          msg.className = "save-msg ok";
+        }
+      } catch (_) {
+        const el = document.getElementById("inPresenceDice");
+        if (el) el.checked = !enabled;
+        if (msg) {
+          msg.textContent = "骰子开关保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
+    });
     document
       .getElementById("inActivityEnabled")
       .addEventListener("change", onActivityEnabledChange);
+    document.getElementById("inPeekPhone").addEventListener("change", () => {
+      onPhonePermChange("peek_phone_enabled", "inPeekPhone", "查手机已开", "查手机已关");
+    });
+    document.getElementById("inPeekPhoneL1").addEventListener("change", () => {
+      onPhonePermChange(
+        "peek_phone_l1_enabled",
+        "inPeekPhoneL1",
+        "会话摘要已开",
+        "会话摘要已关"
+      );
+    });
+    document.getElementById("inPhoneDevice").addEventListener("change", () => {
+      onPhonePermChange(
+        "phone_device_enabled",
+        "inPhoneDevice",
+        "手机状态已开",
+        "手机状态已关"
+      );
+    });
+    document.getElementById("inGeoTool").addEventListener("change", () => {
+      onPhonePermChange("geo_tool_enabled", "inGeoTool", "定位已开", "定位已关");
+      if ((document.getElementById("inGeoTool") || {}).checked) {
+        lastGeoReportAt = 0;
+        reportGeoIfAllowed();
+      }
+    });
+    document.getElementById("inWeatherTool").addEventListener("change", () => {
+      onPhonePermChange(
+        "weather_tool_enabled",
+        "inWeatherTool",
+        "天气已开",
+        "天气已关"
+      );
+    });
     document.getElementById("btnCloseSentinel").addEventListener("click", collapseSentinel);
     document.getElementById("btnRefreshMonitorLogs").addEventListener("click", () => {
       loadMonitorLogs();
@@ -10341,15 +11887,6 @@
     if (worldList) worldList.addEventListener("click", onWorldBookListClick);
     document.getElementById("rowPersona").addEventListener("click", togglePersona);
     document.getElementById("personaPanel").addEventListener("click", (e) => e.stopPropagation());
-    document.getElementById("rowPhoneLore").addEventListener("click", togglePhoneLore);
-    document.getElementById("rowPhoneLore").addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        togglePhoneLore();
-      }
-    });
-    document.getElementById("btnSavePhoneLore").addEventListener("click", savePhoneLore);
-    document.getElementById("btnClosePhoneLore").addEventListener("click", collapsePhoneLore);
     document.getElementById("btnSaveAppRegistry").addEventListener("click", saveAppRegistry);
     document.getElementById("btnCloseAppRegistry").addEventListener("click", collapseAppRegistry);
     document.getElementById("rowAppRegistry").addEventListener("click", toggleAppRegistry);
@@ -10369,9 +11906,6 @@
     document.getElementById("rowLore").addEventListener("click", toggleLore);
     document.getElementById("lorePanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("btnSaveFollowDefaults").addEventListener("click", saveFollowDefaults);
-    document.getElementById("inShowClock").addEventListener("change", (e) => {
-      setShowClock(!!e.target.checked);
-    });
     document.getElementById("btnCloseFollowDefaults").addEventListener("click", collapseFollowDefaults);
     document.getElementById("rowFollowDefaults").addEventListener("click", toggleFollowDefaults);
     document.getElementById("followDefaultsPanel").addEventListener("click", (e) => e.stopPropagation());
@@ -12572,8 +14106,15 @@
     }, { passive: true });
 
     bindHomeFloat();
-    ensureGate().then((ok) => {
+    reportPhonePresence();
+    if (phonePresenceTimer) clearInterval(phonePresenceTimer);
+    phonePresenceTimer = setInterval(() => reportPhonePresence(), 45000);
+    window.addEventListener("online", () => reportPhonePresence());
+    window.addEventListener("offline", () => reportPhonePresence());
+    ensureGate().then(async (ok) => {
       if (!ok) return;
+      await loadSettings();
+      if (window.ChatApp && typeof ChatApp.onShow === "function") ChatApp.onShow();
       checkHealth();
       loadModels();
       loadBooks();
@@ -12581,6 +14122,7 @@
       startCalRemindTick();
       refreshCalRemind();
       startShellWs();
+      reportPhonePresence();
     });
     updateLockClock();
     updateLockNetStatus();

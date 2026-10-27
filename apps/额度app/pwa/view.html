@@ -1,16 +1,54 @@
   <div class="view" id="view-budget">
-    <header class="bud-bar">
-      <button type="button" class="back" id="btnBudgetBack" title="回桌面" aria-label="回桌面">←</button>
-      <div class="bud-title">额度</div>
-      <img class="mascot" src="/assets/cafe/health.png" alt="" />
-    </header>
-    <section class="bud-body">
-      <div class="bud-total" id="budTotalCard">
-        <div class="lab">合计粗算</div>
-        <div class="rmb" id="budTotalRmb">¥0</div>
-        <div class="meta" id="budTotalMeta">0 token</div>
-      </div>
-      <ul class="bud-list" id="budAppList"></ul>
-      <p class="bud-foot" id="budFoot"></p>
-    </section>
+    <div class="bud-shell">
+      <header class="bud-bar" id="budHomeBar">
+        <button type="button" class="back" id="btnBudgetBack" title="回桌面" aria-label="回桌面">←</button>
+        <div class="bud-title">额度</div>
+        <button type="button" class="more" id="btnBudgetMore" title="更多" aria-label="更多">···</button>
+      </header>
+
+      <header class="bud-bar" id="budMoreBar" hidden>
+        <button type="button" class="back" id="btnBudgetMoreBack" title="返回" aria-label="返回">←</button>
+        <div class="bud-title">价卡与余额</div>
+        <span class="bud-bar-spacer" aria-hidden="true"></span>
+      </header>
+
+      <section class="bud-pane on" id="budHome">
+        <div class="bud-body">
+          <div class="bud-total" id="budTotalCard">
+            <div class="lab">合计粗算</div>
+            <div class="rmb" id="budTotalRmb">¥0</div>
+            <div class="meta" id="budTotalMeta">0 token</div>
+          </div>
+          <ul class="bud-list" id="budAppList"></ul>
+          <p class="bud-foot" id="budFoot"></p>
+        </div>
+      </section>
+
+      <section class="bud-pane" id="budMore">
+        <div class="bud-body">
+          <div class="bud-balance" id="budBalance">账户余额加载中…</div>
+          <p class="bud-rate" id="budRate"></p>
+          <div class="bud-rates" id="budRatesBox">
+            <div class="bud-rates-title">价卡（对照官网改）</div>
+            <p class="bud-rates-hint">
+              按设定里的 LLM 模型选卡；官方无实时价表 API，改价请对照
+              <a id="budDocsLink" href="https://api-docs.deepseek.com/zh-cn/quick_start/pricing" target="_blank" rel="noopener">DeepSeek 模型与价格</a>。
+            </p>
+            <label class="bud-field">模型卡
+              <select id="budRateModel"></select>
+            </label>
+            <div class="bud-rate-grid">
+              <label>闲时入未命中<input id="budInMiss" type="number" min="0" step="0.01" /></label>
+              <label>闲时入命中<input id="budInHit" type="number" min="0" step="0.01" /></label>
+              <label>闲时输出<input id="budOut" type="number" min="0" step="0.01" /></label>
+            </div>
+            <label class="bud-check"><input id="budPeakAuto" type="checkbox" checked /> 高峰 = 闲时 ×2</label>
+            <div class="bud-rate-actions">
+              <button type="button" id="budSaveRates">保存价卡</button>
+              <span id="budRateMsg"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>

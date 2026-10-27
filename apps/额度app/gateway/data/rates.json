@@ -1,0 +1,46 @@
+{
+  "source": "https://api-docs.deepseek.com/zh-cn/quick_start/pricing",
+  "updated_at": "2026-10-26T12:33:19.397Z",
+  "models": {
+    "deepseek-flash": {
+      "label": "DeepSeek-V4.1-Flash",
+      "version": "DeepSeek-V4.1-Flash-1017",
+      "vision": true,
+      "aliases": [
+        "deepseek-v4-flash",
+        "deepseek-v4-flash-vision-exp",
+        "deepseek-chat"
+      ],
+      "peak_auto": true,
+      "off": {
+        "in_hit": 0.02,
+        "in_miss": 1,
+        "out": 4
+      },
+      "peak": {
+        "in_hit": 0.04,
+        "in_miss": 2,
+        "out": 8
+      }
+    },
+    "deepseek-v4-pro": {
+      "label": "DeepSeek-V4-Pro",
+      "version": "DeepSeek-V4-Pro-0813",
+      "vision": false,
+      "aliases": [
+        "deepseek-v4-pro"
+      ],
+      "peak_auto": true,
+      "off": {
+        "in_hit": 0.15,
+        "in_miss": 4.5,
+        "out": 13.5
+      },
+      "peak": {
+        "in_hit": 0.3,
+        "in_miss": 9,
+        "out": 27
+      }
+    }
+  }
+}

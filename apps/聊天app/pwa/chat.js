@@ -15,7 +15,18 @@
       return "/assets/cafe/avatar-bot.png";
     },
     onUnreadChange: function () {},
+    reportPhonePresence: function () {},
   };
+
+  function pushPhonePresence(extra) {
+    try {
+      if (typeof deps.reportPhonePresence === "function") {
+        deps.reportPhonePresence(
+          Object.assign({ app: "chat", view: "chat", locked: false }, extra || {})
+        );
+      }
+    } catch (_) {}
+  }
 
   let bound = false;
   let lastTimeBucket = -1;
@@ -39,6 +50,8 @@
   let reactMsgId = "";
   let multiMode = false;
   let multiIds = new Set();
+  /** IB M7：当前频道封档线 ts；0=无 */
+  let threadArchiveBeforeTs = 0;
   let pendingQuote = null;
   let callSession = null;
   let voiceRec = null;
@@ -51,6 +64,8 @@
   let newMsgPending = 0;
   let suppressNewCount = false;
   let activePeerId = "daily";
+  /** H7：空串=主线 */
+  let activeTopicId = "";
   let peersCache = null;
   let menuSessId = "daily";
 
@@ -63,7 +78,16 @@
     sound: "ariadne.chat.sound",
     clearRead: "ariadne.chat.clearRead",
     activePeer: "ariadne.chat.activePeer",
+    activeTopic: "ariadne.chat.activeTopic.",
+    block: "ariadne.chat.block",
+    /** IB M8：通知分档 */
+    notifyAi: "ariadne.chat.notify.ai",
+    notifyMom: "ariadne.chat.notify.moments",
+    momSeenTs: "ariadne.chat.moments.seenTs",
   };
+  let sysBannerTimer = null;
+  let sysBannerGo = null;
+  let weatherFetchAt = 0;
   function draftKey(peerId) {
     return "ariadne.chat.draft." + String(peerId || activePeerId || "daily");
   }
@@ -71,6 +95,7 @@
   const PIN_KEY = LS.pins;
   const MUTE_KEY = LS.mute;
   const UNREAD_MARK_KEY = LS.unreadMark;
+  const BLOCK_KEY = LS.block;
 
   const PLUS_ITEMS = [
     { id: "request_song", lab: "点歌", tile: "点歌", ok: true },
@@ -204,12 +229,40 @@
   function peerQuery(extra) {
     const q = new URLSearchParams(extra || {});
     q.set("peer", activePeerId || "daily");
+    if (activeTopicId) q.set("topic", activeTopicId);
     return q.toString();
   }
   function withPeerBody(payload) {
     const out = Object.assign({}, payload || {});
     out.peer = activePeerId || "daily";
+    if (activeTopicId) out.topic = activeTopicId;
+    else delete out.topic;
     return out;
+  }
+  function topicLsKey(peerId) {
+    return LS.activeTopic + String(peerId || activePeerId || "daily");
+  }
+  function readStoredTopic(peerId) {
+    try {
+      return String(localStorage.getItem(topicLsKey(peerId)) || "").trim();
+    } catch (_) {
+      return "";
+    }
+  }
+  function setActiveTopicLocal(topicId, opts) {
+    const next = String(topicId || "").trim();
+    if (!(opts && opts.force) && next === activeTopicId) return;
+    persistDraft();
+    activeTopicId = next;
+    try {
+      if (next) localStorage.setItem(topicLsKey(activePeerId), next);
+      else localStorage.removeItem(topicLsKey(activePeerId));
+    } catch (_) {}
+    pendingQuote = null;
+    nearBottom = true;
+    newMsgPending = 0;
+    setNewMsgChip(0);
+    paintTopicChip();
   }
   function setActivePeer(id) {
     const next = String(id || "daily").trim() || "daily";
@@ -219,19 +272,111 @@
     try {
       localStorage.setItem(LS.activePeer, next);
     } catch (_) {}
+    activeTopicId = readStoredTopic(next);
     pendingQuote = null;
     nearBottom = true;
     newMsgPending = 0;
     setNewMsgChip(0);
+    paintTopicChip();
+  }
+  function paintTopicChip() {
+    const chip = document.getElementById("chatTopicChip");
+    if (!chip) return;
+    if (!activeTopicId) {
+      chip.hidden = true;
+      chip.textContent = "";
+      return;
+    }
+    chip.hidden = false;
+    chip.textContent = chip.dataset.title
+      ? "#" + chip.dataset.title
+      : "#话题";
+  }
+  function peerTrueName(peerId) {
+    const id = String(peerId || activePeerId || "daily");
+    const hit = (peersCache || []).find((p) => p && p.id === id);
+    if (hit && hit.name) return hit.name;
+    if (id === "daily") return deps.getPeerName() || "家机";
+    return id;
   }
   function peerDisplayName(peerId) {
     const id = String(peerId || activePeerId || "daily");
     const note = readNote(id);
     if (note) return note;
-    const hit = (peersCache || []).find((p) => p && p.id === id);
-    if (hit && hit.name) return hit.name;
-    if (id === "daily") return deps.getPeerName() || "家机";
-    return id;
+    return peerTrueName(id);
+  }
+  function peerById(peerId) {
+    const id = String(peerId || "");
+    return (peersCache || []).find((p) => p && p.id === id) || null;
+  }
+  function peerAvatarOf(peerId) {
+    const id = String(peerId || activePeerId || "daily");
+    const hit = peerById(id);
+    if (hit && hit.kind === "group") {
+      const mid = Array.isArray(hit.members) ? hit.members[0] : "";
+      if (mid) {
+        const m = peerById(mid);
+        if (m && m.avatar) return m.avatar;
+        if (mid === "daily") {
+          return deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+        }
+      }
+      return deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    }
+    if (hit && hit.avatar) return hit.avatar;
+    if (id === "daily") {
+      return deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    }
+    return deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+  }
+  /**
+   * 群拼贴图源：我 + 联系人，最多 9；对齐微信合影格。
+   * @returns {string[]}
+   */
+  function groupCollageSrcs(peer) {
+    const you = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
+    const members = Array.isArray(peer && peer.members)
+      ? peer.members.filter(Boolean)
+      : [];
+    const srcs = [you];
+    for (const mid of members) {
+      if (srcs.length >= 9) break;
+      srcs.push(peerAvatarOf(mid));
+    }
+    if (srcs.length < 2) srcs.push(peerAvatarOf("daily"));
+    return srcs;
+  }
+  (function checkGroupCollage() {
+    const fake = groupCollageSrcs({ members: ["daily", "mint"] });
+    if (fake.length < 3) throw new Error("collage includes you");
+    if (fake[0] !== (deps.getAvatarYou() || "/assets/cafe/avatar-you.png"))
+      throw new Error("you first");
+  })();
+
+  /** 群：我+成员小图拼贴；单聊：单图。写入 wrap（.chat-av-wrap） */
+  function mountPeerAvatar(wrap, peerId) {
+    if (!wrap) return;
+    const id = String(peerId || "daily");
+    const hit = peerById(id);
+    wrap.replaceChildren();
+    if (hit && hit.kind === "group") {
+      const tiles = groupCollageSrcs(hit);
+      const collage = document.createElement("div");
+      collage.className = "chat-av-collage n" + tiles.length;
+      for (const src of tiles) {
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = src;
+        collage.append(img);
+      }
+      wrap.append(collage);
+      return;
+    }
+    const img = document.createElement("img");
+    img.className = "face";
+    img.alt = "";
+    img.src = peerAvatarOf(id);
+    wrap.append(img);
   }
   async function fetchPeers() {
     const res = await fetch("/api/v1/chat/peers", { credentials: "same-origin" });
@@ -262,7 +407,40 @@
       }
       throw new Error(data.message || data.error || "读取失败");
     }
+    const chip = document.getElementById("chatTopicChip");
+    if (chip) {
+      chip.dataset.title = data.topicTitle || "";
+      paintTopicChip();
+    }
+    threadArchiveBeforeTs = Math.max(0, Math.floor(Number(data.archive_before_ts) || 0));
     return Array.isArray(data.messages) ? data.messages : [];
+  }
+
+  function paintArchiveLine(msgs) {
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    box.querySelectorAll(".wx-archive-line").forEach((el) => el.remove());
+    const cut = threadArchiveBeforeTs;
+    if (!cut) return;
+    let lastId = "";
+    for (const m of msgs || []) {
+      if ((Number(m && m.ts) || 0) <= cut) lastId = String(m.id || "");
+    }
+    if (!lastId) return;
+    const row = box.querySelector(
+      '.wx-row[data-msg-id="' + lastId.replace(/"/g, "") + '"]'
+    );
+    if (!row) return;
+    const line = document.createElement("div");
+    line.className = "wx-archive-line";
+    const lab = document.createElement("span");
+    lab.textContent = "封档线 · 以上不进模型";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "清除";
+    btn.addEventListener("click", () => clearArchiveUi());
+    line.append(lab, btn);
+    row.after(line);
   }
 
   async function fetchStickers(force) {
@@ -399,18 +577,48 @@
       row.querySelector(".bubble")
     );
   }
+  function syncToolStack(col, msg) {
+    if (!col) return;
+    const old = col.querySelector(":scope > .wx-tool-stack");
+    const tools = msg && Array.isArray(msg.tools) ? msg.tools : [];
+    if (!tools.length) {
+      if (old) old.remove();
+      return;
+    }
+    const stack = ensureToolStack(col);
+    stack.replaceChildren();
+    for (const t of tools) {
+      stack.appendChild(
+        buildToolCard(
+          {
+            name: t.name,
+            label: t.label,
+            summary: t.summary,
+            detail: t.detail,
+            ok: t.ok !== false,
+          },
+          false
+        )
+      );
+    }
+  }
+
   function patchMessageBubble(msg) {
     if (!msg || !msg.id) return;
     const box = document.getElementById("chatThread");
     if (!box) return;
     const row = box.querySelector('.wx-row[data-msg-id="' + msg.id + '"]');
     if (!row) return;
+    row._chatMsg = msg;
     const bubble = rowBubble(row);
     if (bubble) fillBubble(bubble, msg);
     paintVoiceAsr(row, msg);
     paintQuoteRef(row, msg);
     const col = row.querySelector(".wx-col");
-    if (col) syncVariantBar(col, msg);
+    if (col) {
+      syncToolStack(col, msg);
+      syncVariantBar(col, msg);
+    }
   }
 
   function bubbleTextEl(bubble) {
@@ -445,6 +653,12 @@
     bubble.replaceChildren();
     bubble.classList.remove("is-media", "is-card", "is-voice", "has-think");
     bubble.style.minWidth = "";
+    if (msg && msg.forward) {
+      const tag = document.createElement("div");
+      tag.className = "wx-fwd-tag";
+      tag.textContent = "转发";
+      bubble.append(tag);
+    }
     const kind = (msg && msg.kind) || "text";
     const finish = () => {
       if (keepBunny) {
@@ -579,7 +793,10 @@
         if (multiMode) return;
         e.preventDefault();
         e.stopPropagation();
-        openLocView(p.name || msg.body || "位置", p.detail || "");
+        openLocView(p.name || msg.body || "位置", p.detail || "", {
+          lat: p.lat,
+          lng: p.lng,
+        });
       });
       bubble.append(card);
       finish();
@@ -622,8 +839,12 @@
     if (kind === "call") {
       bubble.classList.add("is-call");
       const p = msg.payload || {};
+      const inviteLive =
+        p.phase === "invite" &&
+        p.dir !== "out" &&
+        Date.now() - (Number(msg.ts) || 0) < 90000;
       const line = document.createElement("div");
-      line.className = "wx-call-line";
+      line.className = "wx-call-line" + (inviteLive ? " is-tap" : "");
       const ico = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       ico.setAttribute("class", "wx-call-ico");
       ico.setAttribute("viewBox", "0 0 24 24");
@@ -642,6 +863,14 @@
       txt.textContent = callBubbleLabel(msg);
       line.append(ico, txt);
       bubble.append(line);
+      if (inviteLive) {
+        bubble.addEventListener("click", (e) => {
+          if (multiMode) return;
+          e.preventDefault();
+          e.stopPropagation();
+          attachCallSession(msg, { ring: true });
+        });
+      }
       finish();
       return;
     }
@@ -711,6 +940,16 @@
           }
           openMusicCard(p);
         });
+      } else if (kind === "file") {
+        card.style.cursor = "pointer";
+        card.setAttribute("role", "button");
+        card.tabIndex = 0;
+        card.addEventListener("click", (e) => {
+          if (multiMode) return;
+          e.preventDefault();
+          e.stopPropagation();
+          openFileCard(msg);
+        });
       }
       bubble.append(card);
       finish();
@@ -750,6 +989,7 @@
     t.className = "wx-bubble-text";
     t.textContent = (msg && msg.body) || "";
     bubble.append(t);
+    maybeAttachVoiceBar(bubble, msg);
     finish();
   }
 
@@ -817,6 +1057,7 @@
         name: p.name || msg.body,
         label: p.label,
         summary: p.summary,
+        detail: p.detail,
         ok: p.ok !== false,
       });
       if (row && msg.id) row.dataset.msgId = msg.id;
@@ -824,26 +1065,28 @@
     }
     const empty = box.querySelector(".wx-empty");
     if (empty) empty.remove();
-    /* 无独立 tool 消息时，用气泡自带的 tools 兜底（避免重开丢失） */
-    if (Array.isArray(msg.tools) && msg.tools.length) {
-      for (const t of msg.tools) {
-        finishToolChip(null, {
-          name: t.name,
-          label: t.label,
-          summary: t.summary,
-          ok: t.ok !== false,
-        });
-      }
-    }
     appendTimeChip(msg.ts != null ? msg.ts : Date.now());
     const youAv = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
-    const botAv = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    const speakerId =
+      msg.from === "bot" && msg.payload && msg.payload.speaker_id
+        ? String(msg.payload.speaker_id)
+        : "";
+    const speakerName =
+      msg.from === "bot" && msg.payload && msg.payload.speaker_name
+        ? String(msg.payload.speaker_name)
+        : "";
+    const botAv = speakerId
+      ? peerAvatarOf(speakerId)
+      : peerAvatarOf(activePeerId);
     const row = document.createElement("div");
     row.className = "wx-row " + (msg.from === "you" ? "me" : "them");
     if (msg.id) row.dataset.msgId = msg.id;
     if (msg.kind) row.dataset.kind = msg.kind;
+    if (msg.ts != null) row.dataset.ts = String(msg.ts);
+    if (speakerId) row.dataset.speakerId = speakerId;
     const av = document.createElement("div");
-    const homePeer = (activePeerId || "daily") === "daily";
+    const homePeer =
+      (speakerId || activePeerId || "daily") === "daily";
     /* 完整框：自己始终有；对方仅家机 */
     av.className =
       "av" +
@@ -860,14 +1103,58 @@
     if (msg.from === "bot") {
       const col = document.createElement("div");
       col.className = "wx-col";
+      if (speakerName) {
+        const sp = document.createElement("div");
+        sp.className = "wx-speaker";
+        sp.textContent = speakerName;
+        col.append(sp);
+      }
       col.append(bubble);
+      /* H3：tools[] 嵌进气泡列（可折叠卡） */
+      if (Array.isArray(msg.tools) && msg.tools.length) {
+        const stack = ensureToolStack(col);
+        for (const t of msg.tools) {
+          stack.appendChild(
+            buildToolCard(
+              {
+                name: t.name,
+                label: t.label,
+                summary: t.summary,
+                detail: t.detail,
+                ok: t.ok !== false,
+              },
+              false
+            )
+          );
+        }
+      }
       /* 家机气泡始终可点兔子；有 think 显示正文，否则提示 */
       bindBunnyThink(bubble, col, msg.think);
       syncVariantBar(col, msg);
       row.append(av, col);
     } else {
-      row.append(av, bubble);
+      /* 落库 blocked_send，或当前仍拉黑对方：显示感叹号 */
+      const showFail =
+        msg.from === "you" &&
+        (!!msg.blocked_send || isPeerBlocked(activePeerId || "daily"));
+      if (showFail) {
+        const fail = document.createElement("button");
+        fail.type = "button";
+        fail.className = "wx-send-fail";
+        fail.title = "已拉黑，对方收不到";
+        fail.setAttribute("aria-label", "已拉黑，对方收不到");
+        fail.textContent = "!";
+        fail.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          shellToast("已拉黑对方，消息未送达；可在 ··· 里解除拉黑");
+        });
+        /* me 为 row-reverse：av → bubble → fail → 视觉 ! · 气泡 · 头像 */
+        row.append(av, bubble, fail);
+      } else {
+        row.append(av, bubble);
+      }
     }
+    row._chatMsg = msg;
     box.append(row);
     paintVoiceAsr(row, msg);
     bindBubbleCtx(bubble, msg);
@@ -884,7 +1171,7 @@
     return bubble;
   }
 
-  function appendChatBubble(from, text, ts, thinkOpts) {
+  function appendChatBubble(from, text, ts, thinkOpts, speakerOpts) {
     const msg = {
       from: from,
       kind: "text",
@@ -894,6 +1181,12 @@
     if (thinkOpts && (thinkOpts.think || thinkOpts.think_sec)) {
       if (thinkOpts.think) msg.think = thinkOpts.think;
       if (thinkOpts.think_sec) msg.think_sec = thinkOpts.think_sec;
+    }
+    if (speakerOpts && speakerOpts.speaker_id) {
+      msg.payload = {
+        speaker_id: String(speakerOpts.speaker_id),
+        speaker_name: String(speakerOpts.speaker_name || "").slice(0, 32),
+      };
     }
     return appendChatMessage(msg);
   }
@@ -925,31 +1218,209 @@
       .replace(/"/g, "&quot;");
   }
 
-  function appendToolChip(name, label) {
-    const show = String(label || name || "").trim() || "tool";
-    return appendMetaRow(
-      "tool",
-      "调用工具 <code>" + escMeta(show) + "</code><span class=\"wx-meta-sum\"> …</span>"
-    );
+  /** H3：可折叠操作卡（嵌入气泡列或线程） */
+  function buildToolCard(ev, pending) {
+    const show =
+      String((ev && ev.label) || (ev && ev.name) || "").trim() || "tool";
+    const sum = String((ev && ev.summary) || "").trim();
+    const detail = String((ev && ev.detail) || "").trim();
+    const ok = !ev || ev.ok !== false;
+    const card = document.createElement("details");
+    card.className =
+      "wx-tool-card" +
+      (pending ? " is-pending" : "") +
+      (ok ? "" : " is-bad");
+    if (ev && ev.name) card.dataset.toolName = String(ev.name);
+    const summary = document.createElement("summary");
+    const ico = document.createElement("span");
+    ico.className = "wx-meta-ico";
+    ico.setAttribute("aria-hidden", "true");
+    const body = document.createElement("span");
+    body.className = "wx-meta-body";
+    body.innerHTML =
+      "<code>" +
+      escMeta(show) +
+      "</code>" +
+      (pending
+        ? '<span class="wx-meta-sum"> 执行中…</span>'
+        : sum
+          ? '<span class="wx-meta-sum"> · ' + escMeta(sum) + "</span>"
+          : "");
+    const caret = document.createElement("span");
+    caret.className = "wx-tool-caret";
+    caret.setAttribute("aria-hidden", "true");
+    caret.textContent = "▾";
+    summary.append(ico, body, caret);
+    card.append(summary);
+    const pre = document.createElement("pre");
+    pre.className = "wx-tool-detail";
+    if (pending) {
+      pre.textContent = "…";
+    } else if (detail) {
+      pre.textContent = detail;
+    } else if (sum) {
+      pre.textContent = sum;
+    } else {
+      pre.textContent = ok ? "完成" : "失败";
+    }
+    card.append(pre);
+    if (!pending && detail) {
+      try {
+        const o = JSON.parse(detail);
+        if (o && o.needs_confirm && o.pending_id) {
+          card.dataset.pendingId = String(o.pending_id);
+          card.classList.add("needs-confirm");
+          const acts = document.createElement("div");
+          acts.className = "wx-tool-confirm";
+          const ok = document.createElement("button");
+          ok.type = "button";
+          ok.className = "wx-tool-confirm-ok";
+          ok.textContent = "同意";
+          ok.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            confirmMomentsPending(card, o.pending_id, true);
+          });
+          const no = document.createElement("button");
+          no.type = "button";
+          no.className = "wx-tool-confirm-no";
+          no.textContent = "拒绝";
+          no.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            confirmMomentsPending(card, o.pending_id, false);
+          });
+          acts.append(ok, no);
+          card.append(acts);
+          card.open = true;
+        }
+      } catch (_) {}
+    }
+    if (pending) {
+      card.open = false;
+      summary.style.pointerEvents = "none";
+    }
+    return card;
+  }
+
+  async function confirmMomentsPending(card, pendingId, accept) {
+    const id = String(pendingId || "").trim();
+    if (!id) return;
+    const path =
+      "/api/v1/moments/pending/" +
+      encodeURIComponent(id) +
+      (accept ? "/confirm" : "/reject");
+    try {
+      const res = await fetch(path, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "操作失败");
+      if (card) {
+        card.classList.remove("needs-confirm");
+        const acts = card.querySelector(".wx-tool-confirm");
+        if (acts) acts.remove();
+        const pre = card.querySelector(".wx-tool-detail");
+        if (pre) pre.textContent = accept ? "已同意发布" : "已拒绝";
+        const sum = card.querySelector(".wx-meta-sum");
+        if (sum) sum.textContent = accept ? " · 已同意" : " · 已拒绝";
+      }
+      shellToast(accept ? "已发布到朋友圈" : "已拒绝");
+      if (accept && typeof refreshMoments === "function") {
+        try {
+          await refreshMoments();
+        } catch (_) {}
+      }
+    } catch (err) {
+      shellToast((err && err.message) || "操作失败");
+    }
+  }
+
+  function ensureToolStack(host) {
+    if (!host) return null;
+    let stack = host.querySelector(":scope > .wx-tool-stack");
+    if (!stack) {
+      stack = document.createElement("div");
+      stack.className = "wx-tool-stack";
+      const bubble = host.querySelector(":scope > .bubble");
+      if (bubble) host.insertBefore(stack, bubble);
+      else host.appendChild(stack);
+    }
+    return stack;
+  }
+
+  function toolHostColFromBubble(botBubble) {
+    if (!botBubble) return null;
+    const row = botBubble.closest(".wx-row.them");
+    if (!row) return null;
+    let col = row.querySelector(".wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      botBubble.replaceWith(col);
+      col.append(botBubble);
+    }
+    return col;
+  }
+
+  function appendToolChip(name, label, hostCol) {
+    const box = document.getElementById("chatThread");
+    if (!box) return null;
+    const empty = box.querySelector(".wx-empty");
+    if (empty) empty.remove();
+    const card = buildToolCard({ name: name, label: label }, true);
+    const col = hostCol || null;
+    if (col) ensureToolStack(col).appendChild(card);
+    else box.append(card);
+    box.scrollTop = box.scrollHeight;
+    return card;
   }
 
   function finishToolChip(row, ev) {
-    const show = String((ev && ev.label) || (ev && ev.name) || "").trim() || "tool";
-    const sum = String((ev && ev.summary) || "").trim();
     const ok = !ev || ev.ok !== false;
     let target = row;
-    if (!target) target = appendToolChip(ev && ev.name, ev && ev.label);
-    if (!target) return null;
-    target.classList.toggle("is-bad", !ok);
-    const body = target.querySelector(".wx-meta-body");
-    if (body) {
-      body.innerHTML =
-        "调用工具 <code>" +
-        escMeta(show) +
-        "</code>" +
-        (sum ? '<span class="wx-meta-sum"> · ' + escMeta(sum) + "</span>" : "");
+    if (!target || !target.classList || !target.classList.contains("wx-tool-card")) {
+      target = buildToolCard(ev, false);
+      const box = document.getElementById("chatThread");
+      if (box) {
+        if (row && row.parentNode === box) box.replaceChild(target, row);
+        else box.append(target);
+        box.scrollTop = box.scrollHeight;
+      }
+    } else {
+      const fresh = buildToolCard(ev, false);
+      if (row.dataset.msgId) fresh.dataset.msgId = row.dataset.msgId;
+      if (row.parentNode) row.parentNode.replaceChild(fresh, row);
+      target = fresh;
     }
+    target.classList.toggle("is-bad", !ok);
     return target;
+  }
+
+  /** 把线程里挂着的操作卡收进当前 bot 气泡列 */
+  function nestPendingToolCards(botBubble) {
+    if (!botBubble) return;
+    const row = botBubble.closest(".wx-row.them");
+    if (!row) return;
+    let col = row.querySelector(".wx-col");
+    if (!col) {
+      col = document.createElement("div");
+      col.className = "wx-col";
+      botBubble.replaceWith(col);
+      col.append(botBubble);
+    }
+    const box = document.getElementById("chatThread");
+    if (!box) return;
+    const pending = [];
+    let node = row.previousElementSibling;
+    while (node && node.classList && node.classList.contains("wx-tool-card")) {
+      pending.unshift(node);
+      node = node.previousElementSibling;
+    }
+    if (!pending.length) return;
+    const stack = ensureToolStack(col);
+    for (const c of pending) stack.appendChild(c);
   }
 
   function takePendingThinkForFirstBubble() {
@@ -1250,6 +1721,7 @@
           if (unreadFromId && String(m.id) === unreadFromId) appendUnreadBar();
           appendChatMessage(m);
         }
+        paintArchiveLine(msgs);
       } finally {
         suppressNewCount = false;
       }
@@ -1258,6 +1730,7 @@
       const bar = unreadFromId && box.querySelector(".wx-unread-bar");
       if (bar) bar.scrollIntoView({ block: "center" });
       else scrollToLatest();
+      resumeInboundIfNeeded(msgs);
     } catch (e) {
       const empty = document.createElement("div");
       empty.className = "wx-empty";
@@ -1296,6 +1769,12 @@
       const more = m.tools.length > 1 ? " +" + (m.tools.length - 1) : "";
       const body = String(m.body || "").trim();
       return "[工具] " + tip + more + (body ? " · " + body : "");
+    }
+    if (m.from === "bot" && p.speaker_name) {
+      const body = String(m.body || "").trim();
+      return body
+        ? String(p.speaker_name) + "：" + body
+        : String(p.speaker_name);
     }
     return m.body || "";
   }
@@ -1339,11 +1818,50 @@
     if (top) top.hidden = !on;
   }
 
+  function histDayBarEl() {
+    return document.getElementById("chatHistDayBar");
+  }
+
+  function setHistDayBarVisible(on) {
+    const bar = histDayBarEl();
+    if (bar) bar.hidden = !on;
+  }
+
+  function sortedHistActiveDays() {
+    return Array.from(histActiveDays || []).filter(Boolean).sort();
+  }
+
+  function paintHistDayBar() {
+    const lab = document.getElementById("chatHistDayLab");
+    const prev = document.getElementById("chatHistDayPrev");
+    const next = document.getElementById("chatHistDayNext");
+    const days = sortedHistActiveDays();
+    const i = histDay ? days.indexOf(histDay) : -1;
+    if (lab) lab.textContent = histDay || "—";
+    if (prev) prev.disabled = i <= 0;
+    if (next) next.disabled = i < 0 || i >= days.length - 1;
+  }
+
+  function shiftHistDay(delta) {
+    const days = sortedHistActiveDays();
+    if (!days.length || !histDay) return;
+    const i = days.indexOf(histDay);
+    if (i < 0) return;
+    const ni = i + delta;
+    if (ni < 0 || ni >= days.length) return;
+    histKind = "all";
+    histDay = days[ni];
+    const q = document.getElementById("chatHistQ");
+    if (q) q.value = "";
+    runHistSearch();
+  }
+
   function showHistHome() {
     const home = document.getElementById("chatHistHome");
     const dates = document.getElementById("chatHistDates");
     const list = document.getElementById("chatHistList");
     setHistTopVisible(true);
+    setHistDayBarVisible(false);
     if (home) home.hidden = false;
     if (dates) dates.hidden = true;
     if (list) {
@@ -1359,6 +1877,8 @@
     const dates = document.getElementById("chatHistDates");
     const list = document.getElementById("chatHistList");
     setHistTopVisible(true);
+    setHistDayBarVisible(!!histDay);
+    if (histDay) paintHistDayBar();
     if (home) home.hidden = true;
     if (dates) dates.hidden = true;
     if (list) list.hidden = false;
@@ -1506,9 +2026,14 @@
     const dates = document.getElementById("chatHistDates");
     const list = document.getElementById("chatHistList");
     setHistTopVisible(false);
+    setHistDayBarVisible(false);
     if (home) home.hidden = true;
-    if (list) list.hidden = true;
+    if (list) {
+      list.hidden = true;
+      list.replaceChildren();
+    }
     if (dates) dates.hidden = false;
+    histDay = "";
     const cal = document.getElementById("chatHistCal");
     if (cal) cal.textContent = "加载中…";
     const days = await loadHistActiveDays();
@@ -1547,6 +2072,8 @@
     if (histKind && histKind !== "all") params.set("kind", histKind);
     if (from) params.set("from", from);
     if (to) params.set("to", to);
+    params.set("peer", activePeerId || "daily");
+    if (activeTopicId) params.set("topic", activeTopicId);
     list.textContent = "搜索中…";
     try {
       const res = await fetch("/api/v1/chat/search?" + params.toString(), {
@@ -1612,6 +2139,12 @@
     showHistHome();
   }
 
+  /** IB M6：会话抽屉直达月历按日期查看 */
+  function openHistByDate() {
+    openHist();
+    showHistDates();
+  }
+
   function closeHist(opts) {
     const hist = document.getElementById("chatHist");
     if (hist) hist.hidden = true;
@@ -1658,6 +2191,7 @@
   function makeChatStream(box) {
     let botBubble = null;
     let pendingToolRow = null;
+    let pendingSpeaker = null;
     const paintFrame = () =>
       new Promise((r) => requestAnimationFrame(() => r()));
     const handleEvent = async (ev) => {
@@ -1677,8 +2211,18 @@
         else if (ev.text) appendMoneyTip(ev.text, ev.ts);
         await paintFrame();
       } else if (ev.type === "bot_start") {
+        /* H2.14：多轮接话时上一轮 bot_done 已清空 botBubble；新一轮从头开气泡 */
+        botBubble = null;
+        pendingToolRow = null;
         pendingThink = { sec: 0, text: "" };
         thinkAttached = false;
+        pendingSpeaker =
+          ev.speaker_id
+            ? {
+                speaker_id: String(ev.speaker_id),
+                speaker_name: String(ev.speaker_name || "").slice(0, 32),
+              }
+            : null;
         setTyping(true);
         await paintFrame();
       } else if (ev.type === "bot_think") {
@@ -1696,7 +2240,11 @@
         }
         await paintFrame();
       } else if (ev.type === "bot_tool" && ev.name) {
-        pendingToolRow = appendToolChip(ev.name, ev.label);
+        pendingToolRow = appendToolChip(
+          ev.name,
+          ev.label,
+          toolHostColFromBubble(botBubble)
+        );
         await paintFrame();
       } else if (ev.type === "cam_check_wait") {
         onCamCheckWait(ev);
@@ -1713,8 +2261,10 @@
             "bot",
             "",
             Date.now(),
-            takePendingThinkForFirstBubble()
+            takePendingThinkForFirstBubble(),
+            pendingSpeaker
           );
+          nestPendingToolCards(botBubble);
         }
         if (botBubble) {
           const te = bubbleTextEl(botBubble);
@@ -1725,8 +2275,24 @@
       } else if (ev.type === "bot_done" && ev.message) {
         const m = ev.message;
         if (botBubble) {
+          nestPendingToolCards(botBubble);
           const row = botBubble.closest(".wx-row");
           if (row && m.id) row.dataset.msgId = String(m.id);
+          if (row && m.payload && m.payload.speaker_id) {
+            row.dataset.speakerId = String(m.payload.speaker_id);
+            const avImg = row.querySelector(".av img");
+            if (avImg) avImg.src = peerAvatarOf(m.payload.speaker_id);
+            const col = row.querySelector(".wx-col");
+            if (col && m.payload.speaker_name) {
+              let sp = col.querySelector(".wx-speaker");
+              if (!sp) {
+                sp = document.createElement("div");
+                sp.className = "wx-speaker";
+                col.insertBefore(sp, col.firstChild);
+              }
+              sp.textContent = String(m.payload.speaker_name);
+            }
+          }
           fillBubble(botBubble, m);
           ensureBunnyThink(botBubble, m);
         } else {
@@ -1734,6 +2300,7 @@
           appendChatMessage(m);
         }
         botBubble = null;
+        pendingSpeaker = null;
         setTyping(false);
       } else if (ev.type === "bot_recall" && ev.message) {
         const m = ev.message;
@@ -1760,6 +2327,22 @@
         await paintFrame();
       } else if (ev.type === "bot_music" && ev.message) {
         appendChatMessage(ev.message);
+        await paintFrame();
+      } else if (ev.type === "bot_call" && ev.message) {
+        appendChatMessage(ev.message);
+        attachCallSession(ev.message, { ring: true, surface: true });
+        await paintFrame();
+      } else if (ev.type === "bot_gift" && ev.gift) {
+        if (
+          callSession &&
+          callSession.phase === "active" &&
+          callSession.media === "video" &&
+          callGiftEnabled
+        ) {
+          playCallGiftFx(ev.gift, "bot");
+        }
+      } else if (ev.type === "avatar_changed" && ev.url) {
+        applyAvatarChanged(ev);
         await paintFrame();
       } else if (ev.type === "bot_image" && ev.message) {
         appendChatMessage(ev.message);
@@ -1791,6 +2374,18 @@
               : "家机未接上：" +
                 (ev.bot_error.message || ev.bot_error.code || "降级");
           setChatErr(tip);
+        }
+        if (ev.reason === "blocks_you" || ev.blocks_you) {
+          const pid = activePeerId || "daily";
+          if (Array.isArray(peersCache)) {
+            const hit = peersCache.find((p) => p && p.id === pid);
+            if (hit) hit.blocks_you = true;
+          }
+          paintBlockBanner();
+        } else {
+          fetchPeers()
+            .then(() => paintBlockBanner())
+            .catch(() => paintBlockBanner());
         }
       }
     };
@@ -1837,17 +2432,36 @@
       setChatErr("");
       setComposerBusy(true);
       setPanels(null);
+      const body = Object.assign({}, payload || {});
+      /* 我拉黑对方：消息仍落库可见，带感叹号，不触发接话 */
+      if (isPeerBlocked(activePeerId || "daily")) {
+        body.noreply = true;
+        body.blocked_send = true;
+      }
       try {
         const res = await fetch("/api/v1/chat/messages", {
           method: "POST",
           credentials: "same-origin",
           headers: {
             "Content-Type": "application/json",
-            Accept: "text/event-stream",
+            Accept: body.noreply ? "application/json" : "text/event-stream",
           },
-          body: JSON.stringify(withPeerBody(payload)),
+          body: JSON.stringify(withPeerBody(body)),
         });
         const ctype = String(res.headers.get("content-type") || "");
+        if (body.noreply) {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            if (res.status === 404) throw new Error("聊天接口未就绪：请重启 npm start 后再试");
+            if (data.error === "wallet_insufficient") throw new Error("余额不足");
+            throw new Error(data.message || data.error || "发送失败");
+          }
+          if (data.message) appendChatMessage(data.message);
+          if (chatViewActive()) await markChatRead();
+          else notifyUnread();
+          refreshSessionList();
+          return;
+        }
         if (!res.ok && !ctype.includes("event-stream")) {
           let data = {};
           try {
@@ -1863,6 +2477,7 @@
         if (chatViewActive()) await markChatRead();
         else notifyUnread();
         refreshSessionList();
+        paintBlockBanner();
       } catch (e) {
         setTyping(false);
         setChatErr((e && e.message) || "发送失败");
@@ -1929,14 +2544,35 @@
     return data.url;
   }
 
+  async function uploadChatFile(file) {
+    const res = await fetch("/api/v1/chat/media", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-Filename": encodeURIComponent(file.name || "file.bin"),
+      },
+      body: file,
+    });
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) throw new Error(data.message || data.error || "上传失败");
+    if (!data.url) throw new Error("上传失败");
+    return data;
+  }
+
   async function postSilentImage(url) {
+    const payload = { kind: "image", body: url, noreply: true };
+    if (isPeerBlocked(activePeerId || "daily")) payload.blocked_send = true;
     const res = await fetch("/api/v1/chat/messages", {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        withPeerBody({ kind: "image", body: url, noreply: true })
-      ),
+      body: JSON.stringify(withPeerBody(payload)),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.message || data.error || "发送失败");
@@ -2133,6 +2769,7 @@
     const nw = document.getElementById("chatSheetNoteWrap");
     const nameW = document.getElementById("chatSheetNameWrap");
     const detailW = document.getElementById("chatSheetDetailWrap");
+    const geoW = document.getElementById("chatSheetGeoWrap");
     const balWrap = document.getElementById("chatSheetBalWrap");
     const balLab = document.getElementById("chatSheetBal");
     const noteLab = document.getElementById("chatSheetNoteLab");
@@ -2140,6 +2777,8 @@
     const note = document.getElementById("chatSheetNote");
     const name = document.getElementById("chatSheetName");
     const detail = document.getElementById("chatSheetDetail");
+    const latEl = document.getElementById("chatSheetLat");
+    const lngEl = document.getElementById("chatSheetLng");
     if (!sheet) return;
     dismissKeyboard();
     if (stick) stick.hidden = true;
@@ -2151,6 +2790,7 @@
     if (nw) nw.hidden = !isMoney;
     if (nameW) nameW.hidden = mode !== "location";
     if (detailW) detailW.hidden = mode !== "location";
+    if (geoW) geoW.hidden = mode !== "location";
     if (balWrap) balWrap.hidden = !isMoney;
     if (title) {
       title.textContent =
@@ -2161,6 +2801,8 @@
     if (note) note.value = mode === "redpacket" ? "恭喜发财" : "";
     if (name) name.value = "";
     if (detail) detail.value = "";
+    if (latEl) latEl.value = "";
+    if (lngEl) lngEl.value = "";
     if (isMoney && balLab) balLab.textContent = "零花余额 …";
     sheet.hidden = false;
     requestAnimationFrame(scrollThreadEnd);
@@ -2210,12 +2852,19 @@
       const detail = String(
         (document.getElementById("chatSheetDetail") || {}).value || ""
       ).trim();
+      const lat = Number((document.getElementById("chatSheetLat") || {}).value);
+      const lng = Number((document.getElementById("chatSheetLng") || {}).value);
       if (!name) {
         setChatErr("请填写位置名称");
         return;
       }
+      const payload = { kind: "location", name: name, detail: detail };
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        payload.lat = lat;
+        payload.lng = lng;
+      }
       closeSheet();
-      await postChatPayload({ kind: "location", name: name, detail: detail });
+      await postChatPayload(payload);
     }
   }
 
@@ -2276,11 +2925,16 @@
 
   const FILE_TEXT_EXT_RE =
     /\.(txt|md|markdown|json|js|ts|tsx|jsx|mjs|cjs|css|html|htm|xml|yml|yaml|toml|ini|csv|py|rb|go|rs|java|kt|c|cc|cpp|h|hpp|cs|swift|sh|bat|ps1|sql|log|conf|cfg)$/i;
+  const FILE_OFFICE_EXT_RE = /\.(docx|xlsx|xlsm|pdf)$/i;
   const FILE_TEXT_MAX = 8 * 1024;
 
   function isReadableTextFile(file) {
     const name = String((file && file.name) || "");
     return FILE_TEXT_EXT_RE.test(name);
+  }
+  function isOfficeExcerptFile(file) {
+    const name = String((file && file.name) || "");
+    return FILE_OFFICE_EXT_RE.test(name);
   }
 
   function readFileTextExcerpt(file) {
@@ -2294,6 +2948,35 @@
       reader.onerror = () => reject(new Error("读取文件失败"));
       reader.readAsText(file);
     });
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const s = String(reader.result || "");
+        const i = s.indexOf(",");
+        resolve(i >= 0 ? s.slice(i + 1) : s);
+      };
+      reader.onerror = () => reject(new Error("读取文件失败"));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function readOfficeExcerpt(file) {
+    const b64 = await readFileAsBase64(file);
+    const res = await fetch("/api/v1/chat/file-excerpt", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: file.name || "file",
+        data_base64: b64,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "摘录失败");
+    return String(data.text || "");
   }
 
   function chatMusicAudio() {
@@ -2636,9 +3319,6 @@
   async function sendPickedFile(file, kind) {
     if (!file) return;
     setChatErr("");
-    if (kind === "file" && !isReadableTextFile(file)) {
-      shellToast("暂只读文本");
-    }
     setComposerBusy(true);
     try {
       const payload = {
@@ -2647,8 +3327,28 @@
         size: Number(file.size) || 0,
         ext: fileExtLabel(file.name || ""),
       };
-      if (kind === "file" && isReadableTextFile(file)) {
-        payload.text = await readFileTextExcerpt(file);
+      if (kind === "file") {
+        try {
+          const up = await uploadChatFile(file);
+          if (up && up.url) payload.url = up.url;
+        } catch (upErr) {
+          shellToast((upErr && upErr.message) || "上传失败 · 仅发卡");
+        }
+        if (isReadableTextFile(file)) {
+          payload.text = await readFileTextExcerpt(file);
+        } else if (isOfficeExcerptFile(file)) {
+          if ((Number(file.size) || 0) > 2 * 1024 * 1024) {
+            shellToast("文件过大，跳过摘录");
+          } else {
+            const text = await readOfficeExcerpt(file);
+            if (text) {
+              payload.text = text;
+              shellToast("已摘录正文");
+            } else if (!payload.url) {
+              shellToast("未能摘录正文 · 仍发文件卡");
+            }
+          }
+        }
       }
       setComposerBusy(false);
       await postChatPayload(payload);
@@ -2722,6 +3422,39 @@
   function writeMutes(arr) {
     lsSet(MUTE_KEY, JSON.stringify(arr || []));
   }
+  function readBlocks() {
+    const raw = lsGetJson(BLOCK_KEY, []);
+    return Array.isArray(raw) ? raw.map(String).filter(Boolean) : [];
+  }
+  function writeBlocks(arr) {
+    lsSet(BLOCK_KEY, JSON.stringify(arr || []));
+  }
+  function isPeerBlocked(sessId) {
+    const id = String(sessId || "");
+    if (readBlocks().includes(id)) return true;
+    const hit = (peersCache || []).find((p) => p && p.id === id);
+    return !!(hit && hit.blocked_by_you);
+  }
+  function scrubPeerLocal(sessId) {
+    const id = String(sessId || "");
+    if (!id) return;
+    writePins(readPins().filter((x) => x !== id));
+    writeMutes(readMutes().filter((x) => x !== id));
+    writeBlocks(readBlocks().filter((x) => x !== id));
+    const notes = readNotes();
+    if (notes[id] != null) {
+      delete notes[id];
+      lsSet(NOTE_KEY, JSON.stringify(notes));
+    }
+    const marks = readUnreadMarks();
+    if (marks[id] != null) {
+      delete marks[id];
+      writeUnreadMarks(marks);
+    }
+    try {
+      localStorage.removeItem(draftKey(id));
+    } catch (_) {}
+  }
   function readUnreadMarks() {
     const raw = lsGetJson(UNREAD_MARK_KEY, {});
     return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
@@ -2775,6 +3508,8 @@
     });
     const peer = document.getElementById("chatPeerName");
     if (peer && !peer.classList.contains("is-typing")) peer.textContent = name;
+    const av = document.getElementById("chatProfileAv");
+    if (av) av.src = peerAvatarOf(activePeerId);
   }
   function paintSessBadges() {
     /* 角标在 refreshSessionList 里按行画 */
@@ -2798,6 +3533,12 @@
     exitMultiMode();
     persistDraft();
     refreshSessionList();
+    pushPhonePresence({
+      chat_layer: "list",
+      chat_peer_id: "",
+      chat_title: "",
+      chat_is_group: false,
+    });
   }
   function openThreadLayer(peerId) {
     closeShellOverlays();
@@ -2807,10 +3548,31 @@
     layer.hidden = false;
     layer.classList.add("active");
     refreshPeerLabels();
+    paintBlockBanner();
     applyChatBg();
     restoreDraft();
     refreshChatThread();
     markChatRead().then(() => refreshUnreadUi());
+    const pid = activePeerId || "daily";
+    const peer = peerById(pid);
+    pushPhonePresence({
+      chat_layer: "thread",
+      chat_peer_id: pid,
+      chat_title: peerDisplayName(pid),
+      chat_is_group: !!(peer && peer.kind === "group"),
+    });
+  }
+
+  function peerBlocksYouActive() {
+    const pid = activePeerId || "daily";
+    const hit = (peersCache || []).find((p) => p && p.id === pid);
+    return !!(hit && hit.blocks_you);
+  }
+
+  function paintBlockBanner() {
+    const el = document.getElementById("chatBlockBanner");
+    if (!el) return;
+    el.hidden = !peerBlocksYouActive();
   }
   function shellToast(msg) {
     const el = document.getElementById("chatShellToast");
@@ -2893,8 +3655,371 @@
     document.querySelectorAll("#view-chat .chat-dock [data-chat-go]").forEach((b) => {
       b.classList.toggle("on", b.getAttribute("data-chat-go") === name);
     });
-    if (name === "moments") refreshMoments();
+    if (name === "me") refreshDrawerWeather();
+    if (name === "moments") {
+      refreshMoments();
+      lsSet(LS.momSeenTs, String(Date.now()));
+    }
     if (name === "chat") refreshSessionList();
+    if (name === "contacts") paintContactList();
+  }
+
+  function contactRow(p) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "chat-contact";
+    btn.dataset.peerId = p.id;
+    if (p.kind === "group") btn.dataset.kind = "group";
+    const av = document.createElement("span");
+    av.className =
+      "chat-av-wrap sm" + (p.id === "daily" ? " av-frame-full" : "");
+    mountPeerAvatar(av, p.id);
+    const nm = document.createElement("span");
+    nm.className = "chat-contact-nm";
+    nm.textContent = p.name || p.id;
+    btn.append(av, nm);
+    btn.addEventListener("click", () => {
+      setActivePeer(p.id);
+      openThreadLayer();
+    });
+    return btn;
+  }
+
+  async function paintContactList() {
+    const box = document.getElementById("chatContactList");
+    const gbox = document.getElementById("chatGroupList");
+    const glab = document.getElementById("chatGroupSecLab");
+    if (!box) return;
+    let peers = [];
+    try {
+      peers = await fetchPeers();
+    } catch (_) {
+      peers = [{ id: "daily", name: "家机" }];
+    }
+    const people = [];
+    const groups = [];
+    const seen = Object.create(null);
+    for (const p of peers || []) {
+      if (!p || !p.id || seen[p.id]) continue;
+      seen[p.id] = true;
+      if (p.kind === "group") groups.push(p);
+      else people.push(p);
+    }
+    box.replaceChildren();
+    for (const p of people) box.append(contactRow(p));
+    if (gbox) {
+      gbox.replaceChildren();
+      for (const p of groups) gbox.append(contactRow(p));
+      if (!groups.length) {
+        const empty = document.createElement("p");
+        empty.className = "chat-contact-empty";
+        empty.textContent = "还没有群聊";
+        gbox.append(empty);
+      }
+    }
+    if (glab) glab.hidden = false;
+  }
+
+  async function openDiscoverPage() {
+    closeShellOverlays();
+    const el = document.getElementById("chatOvDiscover");
+    if (!el) return;
+    const q = document.getElementById("chatDiscoverQ");
+    if (q) q.value = "";
+    showChatOverlay("chatOvDiscover");
+    if (!momPosts) await refreshMoments();
+    paintDiscoverFeed();
+  }
+
+  function paintDiscoverFeed() {
+    const feed = document.getElementById("chatDiscoverFeed");
+    if (!feed) return;
+    const q = String(
+      (document.getElementById("chatDiscoverQ") || {}).value || ""
+    )
+      .trim()
+      .toLowerCase();
+    const posts = Array.isArray(momPosts) ? momPosts : [];
+    const filtered = q
+      ? posts.filter((p) => {
+          const hay = [
+            p.txt,
+            p.name,
+            ...(Array.isArray(p.comments)
+              ? p.comments.map((c) => (c.who || "") + " " + (c.txt || ""))
+              : []),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.indexOf(q) >= 0;
+        })
+      : posts;
+    if (!filtered.length) {
+      feed.innerHTML =
+        '<p class="chat-hint-line">' +
+        (q ? "没有匹配动态" : "还没有动态 · 去朋友圈发一条") +
+        "</p>";
+      return;
+    }
+    feed.innerHTML = filtered
+      .slice(0, 40)
+      .map((p) => {
+        return (
+          '<article class="chat-post chat-discover-post" data-id="' +
+          escapeHtml(p.id) +
+          '"><div class="chat-post-name">' +
+          escapeHtml(p.name || "动态") +
+          '</div><div class="chat-post-txt">' +
+          escapeHtml(p.txt || "") +
+          '</div><div class="chat-post-meta">' +
+          escapeHtml(p.time || "") +
+          "</div></article>"
+        );
+      })
+      .join("");
+  }
+
+  let peerNewAvatarUrl = "/assets/cafe/avatar-bot.png";
+
+  function showPeerNewHub() {
+    const hub = document.getElementById("chatPeerNewHub");
+    const form = document.getElementById("chatPeerNewForm");
+    const ok = document.getElementById("btnChatPeerNewOk");
+    const title = document.getElementById("chatPeerNewTitle");
+    if (hub) hub.hidden = false;
+    if (form) form.hidden = true;
+    if (ok) ok.hidden = true;
+    if (title) title.textContent = "添加";
+    const q = document.getElementById("chatPeerNewSearch");
+    if (q) q.value = "";
+    paintPeerNewHits("");
+  }
+
+  function paintPeerNewMemberPicker() {
+    const box = document.getElementById("chatPeerNewMembers");
+    if (!box) return;
+    const peers = (Array.isArray(peersCache) ? peersCache : []).filter(
+      (p) => p && p.kind !== "group"
+    );
+    box.replaceChildren();
+    if (!peers.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-hint-line";
+      empty.textContent = "还没有可拉的联系人，先去添加朋友。";
+      box.append(empty);
+      return;
+    }
+    for (const p of peers) {
+      const lab = document.createElement("label");
+      lab.className = "chat-peer-new-member";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = p.id;
+      if (p.id === "daily") cb.checked = true;
+      const img = document.createElement("img");
+      img.alt = "";
+      img.src = peerAvatarOf(p.id);
+      const nm = document.createElement("span");
+      nm.className = "chat-peer-new-member-nm";
+      nm.textContent = p.name || p.id;
+      lab.append(cb, img, nm);
+      box.append(lab);
+    }
+  }
+
+  function selectedPeerNewMembers() {
+    const box = document.getElementById("chatPeerNewMembers");
+    if (!box) return [];
+    return Array.from(box.querySelectorAll('input[type="checkbox"]:checked'))
+      .map((el) => String(el.value || "").trim())
+      .filter(Boolean);
+  }
+
+  function showPeerNewForm(kind) {
+    const asGroup = kind === "group";
+    const hub = document.getElementById("chatPeerNewHub");
+    const form = document.getElementById("chatPeerNewForm");
+    const ok = document.getElementById("btnChatPeerNewOk");
+    const title = document.getElementById("chatPeerNewTitle");
+    const group = document.getElementById("chatPeerNewGroup");
+    const name = document.getElementById("chatPeerNewName");
+    const persona = document.getElementById("chatPeerNewPersona");
+    const nameLab = document.getElementById("chatPeerNewNameLab");
+    const hint = document.getElementById("chatPeerNewFormHint");
+    const avBlock = document.getElementById("chatPeerNewAvBlock");
+    const personaBlock = document.getElementById("chatPeerNewPersonaBlock");
+    const membersBlock = document.getElementById("chatPeerNewMembersBlock");
+    const avImg = document.getElementById("chatPeerNewAvImg");
+    peerNewAvatarUrl = "/assets/cafe/avatar-bot.png";
+    if (avImg) avImg.src = peerNewAvatarUrl;
+    if (name) {
+      name.value = "";
+      name.placeholder = asGroup ? "群名（可空，默认用成员名）" : "怎么称呼";
+    }
+    if (persona) persona.value = "";
+    if (group) group.checked = asGroup;
+    if (nameLab) nameLab.textContent = asGroup ? "群名" : "名字";
+    if (avBlock) avBlock.hidden = asGroup;
+    if (personaBlock) personaBlock.hidden = asGroup;
+    if (membersBlock) membersBlock.hidden = !asGroup;
+    if (asGroup) paintPeerNewMemberPicker();
+    if (hint) {
+      hint.textContent = asGroup
+        ? "勾选要进群的联系人；头像由成员小图拼成。仍是单脑接话。"
+        : "创建后出现在会话列表；人设只作用于本会话。";
+    }
+    if (hub) hub.hidden = true;
+    if (form) form.hidden = false;
+    if (ok) ok.hidden = false;
+    if (title) title.textContent = asGroup ? "发起群聊" : "添加朋友";
+    if (name && !asGroup) {
+      try {
+        name.focus();
+      } catch (_) {}
+    }
+  }
+
+  function paintPeerNewHits(qRaw) {
+    const box = document.getElementById("chatPeerNewHits");
+    if (!box) return;
+    const q = String(qRaw || "")
+      .trim()
+      .toLowerCase();
+    if (!q) {
+      box.hidden = true;
+      box.replaceChildren();
+      return;
+    }
+    const peers = Array.isArray(peersCache) ? peersCache : [];
+    const hits = peers
+      .filter((p) => {
+        const hay = ((p && p.name) || "") + " " + ((p && p.id) || "");
+        return hay.toLowerCase().indexOf(q) >= 0;
+      })
+      .slice(0, 8);
+    box.replaceChildren();
+    if (!hits.length) {
+      box.hidden = true;
+      return;
+    }
+    box.hidden = false;
+    for (const p of hits) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chat-peer-new-hit";
+      const img = document.createElement("img");
+      img.src = peerAvatarOf(p.id);
+      img.alt = "";
+      const lab = document.createElement("span");
+      lab.textContent =
+        (p.name || p.id) + (p.kind === "group" ? " · 群" : "");
+      btn.append(img, lab);
+      btn.addEventListener("click", () => {
+        const ov = document.getElementById("chatOvPeerNew");
+        if (ov) {
+          ov.hidden = true;
+          ov.classList.remove("active");
+        }
+        setActivePeer(p.id);
+        openThreadLayer();
+      });
+      box.append(btn);
+    }
+  }
+
+  async function openPeerNewPage() {
+    closeShellOverlays();
+    const el = document.getElementById("chatOvPeerNew");
+    try {
+      await fetchPeers();
+    } catch (_) {}
+    showPeerNewHub();
+    if (el) showChatOverlay("chatOvPeerNew");
+  }
+
+  async function uploadPeerAvatarFile(file) {
+    if (!file) return null;
+    const res = await fetch("/api/v1/chat/media", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+      },
+      body: file,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "头像上传失败");
+    return data.url || null;
+  }
+
+  async function submitPeerNew() {
+    const asGroup = !!(document.getElementById("chatPeerNewGroup") || {}).checked;
+    let name = String(
+      (document.getElementById("chatPeerNewName") || {}).value || ""
+    ).trim();
+    const persona = String(
+      (document.getElementById("chatPeerNewPersona") || {}).value || ""
+    ).trim();
+    let members = [];
+    if (asGroup) {
+      members = selectedPeerNewMembers();
+      if (!members.length) {
+        shellToast("请至少勾选一位联系人");
+        return;
+      }
+      if (!name) {
+        name = members
+          .map((id) => {
+            const p = peerById(id);
+            return (p && p.name) || id;
+          })
+          .slice(0, 3)
+          .join("、");
+      }
+    } else if (!name) {
+      shellToast("请填名字");
+      return;
+    }
+    const okBtn = document.getElementById("btnChatPeerNewOk");
+    if (okBtn) okBtn.disabled = true;
+    try {
+      const body = {
+        name: name,
+        kind: asGroup ? "group" : "dm",
+      };
+      if (asGroup) {
+        body.members = members;
+      } else {
+        body.avatar = peerNewAvatarUrl;
+        if (persona) body.persona = persona;
+      }
+      const res = await fetch("/api/v1/chat/peers", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "创建失败");
+      const peer = data.peer || {};
+      shellToast((asGroup ? "已建群 · " : "已添加 · ") + (peer.name || name));
+      const ov = document.getElementById("chatOvPeerNew");
+      if (ov) {
+        ov.hidden = true;
+        ov.classList.remove("active");
+      }
+      peersCache = null;
+      await refreshSessionList();
+      await paintContactList();
+      if (peer.id) {
+        setActivePeer(peer.id);
+        openThreadLayer();
+      }
+    } catch (err) {
+      shellToast((err && err.message) || "创建失败");
+    } finally {
+      if (okBtn) okBtn.disabled = false;
+    }
   }
   function sessTimeLabel(ts) {
     const d = new Date(Number(ts) || Date.now());
@@ -3013,7 +4138,6 @@
       await refreshUnreadUi();
       return;
     }
-    const bot = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
     const pins = readPins();
     const mutes = readMutes();
     const marks = readUnreadMarks();
@@ -3058,9 +4182,6 @@
         '<span class="chat-av-wrap' +
         (id === "daily" ? " av-frame-full" : "") +
         '">' +
-        '<img class="face" src="' +
-        escapeHtml(bot) +
-        '" alt="" />' +
         '<span class="chat-badge"' +
         (showBadge ? "" : " hidden") +
         ">" +
@@ -3078,11 +4199,22 @@
         '<span class="chat-sess-mute"' +
         (muted ? "" : " hidden") +
         ">免打扰</span>" +
+        '<span class="chat-sess-block"' +
+        (isPeerBlocked(id) || p.blocks_you ? "" : " hidden") +
+        ">" +
+        (isPeerBlocked(id) ? "已拉黑" : "被拉黑") +
+        "</span>" +
         "</span>" +
         '<span class="chat-sess-time">' +
         escapeHtml(p.lastTs ? sessTimeLabel(p.lastTs) : "") +
         "</span></span>" +
         '<span class="chat-sess-preview"></span></span>';
+      const avWrap = row.querySelector(".chat-av-wrap");
+      if (avWrap) {
+        const badge = avWrap.querySelector(".chat-badge");
+        mountPeerAvatar(avWrap, id);
+        if (badge) avWrap.append(badge);
+      }
       const preview = row.querySelector(".chat-sess-preview");
       if (preview) {
         const fallback = p.last ? histPreview(p.last) || "…" : "还没有短讯";
@@ -3100,14 +4232,200 @@
     refreshSessionList();
     applyChatBg();
     loadChatPrefsUi();
-    if (threadLayerOpen()) refreshChatThread();
+    refreshVoiceBarPref();
+    if (currentChatTab() === "me") refreshDrawerWeather();
+    /* 轻扫朋友圈：用于动态分档通知（非强制进 Tab） */
+    refreshMoments().catch(() => {});
+    if (threadLayerOpen()) {
+      refreshChatThread();
+      const pid = activePeerId || "daily";
+      const peer = peerById(pid);
+      pushPhonePresence({
+        chat_layer: "thread",
+        chat_peer_id: pid,
+        chat_title: peerDisplayName(pid),
+        chat_is_group: !!(peer && peer.kind === "group"),
+      });
+    } else {
+      pushPhonePresence({
+        chat_layer: "list",
+        chat_peer_id: "",
+        chat_title: "",
+        chat_is_group: false,
+      });
+    }
   }
   function noteBotPing() {
     if (threadLayerOpen() && chatViewActive()) {
       markChatRead().then(() => refreshUnreadUi());
+      refreshChatThread();
       return;
     }
     refreshUnreadUi();
+    pushTieredNotify("ai", "家机找你", "有一条新短讯", () => {
+      if (!threadLayerOpen()) openThreadLayer();
+    });
+  }
+
+  function notifyEnabled(kind) {
+    if (kind === "moments") return lsGet(LS.notifyMom, "1") !== "0";
+    return lsGet(LS.notifyAi, "1") !== "0";
+  }
+
+  function ensureNotifyPermission() {
+    try {
+      if (!("Notification" in window)) return;
+      if (Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    } catch (_) {}
+  }
+
+  function hideSysBanner() {
+    const el = document.getElementById("chatSysBanner");
+    if (el) el.hidden = true;
+    if (sysBannerTimer) {
+      clearTimeout(sysBannerTimer);
+      sysBannerTimer = null;
+    }
+    sysBannerGo = null;
+  }
+
+  function showSysBanner(kindLab, text, onGo) {
+    const el = document.getElementById("chatSysBanner");
+    const kindEl = document.getElementById("chatSysBannerKind");
+    const txtEl = document.getElementById("chatSysBannerTxt");
+    if (!el || !txtEl) {
+      shellToast(text);
+      return;
+    }
+    if (kindEl) kindEl.textContent = kindLab || "提醒";
+    txtEl.textContent = text || "";
+    sysBannerGo = typeof onGo === "function" ? onGo : null;
+    el.hidden = false;
+    if (sysBannerTimer) clearTimeout(sysBannerTimer);
+    sysBannerTimer = setTimeout(() => hideSysBanner(), 5200);
+  }
+
+  /**
+   * IB M8：后台 → 系统通知；前台 → 顶部横幅。
+   * kind: ai | moments
+   */
+  function pushTieredNotify(kind, title, body, onGo) {
+    if (!notifyEnabled(kind)) return;
+    const lab = kind === "moments" ? "朋友圈" : "AI 主动";
+    const hidden = typeof document !== "undefined" && document.hidden;
+    if (hidden && typeof Notification === "function" && Notification.permission === "granted") {
+      try {
+        const n = new Notification(String(title || lab).slice(0, 60), {
+          body: String(body || "").slice(0, 120),
+          tag: "ariadne-" + kind,
+        });
+        n.onclick = () => {
+          try {
+            window.focus();
+          } catch (_) {}
+          if (typeof onGo === "function") onGo();
+          try {
+            n.close();
+          } catch (_) {}
+        };
+        return;
+      } catch (_) {}
+    }
+    if (chatViewActive() && !(kind === "moments" && currentChatTab() === "moments")) {
+      showSysBanner(lab, String(body || title || "").slice(0, 80), onGo);
+      return;
+    }
+    if (!chatViewActive()) shellToast(String(body || title || "").slice(0, 60));
+  }
+
+  function currentChatTab() {
+    const on = document.querySelector("#view-chat .chat-tab.active");
+    return (on && on.getAttribute("data-chat-tab")) || "chat";
+  }
+
+  async function refreshDrawerWeather(force) {
+    const main = document.getElementById("chatDrawerWeatherMain");
+    const sub = document.getElementById("chatDrawerWeatherSub");
+    if (!main) return;
+    const now = Date.now();
+    if (!force && weatherFetchAt && now - weatherFetchAt < 60 * 1000) return;
+    weatherFetchAt = now;
+    try {
+      const res = await fetch("/api/v1/chat/weather", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!data || !data.ok) {
+        main.textContent = "天气暂不可用";
+        if (sub) {
+          sub.textContent =
+            (data && data.message) || "去手机设置填手动城市，或开定位权限";
+        }
+        return;
+      }
+      const temp =
+        data.temperature_c != null && Number.isFinite(Number(data.temperature_c))
+          ? Math.round(Number(data.temperature_c)) + "°"
+          : "";
+      main.textContent =
+        (temp ? temp + " · " : "") + (data.weather || "天气") +
+        (data.place ? " · " + data.place : "");
+      if (sub) {
+        const bits = [];
+        if (data.feels_like_c != null) bits.push("体感 " + Math.round(Number(data.feels_like_c)) + "°");
+        if (data.cached) bits.push("缓存");
+        bits.push("Open-Meteo · 约 45 分刷新");
+        sub.textContent = bits.join(" · ");
+      }
+    } catch (_) {
+      main.textContent = "天气暂不可用";
+      if (sub) sub.textContent = "网络或网关未就绪";
+    }
+  }
+  /** 工具换头像后立刻刷新壳 / 会话头像 */
+  function applyAvatarChanged(ev) {
+    const url = String((ev && ev.url) || "").trim();
+    if (!url) return;
+    const who = (ev && ev.who) === "you" ? "you" : "bot";
+    try {
+      if (typeof deps.onAvatarChanged === "function") deps.onAvatarChanged(who, url);
+    } catch (_) {}
+    if (who === "bot" && peersCache) {
+      const pid = String((ev && ev.peerId) || activePeerId || "daily");
+      const hit = peersCache.find((p) => p && p.id === pid);
+      if (hit) hit.avatar = url;
+    }
+    syncShellAvatars();
+    refreshSessionList();
+    const threadAv = document.querySelector("#chatThreadLayer .wx-bar .av img, #chatThreadLayer .wx-bar img.face");
+    if (threadAv && who === "bot") threadAv.src = url;
+    /* 会话里已画好的气泡头像也要换掉 */
+    if (who === "bot") {
+      document
+        .querySelectorAll("#chatThreadLayer .wx-row.them .av img")
+        .forEach((img) => {
+          img.src = url;
+        });
+    }
+  }
+  /** 解锁 poke 带下来电时，立刻弹出接听层（不依赖先进会话） */
+  function handlePoke(data) {
+    const msg = data && data.message;
+    if (
+      msg &&
+      msg.kind === "call" &&
+      msg.from === "bot" &&
+      msg.payload &&
+      msg.payload.phase === "invite" &&
+      msg.payload.dir !== "out"
+    ) {
+      attachCallSession(msg, { ring: true, surface: true, peer: "daily" });
+      return;
+    }
+    noteBotPing();
   }
 
   /* ========== Draft / quote / new-msg chip ========== */
@@ -3233,28 +4551,176 @@
   }
 
   let locViewCopy = "";
-  function openLocView(name, detail) {
+  function openLocView(name, detail, coords) {
     const view = document.getElementById("chatLocView");
     const nameEl = document.getElementById("chatLocName");
     const detailEl = document.getElementById("chatLocDetail");
+    const mapWrap = document.getElementById("chatLocMap");
+    const mapFrame = document.getElementById("chatLocMapFrame");
     if (!view) return;
     const n = String(name || "").trim() || "位置";
     const d = String(detail || "").trim();
-    locViewCopy = d ? n + "\n" + d : n;
+    const lat = coords && Number(coords.lat);
+    const lng = coords && Number(coords.lng);
+    locViewCopy =
+      d ? n + "\n" + d : n;
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      locViewCopy += "\n" + lat + "," + lng;
+    }
     if (nameEl) nameEl.textContent = n;
     if (detailEl) {
       detailEl.textContent = d;
       detailEl.hidden = !d;
     }
+    if (mapWrap && mapFrame) {
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const delta = 0.012;
+        const bbox =
+          lng -
+          delta +
+          "%2C" +
+          (lat - delta) +
+          "%2C" +
+          (lng + delta) +
+          "%2C" +
+          (lat + delta);
+        mapFrame.src =
+          "https://www.openstreetmap.org/export/embed.html?bbox=" +
+          bbox +
+          "&layer=mapnik&marker=" +
+          lat +
+          "%2C" +
+          lng;
+        mapWrap.hidden = false;
+      } else {
+        mapFrame.removeAttribute("src");
+        mapWrap.hidden = true;
+      }
+    }
     view.hidden = false;
   }
   function closeLocView() {
     const view = document.getElementById("chatLocView");
+    const mapFrame = document.getElementById("chatLocMapFrame");
     if (view) view.hidden = true;
+    if (mapFrame) mapFrame.removeAttribute("src");
     locViewCopy = "";
   }
 
+  let fileViewCopy = "";
+  function openFileCard(msg) {
+    const p = (msg && msg.payload) || {};
+    const name = String(p.name || (msg && msg.body) || "").trim() || "文件";
+    const meta = fileMetaLine(p, name);
+    const text = String(p.text || "").trim();
+    const url = String(p.url || "").trim();
+    if (!text && !url) {
+      shellToast(meta ? name + " · " + meta : name);
+      return;
+    }
+    openFileView(name, meta, text, url);
+  }
+  function openFileView(name, meta, text, url) {
+    const view = document.getElementById("chatFileView");
+    const nameEl = document.getElementById("chatFileName");
+    const metaEl = document.getElementById("chatFileMeta");
+    const excerptEl = document.getElementById("chatFileExcerpt");
+    const copyBtn = document.getElementById("chatFileCopy");
+    const dl = document.getElementById("chatFileDownload");
+    if (!view) return;
+    const n = String(name || "").trim() || "文件";
+    const m = String(meta || "").trim();
+    const t = String(text || "");
+    const u = String(url || "").trim();
+    fileViewCopy = t;
+    if (nameEl) nameEl.textContent = n;
+    if (metaEl) {
+      metaEl.textContent = m;
+      metaEl.hidden = !m;
+    }
+    if (excerptEl) {
+      excerptEl.textContent = t;
+      excerptEl.hidden = !t;
+    }
+    if (copyBtn) copyBtn.hidden = !t;
+    if (dl) {
+      if (u) {
+        dl.href = u;
+        dl.setAttribute("download", n);
+        dl.hidden = false;
+      } else {
+        dl.removeAttribute("href");
+        dl.removeAttribute("download");
+        dl.hidden = true;
+      }
+    }
+    view.hidden = false;
+  }
+  function closeFileView() {
+    const view = document.getElementById("chatFileView");
+    const excerptEl = document.getElementById("chatFileExcerpt");
+    const dl = document.getElementById("chatFileDownload");
+    if (view) view.hidden = true;
+    if (excerptEl) excerptEl.textContent = "";
+    if (dl) {
+      dl.removeAttribute("href");
+      dl.removeAttribute("download");
+      dl.hidden = true;
+    }
+    fileViewCopy = "";
+  }
+
   /* ========== Pic viewer ========== */
+  let picScale = 1;
+  let picTx = 0;
+  let picTy = 0;
+  let picGesture = null;
+  let picLastTap = 0;
+  let picDismissY = 0;
+
+  function applyPicTransform() {
+    const img = document.getElementById("chatPicViewImg");
+    const scrim = document.getElementById("chatPicViewScrim");
+    if (!img) return;
+    img.style.transform =
+      "translate(" +
+      picTx +
+      "px," +
+      (picTy + picDismissY) +
+      "px) scale(" +
+      picScale +
+      ")";
+    if (scrim) {
+      const fade =
+        picDismissY > 0
+          ? Math.max(0.35, 1 - picDismissY / 320)
+          : 1;
+      scrim.style.opacity = String(fade);
+    }
+  }
+  function resetPicTransform() {
+    picScale = 1;
+    picTx = 0;
+    picTy = 0;
+    picDismissY = 0;
+    applyPicTransform();
+    const scrim = document.getElementById("chatPicViewScrim");
+    if (scrim) scrim.style.opacity = "";
+  }
+  function clampPicPan() {
+    if (picScale <= 1.02) {
+      picTx = 0;
+      picTy = 0;
+      return;
+    }
+    const stage = document.getElementById("chatPicStage");
+    if (!stage) return;
+    const maxX = (stage.clientWidth * (picScale - 1)) / 2 + 24;
+    const maxY = (stage.clientHeight * (picScale - 1)) / 2 + 24;
+    picTx = Math.max(-maxX, Math.min(maxX, picTx));
+    picTy = Math.max(-maxY, Math.min(maxY, picTy));
+  }
+
   /** H1.83：相邻连续 image 合成一组；rows=[{id,kind,url}] */
   function adjacentImageRun(rows, msgId) {
     const list = Array.isArray(rows) ? rows : [];
@@ -3323,12 +4789,15 @@
     const img = document.getElementById("chatPicViewImg");
     if (!view || !img || !picUrls.length) return;
     img.src = picUrls[picIdx];
+    resetPicTransform();
     view.hidden = false;
     syncPicNav();
   }
   function closePicViewer() {
     const view = document.getElementById("chatPicView");
     if (view) view.hidden = true;
+    resetPicTransform();
+    picGesture = null;
   }
   function stepPic(dir) {
     if (picUrls.length < 2) return;
@@ -3337,7 +4806,176 @@
     picIdx = next;
     const img = document.getElementById("chatPicViewImg");
     if (img) img.src = picUrls[picIdx];
+    resetPicTransform();
     syncPicNav();
+  }
+
+  function bindPicGestures() {
+    const stage = document.getElementById("chatPicStage");
+    const view = document.getElementById("chatPicView");
+    if (!stage || stage.dataset.bound) return;
+    stage.dataset.bound = "1";
+    const dist = (a, b) => {
+      const dx = a.clientX - b.clientX;
+      const dy = a.clientY - b.clientY;
+      return Math.hypot(dx, dy);
+    };
+    const mid = (a, b) => ({
+      x: (a.clientX + b.clientX) / 2,
+      y: (a.clientY + b.clientY) / 2,
+    });
+    const endGesture = (e) => {
+      if (!picGesture) return;
+      if (picGesture.mode === "dismiss") {
+        if (picDismissY > 100) {
+          closePicViewer();
+        } else {
+          picDismissY = 0;
+          applyPicTransform();
+        }
+        picGesture = null;
+        return;
+      }
+      /* 双指变单指：接上剩余指继续拖 */
+      if (
+        picGesture.mode === "pinch" &&
+        e &&
+        e.touches &&
+        e.touches.length === 1
+      ) {
+        picGesture = {
+          mode: "pan",
+          x0: e.touches[0].clientX,
+          y0: e.touches[0].clientY,
+          tx0: picTx,
+          ty0: picTy,
+          s0: picScale,
+        };
+        return;
+      }
+      clampPicPan();
+      if (picScale <= 1.02) resetPicTransform();
+      else applyPicTransform();
+      picGesture = null;
+    };
+    const toggleZoomAt = (clientX, clientY) => {
+      const rect = stage.getBoundingClientRect();
+      const cx = clientX - (rect.left + rect.width / 2);
+      const cy = clientY - (rect.top + rect.height / 2);
+      if (picScale > 1.2) {
+        resetPicTransform();
+        return;
+      }
+      picScale = 2.2;
+      picTx = -cx * 0.55;
+      picTy = -cy * 0.55;
+      clampPicPan();
+      applyPicTransform();
+    };
+    stage.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!view || view.hidden) return;
+        if (e.touches.length === 2) {
+          e.preventDefault();
+          const m = mid(e.touches[0], e.touches[1]);
+          picDismissY = 0;
+          picGesture = {
+            mode: "pinch",
+            d0: dist(e.touches[0], e.touches[1]) || 1,
+            s0: picScale,
+            tx0: picTx,
+            ty0: picTy,
+            mx0: m.x,
+            my0: m.y,
+          };
+          return;
+        }
+        if (e.touches.length === 1) {
+          const t = e.touches[0];
+          const now = Date.now();
+          if (now - picLastTap < 280 && picScale <= 1.05) {
+            /* 双击放大；挡掉紧随的 dismiss */
+            picLastTap = 0;
+            toggleZoomAt(t.clientX, t.clientY);
+            picGesture = null;
+            return;
+          }
+          picLastTap = now;
+          picGesture = {
+            mode: picScale > 1.05 ? "pan" : "dismiss",
+            x0: t.clientX,
+            y0: t.clientY,
+            tx0: picTx,
+            ty0: picTy,
+            s0: picScale,
+            moved: false,
+          };
+        }
+      },
+      { passive: false }
+    );
+    stage.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!picGesture) return;
+        if (picGesture.mode === "pinch" && e.touches.length >= 2) {
+          e.preventDefault();
+          const d = dist(e.touches[0], e.touches[1]) || 1;
+          const next = Math.max(1, Math.min(4, picGesture.s0 * (d / picGesture.d0)));
+          const m = mid(e.touches[0], e.touches[1]);
+          const rect = stage.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const ratio = next / (picGesture.s0 || 1);
+          /* 双指中点锚住：缩放时指下画面不跳 */
+          picScale = next;
+          picTx =
+            m.x -
+            cx -
+            (picGesture.mx0 - cx - picGesture.tx0) * ratio;
+          picTy =
+            m.y -
+            cy -
+            (picGesture.my0 - cy - picGesture.ty0) * ratio;
+          clampPicPan();
+          applyPicTransform();
+          return;
+        }
+        if (e.touches.length !== 1) return;
+        const dx = e.touches[0].clientX - picGesture.x0;
+        const dy = e.touches[0].clientY - picGesture.y0;
+        if (Math.abs(dx) > 6 || Math.abs(dy) > 6) picGesture.moved = true;
+        if (picGesture.mode === "dismiss") {
+          if (dy > 8 && Math.abs(dy) > Math.abs(dx) * 1.05) {
+            e.preventDefault();
+            picDismissY = Math.max(0, dy);
+            applyPicTransform();
+          } else if (Math.abs(dx) > 28 && picUrls.length > 1 && Math.abs(dx) > Math.abs(dy)) {
+            /* 未放大时横滑切图 */
+            e.preventDefault();
+            stepPic(dx < 0 ? 1 : -1);
+            picGesture = null;
+            picDismissY = 0;
+          }
+          return;
+        }
+        if (picGesture.mode === "pan") {
+          e.preventDefault();
+          picTx = picGesture.tx0 + dx;
+          picTy = picGesture.ty0 + dy;
+          clampPicPan();
+          applyPicTransform();
+        }
+      },
+      { passive: false }
+    );
+    stage.addEventListener("touchend", endGesture, { passive: true });
+    stage.addEventListener("touchcancel", endGesture, { passive: true });
+    stage.addEventListener("dblclick", (e) => {
+      e.preventDefault();
+      toggleZoomAt(e.clientX, e.clientY);
+    });
   }
 
   /* ========== Ctx / multi ========== */
@@ -4054,7 +5692,11 @@
             think_sec: pendingThink.sec,
           });
         } else if (ev.type === "bot_tool" && ev.name) {
-          pendingToolRow = appendToolChip(ev.name, ev.label);
+          pendingToolRow = appendToolChip(
+            ev.name,
+            ev.label,
+            toolHostColFromBubble(bubble)
+          );
         } else if (ev.type === "cam_check_wait") {
           onCamCheckWait(ev);
         } else if (ev.type === "bot_tool_done") {
@@ -4062,7 +5704,22 @@
           pendingToolRow = null;
         } else if (ev.type === "bot_music" && ev.message) {
           appendChatMessage(ev.message);
+        } else if (ev.type === "bot_call" && ev.message) {
+          appendChatMessage(ev.message);
+          attachCallSession(ev.message, { ring: true, surface: true });
+        } else if (ev.type === "bot_gift" && ev.gift) {
+          if (
+            callSession &&
+            callSession.phase === "active" &&
+            callSession.media === "video" &&
+            callGiftEnabled
+          ) {
+            playCallGiftFx(ev.gift, "bot");
+          }
+        } else if (ev.type === "avatar_changed" && ev.url) {
+          applyAvatarChanged(ev);
         } else if (ev.type === "bot_delta" && ev.text) {
+          nestPendingToolCards(bubble);
           if (!cleared) {
             bubbleTextEl(bubble).textContent = "";
             cleared = true;
@@ -4071,6 +5728,7 @@
           te.textContent = (te.textContent || "") + ev.text;
           if (nearBottom && box) box.scrollTop = box.scrollHeight;
         } else if (ev.type === "bot_done" && ev.message) {
+          nestPendingToolCards(bubble);
           fillBubble(bubble, ev.message);
           ensureBunnyThink(bubble, ev.message);
           const col = row.querySelector(".wx-col");
@@ -4405,13 +6063,17 @@
     const bar = document.getElementById("chatMultiBar");
     const count = document.getElementById("chatMultiCount");
     const form = document.getElementById("chatForm");
+    const layer = document.getElementById("chatThreadLayer");
     if (bar) bar.hidden = !multiMode;
     if (form) form.hidden = !!multiMode;
+    if (layer) layer.classList.toggle("is-multi", !!multiMode);
     if (count) count.textContent = "已选 " + multiIds.size + " 条";
-    ["chatMultiDel", "chatMultiCopy", "chatMultiFwd"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (el) el.disabled = multiIds.size === 0;
-    });
+    ["chatMultiDel", "chatMultiCopy", "chatMultiFwd", "chatMultiArchive", "chatMultiDigest"].forEach(
+      (id) => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = multiIds.size === 0;
+      }
+    );
     syncMultiMarks();
   }
   function syncMultiMarks() {
@@ -4419,7 +6081,9 @@
     if (!box) return;
     box.querySelectorAll(".wx-row[data-msg-id]").forEach((row) => {
       const id = row.getAttribute("data-msg-id");
-      row.classList.toggle("is-multi-on", multiMode && multiIds.has(id));
+      const on = multiMode && multiIds.has(id);
+      row.classList.toggle("is-multi-on", on);
+      row.classList.toggle("is-picked", on);
       row.classList.toggle("is-multi", multiMode);
     });
   }
@@ -4433,6 +6097,92 @@
     multiMode = false;
     multiIds = new Set();
     paintMultiBar();
+  }
+
+  function pickLatestSelectedMsgId() {
+    const box = document.getElementById("chatThread");
+    if (!box || !multiIds.size) return "";
+    let bestId = "";
+    let bestTs = -1;
+    box.querySelectorAll(".wx-row[data-msg-id]").forEach((row) => {
+      const id = row.getAttribute("data-msg-id");
+      if (!multiIds.has(id)) return;
+      const ts = Number(row.dataset.ts) || 0;
+      if (ts >= bestTs) {
+        bestTs = ts;
+        bestId = id;
+      }
+    });
+    if (bestId) return bestId;
+    return Array.from(multiIds)[0] || "";
+  }
+
+  async function multiArchiveUi() {
+    const mid = pickLatestSelectedMsgId();
+    if (!mid) return;
+    if (
+      !window.confirm(
+        "封档到选中最新一条？该条及更早不再发给模型（本频道独立）。"
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/v1/chat/archive?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({ message_id: mid })),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "封档失败");
+      threadArchiveBeforeTs = Math.max(
+        0,
+        Math.floor(Number(data.archive_before_ts) || 0)
+      );
+      exitMultiMode();
+      await refreshChatThread();
+      shellToast("已设封档线");
+    } catch (e) {
+      shellToast((e && e.message) || "封档失败");
+    }
+  }
+
+  async function clearArchiveUi() {
+    try {
+      const res = await fetch("/api/v1/chat/archive?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({ clear: true, archive_before_ts: 0 })),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "清除失败");
+      threadArchiveBeforeTs = 0;
+      await refreshChatThread();
+      shellToast("已清除封档线");
+    } catch (e) {
+      shellToast((e && e.message) || "清除失败");
+    }
+  }
+
+  async function multiDigestUi() {
+    const ids = Array.from(multiIds);
+    if (!ids.length) return;
+    try {
+      const res = await fetch("/api/v1/chat/memory/digest?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({ message_ids: ids })),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "生成记忆失败");
+      exitMultiMode();
+      shellToast(data.message || "已处理");
+    } catch (e) {
+      shellToast((e && e.message) || "生成记忆失败");
+    }
   }
   function toggleMultiId(id) {
     const sid = String(id || "");
@@ -4503,7 +6253,6 @@
       sticker: 1,
       redpacket: 1,
       transfer: 1,
-      file: 1,
       music: 1,
     };
     box.querySelectorAll(".wx-row[data-msg-id]").forEach((row) => {
@@ -4511,6 +6260,25 @@
       if (want && !want.has(id)) return;
       const kind = row.dataset.kind || "";
       if (skip[kind]) return;
+      const who = row.classList.contains("me") ? "\u4f60" : displayPeerName();
+      if (kind === "file") {
+        const msg = row._chatMsg;
+        const p = (msg && msg.payload) || {};
+        const name =
+          String(p.name || (msg && msg.body) || "").trim() || "文件";
+        const file = { name };
+        if (p.url) file.url = String(p.url);
+        if (p.text) file.text = String(p.text);
+        if (p.size) file.size = Number(p.size) || 0;
+        if (p.ext) file.ext = String(p.ext);
+        out.push({
+          kind: "file",
+          who,
+          text: "[文件] " + name,
+          file,
+        });
+        return;
+      }
       const bubble = row.querySelector(".bubble");
       if (!bubble || bubble.classList.contains("is-media")) return;
       const textEl = bubble.querySelector(".wx-bubble-text");
@@ -4518,10 +6286,7 @@
         .replace(/\s+/g, " ")
         .trim();
       if (!text) return;
-      out.push({
-        who: row.classList.contains("me") ? "\u4f60" : displayPeerName(),
-        text: text,
-      });
+      out.push({ kind: "text", who, text });
     });
     return out;
   }
@@ -4529,6 +6294,20 @@
     const title = "\u4f60\u548c" + displayPeerName() + "\u7684\u804a\u5929\u8bb0\u5f55";
     const lines = items.map((it) => it.who + ": " + it.text);
     return title + "\n" + lines.join("\n");
+  }
+  function fileForwardPayload(it, noreply) {
+    const f = (it && it.file) || {};
+    const payload = {
+      kind: "file",
+      name: f.name || "文件",
+      forward: { who: (it && it.who) || "对方" },
+    };
+    if (f.url) payload.url = f.url;
+    if (f.text) payload.text = f.text;
+    if (f.size) payload.size = f.size;
+    if (f.ext) payload.ext = f.ext;
+    if (noreply) payload.noreply = true;
+    return payload;
   }
   async function postSilentMessage(body) {
     const res = await fetch("/api/v1/chat/messages", {
@@ -4543,11 +6322,32 @@
     if (!res.ok) throw new Error(data.message || "\u8f6c\u53d1\u5931\u8d25");
     if (data.message) appendChatMessage(data.message);
   }
+  async function postSilentForwardItem(it) {
+    if (it && it.kind === "file") {
+      await postChatPayload(fileForwardPayload(it, true));
+      return;
+    }
+    await postSilentMessage(it && it.text);
+  }
+  async function postLastForwardItem(it, batchTexts) {
+    if (it && it.kind === "file") {
+      const payload = fileForwardPayload(it, false);
+      if (batchTexts && batchTexts.length > 1) payload.batch = batchTexts;
+      await postChatPayload(payload);
+      return;
+    }
+    await postChatPayload({
+      kind: "text",
+      body: (it && it.text) || "",
+      forward: { who: (it && it.who) || "对方" },
+      batch: batchTexts && batchTexts.length > 1 ? batchTexts : undefined,
+    });
+  }
   async function sendForward(mode) {
     const sheet = document.getElementById("chatFwdSheet");
     const items = (sheet && sheet._fwdItems) || [];
     if (!items.length) {
-      shellToast("\u6ca1\u6709\u53ef\u8f6c\u53d1\u7684\u6587\u5b57");
+      shellToast("\u6ca1\u6709\u53ef\u8f6c\u53d1\u7684\u5185\u5bb9");
       return;
     }
     closeFwdSheet();
@@ -4557,12 +6357,11 @@
         await postChatPayload({ kind: "text", body: mergedForwardBody(items) });
         return;
       }
-      for (let i = 0; i < items.length - 1; i++) await postSilentMessage(items[i].text);
-      await postChatPayload({
-        kind: "text",
-        body: items[items.length - 1].text,
-        batch: items.map((it) => it.text),
-      });
+      for (let i = 0; i < items.length - 1; i++) await postSilentForwardItem(items[i]);
+      await postLastForwardItem(
+        items[items.length - 1],
+        items.map((it) => it.text)
+      );
     } catch (err) {
       shellToast((err && err.message) || "\u8f6c\u53d1\u5931\u8d25");
     }
@@ -4713,8 +6512,32 @@
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "读取失败");
       const posts = Array.isArray(data.posts) ? data.posts : [];
+      const seen = Number(lsGet(LS.momSeenTs, "0")) || 0;
+      let newestBot = 0;
+      let newestTxt = "";
+      for (const p of posts) {
+        if (!p || p.author !== "bot") continue;
+        const ts = Number(p.ts) || 0;
+        if (ts > newestBot) {
+          newestBot = ts;
+          newestTxt = String(p.txt || p.text || "").trim();
+        }
+      }
+      if (seen <= 0) {
+        lsSet(LS.momSeenTs, String(Date.now()));
+      } else if (newestBot > seen && currentChatTab() !== "moments") {
+        pushTieredNotify(
+          "moments",
+          "朋友圈",
+          newestTxt ? newestTxt.slice(0, 40) : "家机发了动态",
+          () => goChatTab("moments")
+        );
+      }
       momPosts = posts.map(paintMomPost);
       renderMomFeed();
+      if (currentChatTab() === "moments") {
+        lsSet(LS.momSeenTs, String(Date.now()));
+      }
     } catch (err) {
       const feed = document.getElementById("chatMomFeed");
       if (feed) feed.innerHTML = '<p class="chat-hint-line">' + escapeHtml((err && err.message) || "加载失败") + "</p>";
@@ -4975,8 +6798,12 @@
   async function loadChatPrefsUi() {
     const sound = document.getElementById("chatTogSound");
     const read = document.getElementById("chatTogRead");
+    const nAi = document.getElementById("chatTogNotifyAi");
+    const nMom = document.getElementById("chatTogNotifyMom");
     if (sound) sound.classList.toggle("on", lsGet(LS.sound, "1") !== "0");
     if (read) read.classList.toggle("on", lsGet(LS.clearRead, "1") !== "0");
+    if (nAi) nAi.classList.toggle("on", lsGet(LS.notifyAi, "1") !== "0");
+    if (nMom) nMom.classList.toggle("on", lsGet(LS.notifyMom, "1") !== "0");
     try {
       const res = await fetch("/api/v1/chat/prefs", {
         credentials: "same-origin",
@@ -5083,25 +6910,75 @@
         : "已关掉沿用：只改聊天自有人设，小屋底稿不动。";
     }
   }
+  function isDailyPeer() {
+    return (activePeerId || "daily") === "daily";
+  }
+
+  function mergePeerCache(peer) {
+    if (!peer || !peer.id) return;
+    if (!Array.isArray(peersCache)) {
+      peersCache = [peer];
+      return;
+    }
+    const i = peersCache.findIndex((p) => p && p.id === peer.id);
+    if (i >= 0) peersCache[i] = Object.assign({}, peersCache[i], peer);
+    else peersCache.push(peer);
+  }
+  async function patchPeerFields(pid, fields) {
+    const res = await fetch(
+      "/api/v1/chat/peers/" + encodeURIComponent(pid),
+      {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields || {}),
+      }
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "保存失败");
+    if (data.peer) mergePeerCache(data.peer);
+    else peersCache = null;
+    return data;
+  }
   async function openProfilePage(returnTo) {
     const el = document.getElementById("chatOvProfile");
     const cardTa = document.getElementById("chatPersonaCardInput");
+    const nameInp = document.getElementById("chatNameInput");
     const noteInp = document.getElementById("chatNoteInput");
     const nameEl = document.getElementById("chatProfileName");
     const av = document.getElementById("chatProfileAv");
+    const useRow = document.querySelector('label[for="chatPersonaUseHut"]');
+    const sub = document.getElementById("chatProfileSub");
     if (!el) return;
     chatSubReturn = returnTo || null;
-    if (nameEl) nameEl.textContent = displayPeerName();
-    if (av) av.src = deps.getAvatarBot() || "/assets/cafe/avatar-bot.png";
+    const pid = activePeerId || "daily";
+    const trueName = peerTrueName(pid);
+    if (nameEl) nameEl.textContent = trueName;
+    if (nameInp) nameInp.value = trueName;
+    if (av) av.src = peerAvatarOf(activePeerId);
     const avWrap = document.getElementById("chatProfileAvWrap");
     if (avWrap) {
-      avWrap.classList.toggle(
-        "av-frame-full",
-        (activePeerId || "daily") === "daily"
-      );
+      avWrap.classList.toggle("av-frame-full", isDailyPeer());
     }
-    if (noteInp) noteInp.value = readNote("daily");
-    if (cardTa) cardTa.value = "";
+    if (noteInp) noteInp.value = readNote(pid);
+    const peerMode = !isDailyPeer();
+    if (useRow) useRow.hidden = peerMode;
+    if (peerMode) {
+      if (sub) sub.textContent = "本联系人人设（与小屋分开）";
+      paintProfileInheritUi(false);
+      const hit = (peersCache || []).find(
+        (p) => p && p.id === (activePeerId || "")
+      );
+      if (cardTa) cardTa.value = hit && hit.persona ? hit.persona : "";
+      const hint = document.getElementById("chatProfileHint");
+      if (hint) {
+        hint.textContent = "只改当前联系人；空着则回落小屋聊天人设。";
+      }
+      showChatOverlay("chatOvProfile");
+      return;
+    }
+    if (sub) sub.textContent = "沿用小屋人设";
+    if (useRow) useRow.hidden = false;
     paintProfileInheritUi(true);
     try {
       const res = await fetch("/api/v1/settings", {
@@ -5127,9 +7004,29 @@
   async function saveProfilePage() {
     const cardTa = document.getElementById("chatPersonaCardInput");
     const useCb = document.getElementById("chatPersonaUseHut");
+    const nameInp = document.getElementById("chatNameInput");
     const noteInp = document.getElementById("chatNoteInput");
     if (!cardTa) return;
     const persona_card = String(cardTa.value || "").slice(0, 12000);
+    const pid = activePeerId || "daily";
+    const newName = String((nameInp && nameInp.value) || "").trim().slice(0, 32);
+    if (!newName) {
+      shellToast("请填写名字");
+      if (nameInp) nameInp.focus();
+      return;
+    }
+    writeNote(pid, String((noteInp && noteInp.value) || ""));
+    if (!isDailyPeer()) {
+      try {
+        await patchPeerFields(pid, { name: newName, persona: persona_card });
+        refreshPeerLabels();
+        shellToast("已保存");
+        backFromProfile();
+      } catch (err) {
+        shellToast((err && err.message) || "保存失败");
+      }
+      return;
+    }
     const inherit = !useCb || useCb.checked;
     const body = { persona_use_hut: { chat: inherit } };
     if (inherit) {
@@ -5139,6 +7036,7 @@
       body.persona_apps = { chat: { persona: "", persona_card } };
     }
     try {
+      await patchPeerFields(pid, { name: newName });
       const res = await fetch("/api/v1/settings", {
         method: "PATCH",
         credentials: "same-origin",
@@ -5147,7 +7045,6 @@
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || "保存失败");
-      writeNote("daily", String((noteInp && noteInp.value) || ""));
       refreshPeerLabels();
       shellToast("已保存");
       backFromProfile();
@@ -5175,9 +7072,116 @@
     const pid = activePeerId || "daily";
     if (pinVal) pinVal.textContent = readPins().includes(pid) ? "开" : "关";
     if (muteVal) muteVal.textContent = readMutes().includes(pid) ? "开" : "关";
+    const isDaily = pid === "daily";
+    const peer =
+      (peersCache || []).find((p) => p && p.id === pid) || null;
+    const isGroup = !!(peer && peer.kind === "group");
+    const blockBtn = document.getElementById("btnChatPeerBlock");
+    const delBtn = document.getElementById("btnChatPeerDelete");
+    const blockLab = document.getElementById("chatPeerBlockLab");
+    const blockVal = document.getElementById("chatPeerBlockVal");
+    const delLab = document.getElementById("chatPeerDeleteLab");
+    if (blockBtn) blockBtn.hidden = false;
+    if (delBtn) delBtn.hidden = isDaily;
+    const blocked = isPeerBlocked(pid);
+    if (blockLab) blockLab.textContent = blocked ? "解除拉黑" : "拉黑";
+    if (blockVal) {
+      blockVal.hidden = !blocked;
+      blockVal.textContent = blocked ? "已拉黑" : "";
+    }
+    if (delLab) delLab.textContent = isGroup ? "删除群聊" : "删除联系人";
     paintChatBgLabs();
     refreshPeerLabels();
     paintPeerMemCount();
+  }
+
+  async function syncPeerBlockedByYou(pid, on) {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/peers/" + encodeURIComponent(pid),
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ blocked_by_you: !!on }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "同步失败");
+      if (data.peer && Array.isArray(peersCache)) {
+        const i = peersCache.findIndex((p) => p && p.id === pid);
+        if (i >= 0) {
+          peersCache[i] = Object.assign({}, peersCache[i], {
+            blocked_by_you: !!on,
+          });
+        }
+      }
+    } catch (err) {
+      shellToast((err && err.message) || "拉黑状态未同步到服务端");
+    }
+  }
+
+  async function blockActivePeer() {
+    const pid = activePeerId || "daily";
+    const blocks = readBlocks();
+    const i = blocks.indexOf(pid);
+    if (i >= 0) {
+      blocks.splice(i, 1);
+      writeBlocks(blocks);
+      await syncPeerBlockedByYou(pid, false);
+      shellToast("已解除拉黑");
+      paintPeerPageLabels();
+      paintBlockBanner();
+      await refreshSessionList();
+      if (threadLayerOpen()) refreshChatThread();
+      return;
+    }
+    if (
+      !window.confirm(
+        "拉黑后仍可看聊天记录；你再发的消息会带感叹号（对方收不到）。可随时解除。确定？"
+      )
+    ) {
+      return;
+    }
+    blocks.push(pid);
+    writeBlocks(blocks);
+    await syncPeerBlockedByYou(pid, true);
+    paintPeerPageLabels();
+    await refreshSessionList();
+    if (threadLayerOpen()) refreshChatThread();
+    shellToast("已拉黑");
+  }
+
+  async function deleteActivePeer() {
+    const pid = activePeerId || "daily";
+    if (pid === "daily") {
+      shellToast("家机不能删除");
+      return;
+    }
+    const peer =
+      (peersCache || []).find((p) => p && p.id === pid) || null;
+    const isGroup = !!(peer && peer.kind === "group");
+    const tip = isGroup
+      ? "删除群聊后聊天记录一并清除，确定？"
+      : "删除联系人后聊天记录一并清除，确定？";
+    if (!window.confirm(tip)) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/peers/" + encodeURIComponent(pid),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      scrubPeerLocal(pid);
+      peersCache = null;
+      closePeerPage();
+      closeThreadLayer();
+      setActivePeer("daily");
+      await refreshSessionList();
+      shellToast(isGroup ? "已删除群聊" : "已删除联系人");
+    } catch (err) {
+      shellToast((err && err.message) || "删除失败");
+    }
   }
   function openPeerPage() {
     closeSessMenu();
@@ -5213,8 +7217,19 @@
       openHist();
       return;
     }
+    if (act === "hist-date") {
+      histReturnTo = "peer";
+      closePeerPage();
+      if (!threadLayerOpen()) openThreadLayer();
+      openHistByDate();
+      return;
+    }
     if (act === "mood-map") {
       openMoodMapPage("peer");
+      return;
+    }
+    if (act === "topics") {
+      openTopicsPage("peer");
       return;
     }
     if (act === "memory-add") {
@@ -5244,6 +7259,14 @@
     }
     if (act === "mute") {
       toggleSessionMute(activePeerId || "daily").then(() => paintPeerPageLabels());
+      return;
+    }
+    if (act === "block") {
+      blockActivePeer();
+      return;
+    }
+    if (act === "delete") {
+      deleteActivePeer();
       return;
     }
   }
@@ -5431,6 +7454,179 @@
           .join("");
       }
     }
+    paintDecayCurve(data && data.decayCurve);
+  }
+
+  function paintDecayCurve(curve) {
+    const svg = document.getElementById("chatMoodDecaySvg");
+    if (!svg) return;
+    const series = curve && Array.isArray(curve.series) ? curve.series : [];
+    const hours = curve && Array.isArray(curve.hours) ? curve.hours : [];
+    if (!series.length || !hours.length) {
+      svg.innerHTML = "";
+      return;
+    }
+    const padL = 28;
+    const padR = 10;
+    const padT = 8;
+    const padB = 18;
+    const W = 280;
+    const H = 100;
+    const maxH = hours[hours.length - 1] || 720;
+    const colors = { 1: "#c48c78", 5: "#7ec4b0", 9: "#e8a090" };
+    const parts = [];
+    parts.push(
+      '<line class="axis" x1="' +
+        padL +
+        '" y1="' +
+        (H - padB) +
+        '" x2="' +
+        (W - padR) +
+        '" y2="' +
+        (H - padB) +
+        '"/>'
+    );
+    parts.push(
+      '<text class="tick" x="' +
+        padL +
+        '" y="' +
+        (H - 4) +
+        '">0</text>'
+    );
+    parts.push(
+      '<text class="tick" x="' +
+        (W - padR - 28) +
+        '" y="' +
+        (H - 4) +
+        '">30d</text>'
+    );
+    series.forEach((s) => {
+      const pts = (s.points || [])
+        .map((p) => {
+          const x = padL + (Number(p.h) / maxH) * (W - padL - padR);
+          const y = padT + (1 - Number(p.w)) * (H - padT - padB);
+          return x.toFixed(1) + "," + y.toFixed(1);
+        })
+        .join(" ");
+      const c = colors[s.importance] || "#8b5e4b";
+      parts.push(
+        '<polyline fill="none" stroke="' +
+          c +
+          '" stroke-width="1.6" points="' +
+          pts +
+          '"/>'
+      );
+    });
+    parts.push(
+      '<text class="leg" x="' +
+        padL +
+        '" y="14" fill="#c48c78">imp1</text>' +
+        '<text class="leg" x="' +
+        (padL + 40) +
+        '" y="14" fill="#7ec4b0">imp5</text>' +
+        '<text class="leg" x="' +
+        (padL + 84) +
+        '" y="14" fill="#e8a090">imp9</text>'
+    );
+    svg.innerHTML = parts.join("");
+  }
+
+  async function refreshLexiconUi() {
+    const hint = document.getElementById("chatLexHint");
+    const box = document.getElementById("chatLexList");
+    try {
+      const res = await fetch("/api/v1/chat/mood/lexicon", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      if (hint) {
+        hint.textContent =
+          "内置 " +
+          (data.builtin || 0) +
+          " · 追加 " +
+          ((data.extra && data.extra.length) || 0) +
+          " · 合计 " +
+          (data.total || 0);
+      }
+      if (box) {
+        const extra = Array.isArray(data.extra) ? data.extra : [];
+        if (!extra.length) {
+          box.innerHTML = '<p class="chat-mood-map-empty">还没有追加词</p>';
+        } else {
+          box.innerHTML = extra
+            .map(
+              (e) =>
+                '<div class="chat-lex-row" data-w="' +
+                escapeHtml(e.w) +
+                '"><span class="t">' +
+                escapeHtml(e.w) +
+                '</span><span class="m">V' +
+                Number(e.v).toFixed(2) +
+                " A" +
+                Number(e.a).toFixed(2) +
+                " ·" +
+                e.i +
+                '</span><button type="button" class="chat-lex-del" data-del="' +
+                escapeHtml(e.w) +
+                '">删</button></div>'
+            )
+            .join("");
+          box.querySelectorAll("[data-del]").forEach((b) => {
+            b.addEventListener("click", async () => {
+              const w = b.getAttribute("data-del");
+              try {
+                const r = await fetch(
+                  "/api/v1/chat/mood/lexicon/" + encodeURIComponent(w),
+                  { method: "DELETE", credentials: "same-origin" }
+                );
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok) throw new Error(d.message || "删除失败");
+                await refreshLexiconUi();
+              } catch (err) {
+                shellToast((err && err.message) || "删除失败");
+              }
+            });
+          });
+        }
+      }
+    } catch (err) {
+      if (hint) hint.textContent = (err && err.message) || "词表不可用";
+      if (box) box.innerHTML = "";
+    }
+  }
+
+  async function addLexiconFromForm() {
+    const w = String((document.getElementById("chatLexWord") || {}).value || "").trim();
+    const v = Number((document.getElementById("chatLexV") || {}).value);
+    const a = Number((document.getElementById("chatLexA") || {}).value);
+    const i = Number((document.getElementById("chatLexI") || {}).value);
+    if (!w) {
+      shellToast("先填词");
+      return;
+    }
+    try {
+      const res = await fetch("/api/v1/chat/mood/lexicon", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          w,
+          v: Number.isFinite(v) ? v : 0,
+          a: Number.isFinite(a) ? a : 0.4,
+          i: Number.isFinite(i) ? i : 4,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "加词失败");
+      const inp = document.getElementById("chatLexWord");
+      if (inp) inp.value = "";
+      shellToast("已加「" + w + "」");
+      await refreshLexiconUi();
+    } catch (err) {
+      shellToast((err && err.message) || "加词失败");
+    }
   }
 
   async function openMoodMapPage(returnTo) {
@@ -5451,6 +7647,7 @@
       paintMoodMap({ label: "—", points: [] });
       shellToast((err && err.message) || "读取失败");
     }
+    refreshLexiconUi();
     showChatOverlay("chatOvMoodMap");
   }
 
@@ -5550,6 +7747,18 @@
         (m.importance != null ? m.importance : 5) +
         (kws.length ? " · " + kws.slice(0, 4).join("、") : "");
       mid.append(body, meta);
+      if (m.source_start_ts || m.source_end_ts) {
+        const src = document.createElement("button");
+        src.type = "button";
+        src.className = "chat-memory-src";
+        src.textContent = "原文";
+        src.title = "追溯来源对话";
+        src.addEventListener("click", (e) => {
+          e.preventDefault();
+          traceMemorySourceUi(m.id);
+        });
+        mid.append(src);
+      }
       const del = document.createElement("button");
       del.type = "button";
       del.className = "chat-memory-del";
@@ -5561,6 +7770,64 @@
       });
       row.append(pin, mid, del);
       box.append(row);
+    }
+  }
+
+  async function traceMemorySourceUi(memoryId) {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/memory/" +
+          encodeURIComponent(memoryId) +
+          "/source?" +
+          peerQuery(),
+        { credentials: "same-origin", cache: "no-store" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "追溯失败");
+      const msgs = Array.isArray(data.messages) ? data.messages : [];
+      if (!msgs.length) {
+        shellToast("没有对齐到原文（可能未总结过）");
+        return;
+      }
+      const lines = msgs
+        .slice(0, 8)
+        .map((m) => (m.from === "bot" ? "机" : "你") + "：" + (m.preview || ""))
+        .join("\n");
+      window.alert("原文窗口（最多 8 条）\n\n" + lines);
+    } catch (err) {
+      shellToast((err && err.message) || "追溯失败");
+    }
+  }
+
+  async function runMemoryDehydrate() {
+    const btn = document.getElementById("btnChatMemoryDehydrate");
+    if (btn) {
+      if (btn.disabled) return;
+      btn.disabled = true;
+      btn.textContent = "脱水中…";
+    }
+    try {
+      const res = await fetch("/api/v1/chat/memory/dehydrate", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({})),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "脱水失败");
+      const n = Array.isArray(data.removed) ? data.removed.length : 0;
+      shellToast(
+        data.message ||
+          (data.merged ? "已合并，删 " + n + " 条" : "无可脱水条")
+      );
+      await loadMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "脱水失败");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "脱水合并";
+      }
     }
   }
 
@@ -5584,6 +7851,108 @@
       (pending != null ? " · 待总结 " + pending + " 条对话" : "");
   }
 
+  function paintAutoMemoryBank(list, meta) {
+    const box = document.getElementById("chatAutoMemoryList");
+    const hint = document.getElementById("chatAutoMemoryHint");
+    const items = Array.isArray(list) ? list : [];
+    if (hint) {
+      const chars = meta && meta.chars != null ? meta.chars : 0;
+      hint.textContent =
+        "关于你的档案 · Auto Memory" +
+        (items.length ? " · " + items.length + " 条 · " + chars + " 字" : "");
+    }
+    if (!box) return;
+    box.replaceChildren();
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-memory-empty";
+      empty.textContent = "档案还空 · 开设定「Auto Memory」后家机可写入";
+      box.append(empty);
+      return;
+    }
+    const catLab = {
+      work: "工作",
+      personal: "个人",
+      top_of_mind: "此刻",
+      history: "履历",
+      background: "背景",
+      instructions: "叮嘱",
+    };
+    for (const e of items) {
+      const row = document.createElement("div");
+      row.className =
+        "chat-memory-row" + (e.priority === "always" ? " is-open" : "");
+      row.dataset.id = e.id;
+      const mid = document.createElement("div");
+      mid.className = "chat-memory-mid";
+      const body = document.createElement("div");
+      body.className = "chat-memory-body";
+      body.textContent = String(e.body || "");
+      const metaEl = document.createElement("div");
+      metaEl.className = "chat-memory-meta";
+      metaEl.textContent =
+        (catLab[e.category] || e.category || "个人") +
+        " · " +
+        (e.priority === "always"
+          ? "核心"
+          : e.priority === "low"
+            ? "次要"
+            : "普通");
+      mid.append(body, metaEl);
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "chat-memory-del";
+      del.setAttribute("aria-label", "删除档案");
+      del.textContent = "×";
+      del.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        deleteAutoMemoryUi(e.id);
+      });
+      row.append(mid, del);
+      box.append(row);
+    }
+  }
+
+  async function loadAutoMemoryBank() {
+    const qEl = document.getElementById("chatMemoryQ");
+    const q = qEl ? String(qEl.value || "").trim() : "";
+    try {
+      const url =
+        "/api/v1/chat/auto-memory?" +
+        peerQuery() +
+        (q ? "&q=" + encodeURIComponent(q) : "") +
+        "&limit=80";
+      const res = await fetch(url, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取档案失败");
+      paintAutoMemoryBank(data.entries || [], data);
+    } catch (_) {
+      paintAutoMemoryBank([]);
+    }
+  }
+
+  async function deleteAutoMemoryUi(id) {
+    const sid = String(id || "").trim();
+    if (!sid || !window.confirm("删掉这条档案？")) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/auto-memory/" +
+          encodeURIComponent(sid) +
+          "?" +
+          peerQuery(),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      await loadAutoMemoryBank();
+    } catch (err) {
+      shellToast((err && err.message) || "删除失败");
+    }
+  }
+
   async function loadMemoryBank() {
     const qEl = document.getElementById("chatMemoryQ");
     const q = qEl ? String(qEl.value || "").trim() : "";
@@ -5604,6 +7973,7 @@
       paintMemoryBank(list, total);
       paintPeerMemCount(total);
       await refreshMemoryDigestHint(total);
+      await loadAutoMemoryBank();
     } catch (err) {
       paintMemoryBank([]);
       shellToast((err && err.message) || "读取失败");
@@ -5648,6 +8018,519 @@
     if (qEl) qEl.value = "";
     await loadMemoryBank();
     showChatOverlay("chatOvMemory");
+  }
+
+  function paintTopicsList(data) {
+    const box = document.getElementById("chatTopicsList");
+    if (!box) return;
+    box.replaceChildren();
+    const active = String((data && data.active_topic) || "");
+    const main = document.createElement("button");
+    main.type = "button";
+    main.className =
+      "chat-memory-row" + (!activeTopicId ? " is-open" : "");
+    main.innerHTML =
+      '<div class="chat-memory-mid"><div class="chat-memory-body">主线</div>' +
+      '<div class="chat-memory-meta">默认会话 · 记忆注入开</div></div>';
+    main.addEventListener("click", () => switchToTopic(""));
+    box.append(main);
+    const topics = (data && data.topics) || [];
+    if (!topics.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-memory-empty";
+      empty.textContent = "还没有话题 · 点右上角 + 新建";
+      box.append(empty);
+      return;
+    }
+    for (const t of topics) {
+      const row = document.createElement("div");
+      row.className =
+        "chat-memory-row" + (t.id === activeTopicId ? " is-open" : "");
+      const mid = document.createElement("button");
+      mid.type = "button";
+      mid.className = "chat-memory-mid";
+      mid.style.cssText =
+        "border:0;background:transparent;text-align:left;width:100%;padding:0;font:inherit;color:inherit;cursor:pointer";
+      const body = document.createElement("div");
+      body.className = "chat-memory-body";
+      body.textContent = t.title || "话题";
+      const meta = document.createElement("div");
+      meta.className = "chat-memory-meta";
+      meta.textContent =
+        (t.count || 0) +
+        " 条 · 记忆" +
+        (t.memory_inject === false ? "关" : "开") +
+        (t.preview ? " · " + t.preview : "");
+      mid.append(body, meta);
+      mid.addEventListener("click", () => switchToTopic(t.id, t.title));
+      const mem = document.createElement("button");
+      mem.type = "button";
+      mem.className = "chat-memory-pin";
+      mem.title = t.memory_inject === false ? "打开记忆注入" : "关闭记忆注入";
+      mem.textContent = t.memory_inject === false ? "忆×" : "忆";
+      mem.addEventListener("click", (e) => {
+        e.preventDefault();
+        toggleTopicMemory(t.id, t.memory_inject === false);
+      });
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "chat-memory-del";
+      del.setAttribute("aria-label", "删除话题");
+      del.textContent = "×";
+      del.addEventListener("click", (e) => {
+        e.preventDefault();
+        deleteTopicUi(t.id);
+      });
+      row.append(mid, mem, del);
+      box.append(row);
+    }
+  }
+
+  async function loadTopicsList() {
+    try {
+      const res = await fetch("/api/v1/chat/topics?" + peerQuery(), {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      paintTopicsList(data);
+      const hit = (data.topics || []).find((t) => t.id === activeTopicId);
+      const chip = document.getElementById("chatTopicChip");
+      if (chip) {
+        chip.dataset.title = hit ? hit.title : "";
+        paintTopicChip();
+      }
+    } catch (err) {
+      paintTopicsList({ topics: [], active_topic: "" });
+      shellToast((err && err.message) || "读取话题失败");
+    }
+  }
+
+  async function openTopicsPage(returnTo) {
+    chatSubReturn = returnTo || null;
+    if (returnTo === "peer") closePeerPage();
+    await loadTopicsList();
+    showChatOverlay("chatOvTopics");
+  }
+
+  async function switchToTopic(topicId, title) {
+    const tid = String(topicId || "").trim();
+    try {
+      await fetch("/api/v1/chat/topics/activate", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        /* 目标 topic 必须显式传；withPeerBody 会用当前 activeTopicId 盖掉 */
+        body: JSON.stringify({
+          peer: activePeerId || "daily",
+          topic: tid,
+        }),
+      });
+    } catch (_) {}
+    const chip = document.getElementById("chatTopicChip");
+    if (chip) chip.dataset.title = title || "";
+    setActiveTopicLocal(tid, { force: true });
+    closeShellOverlays();
+    refreshChatThread();
+  }
+
+  async function createTopicUi() {
+    const title = window.prompt("话题名称", "新话题");
+    if (title == null) return;
+    const name = String(title || "").trim().slice(0, 32) || "新话题";
+    try {
+      const res = await fetch("/api/v1/chat/topics", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withPeerBody({ title: name, memory_inject: true, activate: true })
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "新建失败");
+      const tid = data.topic && data.topic.id;
+      const chip = document.getElementById("chatTopicChip");
+      if (chip) chip.dataset.title = name;
+      setActiveTopicLocal(tid || "", { force: true });
+      closeShellOverlays();
+      refreshChatThread();
+    } catch (err) {
+      shellToast((err && err.message) || "新建失败");
+    }
+  }
+
+  async function toggleTopicMemory(id, turnOn) {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/topics/" + encodeURIComponent(id),
+        {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            withPeerBody({ memory_inject: !!turnOn })
+          ),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "更新失败");
+      await loadTopicsList();
+    } catch (err) {
+      shellToast((err && err.message) || "更新失败");
+    }
+  }
+
+  async function deleteTopicUi(id) {
+    if (!window.confirm("删除该话题频道？消息一并删掉。")) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/topics/" +
+          encodeURIComponent(id) +
+          "?" +
+          peerQuery(),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      if (activeTopicId === id) {
+        setActiveTopicLocal("", { force: true });
+        refreshChatThread();
+      }
+      await loadTopicsList();
+    } catch (err) {
+      shellToast((err && err.message) || "删除失败");
+    }
+  }
+
+  function backFromTopics() {
+    const ret = chatSubReturn;
+    chatSubReturn = null;
+    const el = document.getElementById("chatOvTopics");
+    if (el) {
+      el.classList.remove("active");
+      el.hidden = true;
+    }
+    if (ret === "peer") {
+      openPeerPage();
+      return;
+    }
+    closeShellOverlays();
+  }
+
+  let letterDraftId = "";
+  let letterReadId = "";
+  let letterPane = "list";
+
+  function lettersPeer() {
+    return activePeerId || "daily";
+  }
+
+  function showLettersPane(name) {
+    letterPane = name || "list";
+    const list = document.getElementById("chatLettersListPane");
+    const compose = document.getElementById("chatLettersComposePane");
+    const read = document.getElementById("chatLettersReadPane");
+    if (list) list.hidden = letterPane !== "list";
+    if (compose) compose.hidden = letterPane !== "compose";
+    if (read) read.hidden = letterPane !== "read";
+    const title = document.getElementById("chatLettersTitle");
+    if (title) {
+      title.textContent =
+        letterPane === "compose"
+          ? "写信"
+          : letterPane === "read"
+            ? "拆信"
+            : "邮局";
+    }
+    const composeBtn = document.getElementById("btnChatLettersCompose");
+    if (composeBtn) composeBtn.hidden = letterPane !== "list";
+  }
+
+  function letterStatusLab(L) {
+    if (!L) return "";
+    if (L.direction === "bot") {
+      return L.status === "inbox" ? "未拆 · TA" : "已读 · TA";
+    }
+    if (L.status === "draft") return "草稿";
+    return "已寄出";
+  }
+
+  function paintLettersList(data) {
+    const box = document.getElementById("chatLettersList");
+    if (!box) return;
+    box.replaceChildren();
+    const letters = (data && data.letters) || [];
+    const hint = document.getElementById("chatLettersHint");
+    if (hint) {
+      const name = peerDisplayName(lettersPeer());
+      const n = Number((data && data.unread) || 0);
+      hint.textContent =
+        "与「" +
+        name +
+        "」异步通信" +
+        (n ? " · " + n + " 封未拆" : "") +
+        " · 不进主线气泡";
+    }
+    if (!letters.length) {
+      const empty = document.createElement("p");
+      empty.className = "chat-memory-empty";
+      empty.textContent = "信箱空着 · 可写信或点「接收信件」";
+      box.append(empty);
+      return;
+    }
+    for (const L of letters) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className =
+        "chat-memory-row" +
+        (L.direction === "bot" && L.status === "inbox" ? " is-open" : "");
+      const mid = document.createElement("div");
+      mid.className = "chat-memory-mid";
+      const body = document.createElement("div");
+      body.className = "chat-memory-body";
+      body.textContent =
+        (L.subject || (L.direction === "bot" ? "来信" : "无题")) +
+        (L.parent_id ? " · Re" : "");
+      const meta = document.createElement("div");
+      meta.className = "chat-memory-meta";
+      meta.innerHTML =
+        '<span class="chat-letter-row-tag">' +
+        letterStatusLab(L) +
+        "</span> · " +
+        String(L.body || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 36);
+      mid.append(body, meta);
+      row.append(mid);
+      row.addEventListener("click", () => openLetterRead(L.id));
+      box.append(row);
+    }
+  }
+
+  async function loadLettersList() {
+    try {
+      const res = await fetch(
+        "/api/v1/chat/letters?" + peerQuery(),
+        { credentials: "same-origin", cache: "no-store" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "读取失败");
+      paintLettersList(data);
+    } catch (err) {
+      paintLettersList({ letters: [], unread: 0 });
+      shellToast((err && err.message) || "读取邮局失败");
+    }
+  }
+
+  async function openLettersPage() {
+    chatSubReturn = "discover";
+    letterDraftId = "";
+    letterReadId = "";
+    showLettersPane("list");
+    showChatOverlay("chatOvLetters");
+    await loadLettersList();
+  }
+
+  function openLettersCompose(fromLetter) {
+    letterDraftId = (fromLetter && fromLetter.id) || "";
+    const sub = document.getElementById("chatLetterSubject");
+    const body = document.getElementById("chatLetterBody");
+    if (sub) sub.value = (fromLetter && fromLetter.subject) || "";
+    if (body) body.value = (fromLetter && fromLetter.body) || "";
+    showLettersPane("compose");
+  }
+
+  async function openLetterRead(id) {
+    letterReadId = String(id || "").trim();
+    if (!letterReadId) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/letters/" +
+          encodeURIComponent(letterReadId) +
+          "/open",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(withPeerBody({})),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "拆信失败");
+      const L = data.letter || {};
+      const meta = document.getElementById("chatLetterReadMeta");
+      if (meta) meta.textContent = letterStatusLab(L);
+      const sub = document.getElementById("chatLetterReadSubject");
+      if (sub) sub.textContent = L.subject || (L.direction === "bot" ? "来信" : "无题");
+      const parent = document.getElementById("chatLetterReadParent");
+      if (parent) {
+        if (L.parent_excerpt) {
+          parent.hidden = false;
+          parent.textContent = "原信：\n" + L.parent_excerpt;
+        } else {
+          parent.hidden = true;
+          parent.textContent = "";
+        }
+      }
+      const body = document.getElementById("chatLetterReadBody");
+      if (body) body.textContent = L.body || "";
+      if (L.direction === "you" && L.status === "draft") {
+        openLettersCompose(L);
+        return;
+      }
+      const ask = document.getElementById("btnChatLetterAskReply");
+      if (ask) {
+        ask.hidden = !(L.direction === "you" && L.status === "sent");
+      }
+      showLettersPane("read");
+    } catch (err) {
+      shellToast((err && err.message) || "拆信失败");
+    }
+  }
+
+  async function saveLetterDraftUi() {
+    const subject = (document.getElementById("chatLetterSubject") || {}).value || "";
+    const body = (document.getElementById("chatLetterBody") || {}).value || "";
+    try {
+      const res = await fetch("/api/v1/chat/letters/draft", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withPeerBody({
+            id: letterDraftId || undefined,
+            subject,
+            body,
+          })
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "存草稿失败");
+      letterDraftId = (data.letter && data.letter.id) || letterDraftId;
+      shellToast("已存草稿");
+    } catch (err) {
+      shellToast((err && err.message) || "存草稿失败");
+    }
+  }
+
+  async function sendLetterUi(awaitReply) {
+    const subject = (document.getElementById("chatLetterSubject") || {}).value || "";
+    const body = (document.getElementById("chatLetterBody") || {}).value || "";
+    try {
+      shellToast(awaitReply ? "寄出中，等回信…" : "寄出中…");
+      const res = await fetch("/api/v1/chat/letters/send", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withPeerBody({
+            id: letterDraftId || undefined,
+            subject,
+            body,
+            await_reply: !!awaitReply,
+          })
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "寄信失败");
+      letterDraftId = "";
+      if (data.reply_error) shellToast("已寄出 · 回信失败：" + data.reply_error);
+      else if (data.reply) shellToast("已寄出 · 收到回信");
+      else shellToast("已寄出");
+      showLettersPane("list");
+      await loadLettersList();
+      if (data.reply && data.reply.id) openLetterRead(data.reply.id);
+    } catch (err) {
+      shellToast((err && err.message) || "寄信失败");
+    }
+  }
+
+  async function receiveLetterUi(replyTo) {
+    try {
+      shellToast(replyTo ? "请 TA 回信中…" : "收信中…");
+      const res = await fetch("/api/v1/chat/letters/receive", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          withPeerBody(replyTo ? { reply_to: replyTo } : {})
+        ),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "收信失败");
+      shellToast("有新信");
+      showLettersPane("list");
+      await loadLettersList();
+      if (data.letter && data.letter.id) openLetterRead(data.letter.id);
+    } catch (err) {
+      shellToast((err && err.message) || "收信失败");
+    }
+  }
+
+  async function rememberLetterUi() {
+    if (!letterReadId) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/letters/" +
+          encodeURIComponent(letterReadId) +
+          "/memory",
+        {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(withPeerBody({})),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "写入失败");
+      shellToast("已记进记忆库");
+    } catch (err) {
+      shellToast((err && err.message) || "写入失败");
+    }
+  }
+
+  async function deleteLetterUi() {
+    if (!letterReadId) return;
+    if (!window.confirm("删除这封信？")) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/letters/" +
+          encodeURIComponent(letterReadId) +
+          "?" +
+          peerQuery(),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      letterReadId = "";
+      showLettersPane("list");
+      await loadLettersList();
+    } catch (err) {
+      shellToast((err && err.message) || "删除失败");
+    }
+  }
+
+  function backFromLetters() {
+    if (letterPane === "compose" || letterPane === "read") {
+      showLettersPane("list");
+      loadLettersList();
+      return;
+    }
+    const ret = chatSubReturn;
+    chatSubReturn = null;
+    const el = document.getElementById("chatOvLetters");
+    if (el) {
+      el.classList.remove("active");
+      el.hidden = true;
+    }
+    if (ret === "discover") {
+      openDiscoverPage();
+      return;
+    }
+    closeShellOverlays();
   }
 
   function backFromMemory() {
@@ -6042,7 +8925,7 @@
       case "rejected":
         return "对方已拒绝";
       case "declined":
-        return out ? "已取消" : "已拒绝";
+        return out ? "已取消" : "已婉拒";
       case "answered":
         return out ? "对方已接听" : "已接听";
       case "active":
@@ -6062,6 +8945,8 @@
     const acts = document.getElementById("chatCallActs");
     const answer = document.getElementById("chatCallAnswer");
     const outbound = !!(callSession && callSession.dir === "out");
+    const ringing =
+      !!(callSession && callSession.phase === "invite" && callSession.dir !== "out");
     if (talk) talk.hidden = !on;
     if (cap) {
       if (!on) {
@@ -6070,18 +8955,333 @@
       }
     }
     if (acts) acts.classList.toggle("is-active", !!on || outbound);
-    /* 拨出从不显示接听；接通后也用 hidden，不单靠 CSS */
-    if (answer) answer.hidden = outbound || !!on;
+    /* 拨出/已接通隐藏接听；来电响铃时必须显示 */
+    if (answer) answer.hidden = outbound || !!on || !ringing;
   }
 
-  function speakBrowserTts(text) {
+  function clearCallTimers() {
+    if (callTimer) {
+      clearTimeout(callTimer);
+      clearInterval(callTimer);
+      callTimer = null;
+    }
+    clearCallHeartbeat();
+    if (!callSession) return;
+    if (callSession.tick) {
+      clearInterval(callSession.tick);
+      callSession.tick = null;
+    }
+    if (callSession.peerTimer) {
+      clearTimeout(callSession.peerTimer);
+      callSession.peerTimer = null;
+    }
+    if (callSession.ringTimer) {
+      clearInterval(callSession.ringTimer);
+      callSession.ringTimer = null;
+    }
+    if (callSession.missTimer) {
+      clearTimeout(callSession.missTimer);
+      callSession.missTimer = null;
+    }
+  }
+
+  function stopCallRing() {
+    if (callSession && callSession.ringTimer) {
+      clearInterval(callSession.ringTimer);
+      callSession.ringTimer = null;
+    }
+    const modal = document.getElementById("chatCallModal");
+    if (modal) modal.classList.remove("is-ringing");
+  }
+
+  function startCallRing() {
+    stopCallRing();
+    const modal = document.getElementById("chatCallModal");
+    if (modal) modal.classList.add("is-ringing");
+    const beep = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        const ctx = new Ctx();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = 880;
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.09, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+        o.connect(g);
+        g.connect(ctx.destination);
+        o.start();
+        o.stop(ctx.currentTime + 0.3);
+        setTimeout(() => {
+          try {
+            ctx.close();
+          } catch (_) {}
+        }, 400);
+      } catch (_) {}
+    };
+    beep();
+    if (callSession) callSession.ringTimer = setInterval(beep, 1600);
+  }
+
+  function syncCallModal() {
+    const modal = document.getElementById("chatCallModal");
+    const kindEl = document.getElementById("chatCallKind");
+    const peerEl = document.getElementById("chatCallPeer");
+    const stateEl = document.getElementById("chatCallState");
+    const av = document.getElementById("chatCallAvatar");
+    if (!callSession || !modal) return;
+    const media = callSession.media === "video" ? "video" : "voice";
+    const lab = media === "video" ? "视频通话" : "语音通话";
+    if (kindEl) kindEl.textContent = lab;
+    if (peerEl) peerEl.textContent = displayPeerName();
+    if (av) {
+      av.src = peerAvatarOf(activePeerId);
+      av.alt = displayPeerName() || "家机";
+    }
+    const phase = callSession.phase;
+    if (stateEl) {
+      if (phase === "invite") {
+        stateEl.textContent =
+          callSession.dir === "out" ? "等待对方接听…" : "邀请你" + lab;
+      } else if (phase === "answered") stateEl.textContent = "已接听";
+      else if (phase === "active") {
+        const sec = Math.floor((Date.now() - (callSession.activeAt || 0)) / 1000);
+        stateEl.textContent = "通话中 " + formatCallClockUi(sec);
+      } else if (phase === "rejected") stateEl.textContent = "对方已拒绝";
+      else if (phase === "declined") stateEl.textContent = "已取消";
+      else if (phase === "missed") stateEl.textContent = "未接听";
+      else stateEl.textContent = lab;
+    }
+    setCallTalkUi(phase === "active");
+    const hangLab = document.querySelector("#chatCallHang .wx-call-act-lab");
+    if (hangLab) {
+      hangLab.textContent =
+        phase === "invite" && callSession.dir !== "out" ? "暂不" : "挂断";
+    }
+    const acts = document.getElementById("chatCallActs");
+    if (acts && (phase === "rejected" || phase === "missed" || phase === "declined")) {
+      acts.style.opacity = "0.35";
+      acts.style.pointerEvents = "none";
+    } else if (acts) {
+      acts.style.opacity = "";
+      acts.style.pointerEvents = "";
+    }
+    syncCallGiftUi();
+    if (media === "video" && (phase === "invite" || phase === "active")) {
+      const wrap = document.getElementById("chatCallVideoWrap");
+      if (wrap) wrap.hidden = false;
+    } else if (phase !== "active") {
+      stopCallVideo();
+    }
+  }
+
+  function bringCallSurface() {
+    try {
+      if (deps && typeof deps.showView === "function") deps.showView("chat");
+    } catch (_) {}
+    const layer = document.getElementById("chatThreadLayer");
+    if (layer) {
+      layer.hidden = false;
+      layer.classList.add("active");
+    }
+    refreshPeerLabels();
+    applyChatBg();
+  }
+
+  async function patchCallPhase(phase, durationSec) {
+    if (!callSession || !callSession.id) return null;
+    const res = await fetch(
+      "/api/v1/chat/call/" + encodeURIComponent(callSession.id) + "/phase?" + peerQuery(),
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phase,
+          durationSec: durationSec != null ? durationSec : undefined,
+        }),
+      }
+    );
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      data = {};
+    }
+    if (!res.ok) throw new Error(data.message || data.error || "通话更新失败");
+    if (data.message) {
+      callSession.phase =
+        (data.message.payload && data.message.payload.phase) || phase;
+      patchMessageBubble(data.message);
+    }
+    return data.message || null;
+  }
+
+  async function finishCallRemote(id, phase, durationSec) {
+    const sid = String(id || "").trim();
+    if (!sid) return;
+    const box = document.getElementById("chatThread");
+    const res = await fetch(
+      "/api/v1/chat/call/" + encodeURIComponent(sid) + "/finish?" + peerQuery(),
+      {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({ phase, durationSec }),
+      }
+    );
+    const ctype = String(res.headers.get("content-type") || "");
+    if (!res.ok && !ctype.includes("event-stream")) {
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      throw new Error(data.message || data.error || "结束通话失败");
+    }
+    await readChatSse(res, makeChatStream(box));
+  }
+
+  /* 家机男性：系统 TTS 优先男声；无男声时强压 pitch。Fish 须填男性 Voice ID。 */
+  const TTS_MALE_RE =
+    /男|male|yunyang|yunjian|yunxi|yunhao|yunfeng|yunze|yunyu|kangkang|云扬|云健|云希|云皓|云枫|云泽|康康|guangxi|danny|david|mark|james|george|guy|alex|tom|daniel|ryan|brian|eric|matthew|andrew|roger|richard|simon|thomas|ravi|takumi|oren|naoki|injoon|bongjin/i;
+  const TTS_FEMALE_RE =
+    /女|female|xiaoxiao|xiaoyi|xiaohan|xiaomeng|xiaomo|xiaorui|xiaoshuang|xiaoxuan|xiaoyan|xiaozhen|yaoyao|huihui|晓晓|晓伊|晓涵|晓梦|晓墨|瑶瑶|慧慧|zira|susan|hazel|karen|linda|heami|yujin|nanami|kyoko|sakura|haruka|ayumi|hannah|samantha|victoria|moira|fiona|tessa|veena|helen|catherine|seoyeon/i;
+  let ttsVoiceCache = [];
+  let voiceBarLang = "";
+
+  function voiceGenderHint(name) {
+    const n = String(name || "");
+    if (TTS_FEMALE_RE.test(n)) return "female";
+    if (TTS_MALE_RE.test(n)) return "male";
+    return "unknown";
+  }
+  (function checkVoiceGender() {
+    if (voiceGenderHint("Microsoft Yunyang Online (Natural)") !== "male")
+      throw new Error("yunyang male");
+    if (voiceGenderHint("Microsoft Xiaoxiao Online") !== "female")
+      throw new Error("xiaoxiao female");
+    if (voiceGenderHint("Microsoft 云扬") !== "male") throw new Error("云扬");
+    if (voiceGenderHint("Microsoft 晓晓") !== "female") throw new Error("晓晓");
+    if (voiceGenderHint("Google 普通话") !== "unknown") throw new Error("unknown");
+  })();
+
+  function refreshTtsVoices() {
     try {
       if (!window.speechSynthesis) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(String(text || ""));
-      u.lang = "zh-CN";
-      u.rate = 1.05;
-      window.speechSynthesis.speak(u);
+      ttsVoiceCache = window.speechSynthesis.getVoices() || [];
+    } catch (_) {
+      ttsVoiceCache = [];
+    }
+  }
+  try {
+    if (window.speechSynthesis) {
+      refreshTtsVoices();
+      window.speechSynthesis.addEventListener("voiceschanged", refreshTtsVoices);
+    }
+  } catch (_) {}
+
+  function whenVoicesReady(cb) {
+    refreshTtsVoices();
+    if (ttsVoiceCache.length) {
+      try {
+        cb();
+      } catch (_) {}
+      return;
+    }
+    let done = false;
+    const run = () => {
+      if (done) return;
+      done = true;
+      refreshTtsVoices();
+      try {
+        cb();
+      } catch (_) {}
+    };
+    try {
+      window.speechSynthesis.addEventListener("voiceschanged", run, { once: true });
+    } catch (_) {}
+    setTimeout(run, 450);
+  }
+
+  function browserLangTag(lang) {
+    const l = String(lang || "zh")
+      .trim()
+      .toLowerCase();
+    if (l.startsWith("en")) return "en-US";
+    if (l.startsWith("ja") || l.startsWith("jp")) return "ja-JP";
+    if (l.startsWith("ko") || l.startsWith("kr")) return "ko-KR";
+    return "zh-CN";
+  }
+
+  function pickJiajiVoice(langHint) {
+    refreshTtsVoices();
+    const voices = ttsVoiceCache.length
+      ? ttsVoiceCache
+      : (window.speechSynthesis && window.speechSynthesis.getVoices()) || [];
+    if (!voices.length) return null;
+    const pref = browserLangTag(langHint).toLowerCase().slice(0, 2);
+    const pool = voices.filter((v) =>
+      String(v.lang || "")
+        .toLowerCase()
+        .startsWith(pref)
+    );
+    const list = pool.length ? pool : voices;
+    const rank = (v) => {
+      const g = voiceGenderHint(
+        String(v.name || "") + " " + String(v.voiceURI || "")
+      );
+      if (g === "male") return 3;
+      if (g === "unknown") return 1;
+      return 0;
+    };
+    let best = null;
+    let bestScore = -1;
+    for (const v of list) {
+      const s = rank(v);
+      if (s > bestScore) {
+        bestScore = s;
+        best = v;
+      }
+    }
+    /* 只有女声时宁可不绑 voice（再压 pitch），避免系统默认晓晓原调 */
+    if (bestScore === 0) return null;
+    return best;
+  }
+
+  function speakBrowserTts(text, opts) {
+    try {
+      if (!window.speechSynthesis) return;
+      const o = opts || {};
+      const lang = browserLangTag(o.lang || "zh");
+      const raw = String(text || "");
+      whenVoicesReady(() => {
+        try {
+          window.speechSynthesis.cancel();
+          const u = new SpeechSynthesisUtterance(raw);
+          u.lang = lang;
+          u.rate = o.rate != null ? o.rate : 1.02;
+          const v = pickJiajiVoice(lang);
+          if (v) {
+            u.voice = v;
+            u.lang = v.lang || lang;
+            const g = voiceGenderHint(
+              String(v.name || "") + " " + String(v.voiceURI || "")
+            );
+            /* ponytail: 无明确男声时强压 pitch；装了 Yunyang/云扬后应走男声分支 */
+            u.pitch = g === "male" ? 1 : 0.55;
+          } else {
+            u.pitch = 0.5;
+          }
+          window.speechSynthesis.speak(u);
+        } catch (_) {}
+      });
     } catch (_) {}
   }
 
@@ -6089,10 +9289,17 @@
   function primeSpeechSynth() {
     try {
       if (!window.speechSynthesis) return;
-      const u = new SpeechSynthesisUtterance(" ");
-      u.volume = 0;
-      u.lang = "zh-CN";
-      window.speechSynthesis.speak(u);
+      whenVoicesReady(() => {
+        try {
+          const u = new SpeechSynthesisUtterance(" ");
+          u.volume = 0;
+          u.lang = "zh-CN";
+          const v = pickJiajiVoice("zh");
+          if (v) u.voice = v;
+          u.pitch = 0.55;
+          window.speechSynthesis.speak(u);
+        } catch (_) {}
+      });
     } catch (_) {}
   }
 
@@ -6108,6 +9315,124 @@
       callAudioEl = a;
       a.play().catch(() => {});
     } catch (_) {}
+  }
+
+  /** Fish 优先；失败回落男声系统 TTS。语音/视频通话共用。 */
+  async function playJiajiTts(text, lang) {
+    const raw = String(text || "").trim();
+    if (!raw) return;
+    const l = String(lang || "zh")
+      .trim()
+      .toLowerCase() || "zh";
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (callAudioEl) {
+        try {
+          callAudioEl.pause();
+        } catch (_) {}
+        callAudioEl = null;
+      }
+      const res = await fetch("/api/v1/tts", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json", Accept: "audio/mpeg" },
+        body: JSON.stringify({ text: raw.slice(0, 500), language: l }),
+      });
+      if (res.ok) {
+        const blob = await res.blob();
+        if (blob && blob.size) {
+          const url = URL.createObjectURL(blob);
+          const a = new Audio(url);
+          callAudioEl = a;
+          a.onended = () => {
+            try {
+              URL.revokeObjectURL(url);
+            } catch (_) {}
+          };
+          await a.play().catch(() => {
+            speakBrowserTts(raw, { lang: l });
+          });
+          return;
+        }
+      }
+    } catch (_) {}
+    speakBrowserTts(raw, { lang: l });
+  }
+
+  async function refreshVoiceBarPref() {
+    try {
+      const res = await fetch("/api/v1/settings", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const s = await res.json();
+      voiceBarLang = String((s && s.voice_bar_lang) || "")
+        .trim()
+        .toLowerCase();
+      if (!["zh", "en", "ja", "ko"].includes(voiceBarLang)) voiceBarLang = "";
+    } catch (_) {}
+  }
+
+  function maybeAttachVoiceBar(bubble, msg) {
+    if (!bubble || !msg || msg.from !== "bot") return;
+    if (!voiceBarLang) return;
+    const kind = (msg && msg.kind) || "text";
+    if (kind !== "text") return;
+    const body = String((msg && msg.body) || "").trim();
+    if (!body || body.length > 400) return;
+    if (bubble.querySelector(".wx-voice-bar")) return;
+    const bar = document.createElement("button");
+    bar.type = "button";
+    bar.className = "wx-voice-bar";
+    const lab =
+      voiceBarLang === "en"
+        ? "EN"
+        : voiceBarLang === "ja"
+          ? "JA"
+          : voiceBarLang === "ko"
+            ? "KO"
+            : "朗读";
+    bar.textContent = "♪ " + lab;
+    bar.setAttribute("aria-label", "语音条 " + lab);
+    bar.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (multiMode) return;
+      if (bar.dataset.busy === "1") return;
+      bar.dataset.busy = "1";
+      bar.classList.add("is-playing");
+      try {
+        let speak = body;
+        const lang = voiceBarLang || "zh";
+        if (lang !== "zh") {
+          if (!bar.dataset.foreign) {
+            const res = await fetch("/api/v1/chat/translate", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: body, to: lang }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.translation) {
+              shellToast((data && data.message) || "翻译失败");
+              return;
+            }
+            bar.dataset.foreign = String(data.translation);
+          }
+          speak = bar.dataset.foreign;
+        }
+        await playJiajiTts(speak, lang);
+      } catch (_) {
+        shellToast("朗读失败");
+      } finally {
+        bar.dataset.busy = "0";
+        bar.classList.remove("is-playing");
+      }
+    });
+    const bunny = bubble.querySelector(".wx-bunny-deco");
+    if (bunny) bubble.insertBefore(bar, bunny);
+    else bubble.append(bar);
   }
 
   function paintCallCaption(userText, botText) {
@@ -6136,6 +9461,8 @@
     }
     const talk = document.getElementById("chatCallTalk");
     try {
+      noteCallActivity(true);
+      clearCallHeartbeat();
       if (window.speechSynthesis) window.speechSynthesis.cancel();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mime = pickRecorderMime();
@@ -6191,12 +9518,16 @@
     if (talk) talk.disabled = true;
     paintCallCaption("", "听你说…");
     try {
+      const headers = {
+        "Content-Type": blob.type || "audio/webm",
+      };
+      if (callSession && callSession.media === "video") {
+        headers["X-Call-Media"] = "video";
+      }
       const res = await fetch("/api/v1/chat/voice-turn?" + peerQuery(), {
         method: "POST",
         credentials: "same-origin",
-        headers: {
-          "Content-Type": blob.type || "audio/webm",
-        },
+        headers,
         body: blob,
       });
       const data = await res.json().catch(() => ({}));
@@ -6213,9 +9544,19 @@
         speakBrowserTts(data.bot_text);
         if (data.tts_error) shellToast("Fish 未通，先用系统音");
       }
+      if (
+        data.gift &&
+        callSession &&
+        callSession.media === "video" &&
+        callGiftEnabled
+      ) {
+        playCallGiftFx(data.gift, "bot");
+      }
+      noteCallActivity(true);
     } catch (err) {
       paintCallCaption("", "");
       shellToast((err && err.message) || "通话回合失败");
+      noteCallActivity(false);
     } finally {
       callTalkBusy = false;
       if (talk) talk.disabled = false;
@@ -6234,87 +9575,879 @@
     }, 1000);
   }
 
-  function enterActiveCallUi(stateEl) {
-    if (!callSession) return;
-    callSession.phase = "active";
-    callSession.activeAt = Date.now();
-    if (stateEl) stateEl.textContent = "通话中…";
-    setCallTalkUi(true);
-    armCallTalkClock(stateEl);
-    /* 接通先短声提示；之后按住说话才走 ASR→LLM→TTS */
-    speakBrowserTts("喂，我在。按住说话就可以了");
+  /* M4 通话心跳 */
+  let callHbTimer = null;
+  let callHbStreak = 0;
+  let callHbBusy = false;
+  let callHbEnabled = true;
+  let callHbBaseSec = 45;
+
+  function clearCallHeartbeat() {
+    if (callHbTimer) {
+      clearTimeout(callHbTimer);
+      callHbTimer = null;
+    }
   }
 
-  function openCall(kind) {
-    const modal = document.getElementById("chatCallModal");
-    const kindEl = document.getElementById("chatCallKind");
-    const peerEl = document.getElementById("chatCallPeer");
-    const stateEl = document.getElementById("chatCallState");
-    if (!modal) return;
-    closeCallPicker();
-    setPanels(null);
-    const media = kind === "video" ? "video" : "voice";
-    callSession = {
-      media,
-      phase: "invite",
-      activeAt: 0,
-      started: Date.now(),
-      dir: "out",
-    };
-    if (kindEl) kindEl.textContent = media === "video" ? "视频通话" : "语音通话";
-    if (peerEl) peerEl.textContent = displayPeerName();
-    if (stateEl) stateEl.textContent = "等待接听…";
-    primeSpeechSynth();
-    setCallTalkUi(false);
-    modal.hidden = false;
-    if (callTimer) clearTimeout(callTimer);
-    callTimer = setTimeout(() => {
-      if (!callSession) return;
-      enterActiveCallUi(stateEl);
-    }, 900);
-    /* ponytail: 挂断时再落一条通话气泡，避免 start 再多一条「等待接听」；有 phase API 后再绑 call id */
+  async function refreshCallHbPref() {
+    try {
+      const res = await fetch("/api/v1/settings", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const s = await res.json();
+      callHbEnabled = s.call_heartbeat_enabled !== false;
+      const n = Math.floor(Number(s.call_heartbeat_sec));
+      callHbBaseSec = Number.isFinite(n) ? Math.max(30, Math.min(120, n)) : 45;
+    } catch (_) {}
   }
-  function closeCall() {
+
+  function scheduleCallHeartbeat() {
+    clearCallHeartbeat();
+    if (!callHbEnabled) return;
+    if (!callSession || callSession.phase !== "active") return;
+    if (callHbStreak >= 10) return;
+    const delay = (callHbBaseSec + Math.floor(Math.random() * 31)) * 1000;
+    callHbTimer = setTimeout(() => {
+      callHbTimer = null;
+      fireCallHeartbeat();
+    }, delay);
+  }
+
+  async function fireCallHeartbeat() {
+    if (callHbBusy) return;
+    if (!callSession || callSession.phase !== "active") return;
+    if (callTalkBusy || callTalkRec) {
+      scheduleCallHeartbeat();
+      return;
+    }
+    callHbBusy = true;
+    try {
+      const res = await fetch("/api/v1/chat/call/heartbeat?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          streak: callHbStreak,
+          video: !!(callSession && callSession.media === "video"),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "心跳失败");
+      if (data.stopped) {
+        callHbStreak = 10;
+        return;
+      }
+      if (typeof data.streak === "number") callHbStreak = data.streak;
+      else callHbStreak += 1;
+      if (data.message) {
+        try {
+          appendChatMessage(data.message);
+        } catch (_) {}
+      }
+      paintCallCaption("", data.bot_text || "");
+      if (data.provider === "fish" && data.audio_base64) {
+        playCallAudioBase64(data.audio_base64, data.content_type);
+      } else if (data.bot_text) {
+        speakBrowserTts(data.bot_text);
+      }
+      if (
+        data.gift &&
+        callSession &&
+        callSession.media === "video" &&
+        callGiftEnabled
+      ) {
+        playCallGiftFx(data.gift, "bot");
+      }
+      if (callHbStreak < 10) scheduleCallHeartbeat();
+    } catch (_) {
+      scheduleCallHeartbeat();
+    } finally {
+      callHbBusy = false;
+    }
+  }
+
+  function noteCallActivity(resetStreak) {
+    if (resetStreak) callHbStreak = 0;
+    if (callSession && callSession.phase === "active") scheduleCallHeartbeat();
+  }
+
+  /* M5 视频仪式礼物（无支付） */
+  const CALL_GIFTS = [
+    { tier: 1, id: "heart", name: "小心心", emoji: "💗" },
+    { tier: 2, id: "bouquet", name: "花束", emoji: "💐" },
+    { tier: 3, id: "fireworks", name: "夏日烟火", emoji: "🎆" },
+    { tier: 4, id: "meteor", name: "流星雨", emoji: "🌠" },
+    { tier: 5, id: "galaxy", name: "银河铁道之夜", emoji: "🌌" },
+  ];
+  let callGiftEnabled = false;
+  let callGiftFxTimer = null;
+
+  function giftByTier(tier) {
+    const n = Math.floor(Number(tier));
+    return CALL_GIFTS.find((g) => g.tier === n) || null;
+  }
+
+  function syncCallGiftUi() {
+    const btn = document.getElementById("chatCallGiftBtn");
+    const sheet = document.getElementById("chatCallGiftSheet");
+    const videoOn =
+      !!(callSession &&
+        callSession.phase === "active" &&
+        callSession.media === "video" &&
+        callGiftEnabled);
+    if (btn) btn.hidden = !videoOn;
+    if (!videoOn && sheet) sheet.hidden = true;
+  }
+
+  function closeCallGiftSheet() {
+    const sheet = document.getElementById("chatCallGiftSheet");
+    if (sheet) sheet.hidden = true;
+  }
+
+  function openCallGiftSheet() {
+    if (!callGiftEnabled) return;
+    if (!callSession || callSession.phase !== "active" || callSession.media !== "video") {
+      shellToast("仅视频通话可用");
+      return;
+    }
+    const sheet = document.getElementById("chatCallGiftSheet");
+    const grid = document.getElementById("chatCallGiftGrid");
+    if (!sheet || !grid) return;
+    if (!grid.dataset.ready) {
+      grid.innerHTML = "";
+      CALL_GIFTS.forEach((g) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "wx-call-gift-item";
+        b.dataset.tier = String(g.tier);
+        b.innerHTML =
+          '<span class="emo">' +
+          g.emoji +
+          '</span><span class="nm">' +
+          g.name +
+          "</span>";
+        b.addEventListener("click", () => sendCallGift(g.tier));
+        grid.append(b);
+      });
+      grid.dataset.ready = "1";
+    }
+    sheet.hidden = false;
+  }
+
+  function playCallGiftFx(gift, from) {
+    const g = gift && gift.tier ? gift : giftByTier(gift);
+    if (!g) return;
+    const fx = document.getElementById("chatCallGiftFx");
+    if (!fx) return;
+    if (callGiftFxTimer) {
+      clearTimeout(callGiftFxTimer);
+      callGiftFxTimer = null;
+    }
+    fx.hidden = false;
+    fx.classList.toggle("is-full", g.tier >= 3);
+    fx.innerHTML = "";
+    if (g.tier >= 3) {
+      const burst = document.createElement("div");
+      burst.className = "fx-burst";
+      burst.textContent = g.emoji;
+      fx.append(burst);
+      const sparks = ["✨", "⭐", "💫", g.emoji, "✨", "🌟"];
+      for (let i = 0; i < 10; i++) {
+        const sp = document.createElement("div");
+        sp.className = "fx-spark";
+        sp.textContent = sparks[i % sparks.length];
+        const ang = (Math.PI * 2 * i) / 10;
+        const dist = 70 + (i % 3) * 36;
+        sp.style.left = "50%";
+        sp.style.top = "42%";
+        sp.style.setProperty("--dx", Math.cos(ang) * dist + "px");
+        sp.style.setProperty("--dy", Math.sin(ang) * dist + "px");
+        sp.style.animationDelay = i * 0.04 + "s";
+        fx.append(sp);
+      }
+    } else {
+      const flo = document.createElement("div");
+      flo.className = "fx-float";
+      flo.textContent = g.emoji;
+      fx.append(flo);
+    }
+    const who = from === "bot" ? "家机" : "你";
+    shellToast(who + "送出了" + g.name);
+    callGiftFxTimer = setTimeout(() => {
+      fx.hidden = true;
+      fx.classList.remove("is-full");
+      fx.innerHTML = "";
+      callGiftFxTimer = null;
+    }, g.tier >= 3 ? 2300 : 1700);
+  }
+
+  async function sendCallGift(tier) {
+    closeCallGiftSheet();
+    if (!callGiftEnabled) return;
+    if (!callSession || callSession.media !== "video" || callSession.phase !== "active") {
+      shellToast("仅视频通话可用");
+      return;
+    }
+    const g = giftByTier(tier);
+    if (!g) return;
+    try {
+      const res = await fetch("/api/v1/chat/call/gift?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tier: g.tier }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "送礼失败");
+      if (data.message) {
+        try {
+          appendChatMessage(data.message);
+        } catch (_) {}
+      }
+      playCallGiftFx(data.gift || g, "you");
+    } catch (e) {
+      shellToast((e && e.message) || "送礼失败");
+    }
+  }
+
+  async function refreshCallGiftPref() {
+    try {
+      const res = await fetch("/api/v1/settings", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const s = await res.json();
+      callGiftEnabled = !!s.call_gift_enabled;
+    } catch (_) {}
+    syncCallGiftUi();
+  }
+
+  let callVideoStream = null;
+  let callPcHost = null;
+  let callPcLoop = null;
+  let callPcGuest = null;
+  let callWebrtcRole = ""; /* host | guest | "" */
+  let callRemoteLive = false;
+  let callLoopTimer = null;
+
+  function sendCallSignal(data) {
+    const payload = Object.assign(
+      { callId: callSession && callSession.id ? String(callSession.id) : "" },
+      data || {}
+    );
+    try {
+      if (typeof global.__ariadneSendWs === "function") {
+        global.__ariadneSendWs({ type: "call_signal", data: payload });
+      }
+    } catch (_) {}
+  }
+
+  function stopCallRtc() {
+    callRemoteLive = false;
+    if (callLoopTimer) {
+      clearTimeout(callLoopTimer);
+      callLoopTimer = null;
+    }
+    [callPcHost, callPcLoop, callPcGuest].forEach((pc) => {
+      if (!pc) return;
+      try {
+        pc.close();
+      } catch (_) {}
+    });
+    callPcHost = null;
+    callPcLoop = null;
+    callPcGuest = null;
+    const remote = document.getElementById("chatCallVideoRemote");
+    if (remote) {
+      try {
+        remote.srcObject = null;
+      } catch (_) {}
+      remote.hidden = true;
+    }
+  }
+
+  function stopCallVideo() {
+    const wrap = document.getElementById("chatCallVideoWrap");
+    const vid = document.getElementById("chatCallVideoLocal");
+    const link = document.getElementById("chatCallGuestLink");
+    if (wrap) wrap.hidden = true;
+    if (link) link.hidden = true;
+    if (vid) {
+      try {
+        vid.srcObject = null;
+      } catch (_) {}
+    }
+    stopCallRtc();
+    callWebrtcRole = "";
+    if (callVideoStream) {
+      try {
+        callVideoStream.getTracks().forEach((t) => t.stop());
+      } catch (_) {}
+      callVideoStream = null;
+    }
+  }
+
+  function setCallRemoteStream(stream, label) {
+    const remote = document.getElementById("chatCallVideoRemote");
+    const peerLab = document.getElementById("chatCallVideoPeerLab");
+    if (remote && stream) {
+      remote.srcObject = stream;
+      remote.hidden = false;
+      remote.play().catch(() => {});
+      callRemoteLive = true;
+    }
+    if (peerLab) peerLab.textContent = label || "远端";
+  }
+
+  /** 本机双 PC 环回：证明 WebRTC 通路；有真对端入会后会拆掉 */
+  async function startCallLoopback(localStream) {
+    if (!localStream || typeof RTCPeerConnection === "undefined") return;
+    if (callRemoteLive) return;
+    if (callPcHost) {
+      try {
+        callPcHost.close();
+      } catch (_) {}
+      callPcHost = null;
+    }
+    if (callPcLoop) {
+      try {
+        callPcLoop.close();
+      } catch (_) {}
+      callPcLoop = null;
+    }
+    callPcHost = new RTCPeerConnection({ iceServers: [] });
+    callPcLoop = new RTCPeerConnection({ iceServers: [] });
+    localStream.getTracks().forEach((t) => callPcHost.addTrack(t, localStream));
+    callPcHost.onicecandidate = (e) => {
+      if (e.candidate && callPcLoop) {
+        callPcLoop.addIceCandidate(e.candidate).catch(() => {});
+      }
+    };
+    callPcLoop.onicecandidate = (e) => {
+      if (e.candidate && callPcHost) {
+        callPcHost.addIceCandidate(e.candidate).catch(() => {});
+      }
+    };
+    callPcLoop.ontrack = (e) => {
+      const stream = (e.streams && e.streams[0]) || null;
+      if (stream) setCallRemoteStream(stream, "环回 · WebRTC");
+    };
+    const offer = await callPcHost.createOffer();
+    await callPcHost.setLocalDescription(offer);
+    await callPcLoop.setRemoteDescription(offer);
+    const answer = await callPcLoop.createAnswer();
+    await callPcLoop.setLocalDescription(answer);
+    await callPcHost.setRemoteDescription(answer);
+  }
+
+  async function startCallHostPeer(localStream, opts) {
+    if (!localStream || typeof RTCPeerConnection === "undefined") return;
+    stopCallRtc();
+    callWebrtcRole = "host";
+    callPcHost = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+    localStream.getTracks().forEach((t) => callPcHost.addTrack(t, localStream));
+    callPcHost.onicecandidate = (e) => {
+      if (e.candidate) {
+        sendCallSignal({
+          kind: "ice",
+          role: "host",
+          candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate,
+        });
+      }
+    };
+    callPcHost.ontrack = (e) => {
+      const stream = (e.streams && e.streams[0]) || null;
+      if (stream) setCallRemoteStream(stream, "对端 · P2P");
+    };
+    sendCallSignal({ kind: "hello", role: "host" });
+    /* 无人入会则环回；接真对端时 skipLoopback */
+    if (!(opts && opts.skipLoopback)) {
+      callLoopTimer = setTimeout(() => {
+        callLoopTimer = null;
+        if (!callRemoteLive && callWebrtcRole === "host" && callVideoStream) {
+          startCallLoopback(callVideoStream).catch(() => {});
+        }
+      }, 900);
+    }
+  }
+
+  async function acceptGuestOffer(data) {
+    if (!callSession || callWebrtcRole !== "host" || !callVideoStream) return;
+    if (!data || !data.sdp) return;
+    /* 拆环回，接真对端 */
+    if (callPcLoop) {
+      try {
+        callPcLoop.close();
+      } catch (_) {}
+      callPcLoop = null;
+    }
+    if (!callPcHost) {
+      await startCallHostPeer(callVideoStream);
+    }
+    try {
+      await callPcHost.setRemoteDescription(data.sdp);
+      const answer = await callPcHost.createAnswer();
+      await callPcHost.setLocalDescription(answer);
+      sendCallSignal({ kind: "answer", role: "host", sdp: answer });
+    } catch (_) {
+      shellToast("对端协商失败");
+    }
+  }
+
+  async function handleHostSignal(data) {
+    if (!data || data.role === "host") return;
+    if (data.kind === "hello" && data.role === "guest") {
+      /* 有环回则重建 host-only 再出 offer；勿再排环回 */
+      if (callVideoStream) await startCallHostPeer(callVideoStream, { skipLoopback: true });
+      if (!callPcHost) return;
+      try {
+        const offer = await callPcHost.createOffer();
+        await callPcHost.setLocalDescription(offer);
+        sendCallSignal({ kind: "offer", role: "host", sdp: offer });
+      } catch (_) {}
+      return;
+    }
+    if (data.kind === "answer" && data.sdp && callPcHost) {
+      try {
+        await callPcHost.setRemoteDescription(data.sdp);
+      } catch (_) {}
+      return;
+    }
+    if (data.kind === "offer" && data.role === "guest") {
+      await acceptGuestOffer(data);
+      return;
+    }
+    if (data.kind === "ice" && data.candidate && callPcHost) {
+      try {
+        await callPcHost.addIceCandidate(data.candidate);
+      } catch (_) {}
+    }
+  }
+
+  async function startCallGuestPeer(callId) {
+    callWebrtcRole = "guest";
+    callSession = callSession || { id: callId, media: "video", phase: "active" };
+    const wrap = document.getElementById("chatCallVideoWrap");
+    const vid = document.getElementById("chatCallVideoLocal");
     const modal = document.getElementById("chatCallModal");
-    if (modal) modal.hidden = true;
+    if (modal) modal.hidden = false;
+    if (wrap) wrap.hidden = false;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      shellToast("无法打开摄像头");
+      return;
+    }
+    try {
+      callVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: true,
+      });
+      if (vid) {
+        vid.srcObject = callVideoStream;
+        vid.play().catch(() => {});
+      }
+      callPcGuest = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      callVideoStream.getTracks().forEach((t) => callPcGuest.addTrack(t, callVideoStream));
+      callPcGuest.onicecandidate = (e) => {
+        if (e.candidate) {
+          sendCallSignal({
+            kind: "ice",
+            role: "guest",
+            candidate: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate,
+          });
+        }
+      };
+      callPcGuest.ontrack = (e) => {
+        const stream = (e.streams && e.streams[0]) || null;
+        if (stream) setCallRemoteStream(stream, "主机 · P2P");
+      };
+      sendCallSignal({ kind: "hello", role: "guest", callId: String(callId) });
+    } catch (_) {
+      shellToast("摄像头不可用");
+    }
+  }
+
+  async function handleGuestSignal(data) {
+    if (!data || callWebrtcRole !== "guest" || !callPcGuest) return;
+    if (data.kind === "offer" && data.sdp) {
+      try {
+        await callPcGuest.setRemoteDescription(data.sdp);
+        const answer = await callPcGuest.createAnswer();
+        await callPcGuest.setLocalDescription(answer);
+        sendCallSignal({ kind: "answer", role: "guest", sdp: answer });
+      } catch (_) {}
+      return;
+    }
+    if (data.kind === "answer" && data.sdp) {
+      try {
+        await callPcGuest.setRemoteDescription(data.sdp);
+      } catch (_) {}
+      return;
+    }
+    if (data.kind === "ice" && data.candidate) {
+      try {
+        await callPcGuest.addIceCandidate(data.candidate);
+      } catch (_) {}
+    }
+  }
+
+  function onCallWsMessage(msg) {
+    if (!msg || msg.type !== "call_signal") return;
+    const data = msg.data || {};
+    const cid = String(data.callId || "");
+    if (callSession && callSession.id && cid && cid !== String(callSession.id)) return;
+    if (callWebrtcRole === "host") handleHostSignal(data);
+    else if (callWebrtcRole === "guest") handleGuestSignal(data);
+  }
+
+  async function copyCallGuestLink() {
+    if (!callSession || !callSession.id) return;
+    const url =
+      location.origin +
+      location.pathname +
+      "?callGuest=" +
+      encodeURIComponent(callSession.id);
+    const ok = await copyCtxText(url);
+    if (ok) shellToast("已复制对端链接 · 另一设备打开即可入会");
+  }
+
+  async function startCallVideoIfNeeded() {
+    const wrap = document.getElementById("chatCallVideoWrap");
+    const vid = document.getElementById("chatCallVideoLocal");
+    const peerLab = document.getElementById("chatCallVideoPeerLab");
+    const link = document.getElementById("chatCallGuestLink");
+    if (!callSession || callSession.media !== "video") {
+      stopCallVideo();
+      return;
+    }
+    if (wrap) wrap.hidden = false;
+    if (link) {
+      link.hidden = false;
+      link.onclick = () => copyCallGuestLink();
+    }
+    if (peerLab) peerLab.textContent = displayPeerName() + " · 等待轨";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      shellToast("无法打开摄像头");
+      return;
+    }
+    try {
+      if (callVideoStream) {
+        try {
+          callVideoStream.getTracks().forEach((t) => t.stop());
+        } catch (_) {}
+        callVideoStream = null;
+      }
+      stopCallRtc();
+      if (wrap) wrap.hidden = false;
+      callVideoStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      if (vid) {
+        vid.srcObject = callVideoStream;
+        vid.play().catch(() => {});
+      }
+      /* H3.3：本机环回真轨 + WS 可接第二端 */
+      await startCallHostPeer(callVideoStream);
+    } catch (_) {
+      shellToast("摄像头不可用");
+    }
+  }
+
+  function enterActiveCallUi() {
+    if (!callSession) return;
+    stopCallRing();
+    callSession.phase = "active";
+    callSession.activeAt = Date.now();
+    syncCallModal();
+    armCallTalkClock(document.getElementById("chatCallState"));
+    startCallVideoIfNeeded();
+    /* 接通先短声提示；之后按住说话才走 ASR→LLM→TTS（男声 / Fish） */
+    playJiajiTts("喂，我在。按住说话就可以了", "zh");
+    callHbStreak = 0;
+    refreshCallHbPref().then(() => scheduleCallHeartbeat());
+    refreshCallGiftPref();
+  }
+
+  function hideCallModal() {
+    const modal = document.getElementById("chatCallModal");
+    if (modal) {
+      modal.hidden = true;
+      modal.classList.remove("is-ringing");
+    }
     setCallTalkUi(false);
+    clearCallHeartbeat();
+    callHbStreak = 0;
+    closeCallGiftSheet();
+    syncCallGiftUi();
+    const fx = document.getElementById("chatCallGiftFx");
+    if (fx) {
+      fx.hidden = true;
+      fx.innerHTML = "";
+      fx.classList.remove("is-full");
+    }
+    stopCallVideo();
     if (callTalkRec) {
       try {
         callTalkRec.stop();
       } catch (_) {}
       callTalkRec = null;
     }
-    if (window.speechSynthesis) window.speechSynthesis.cancel();
+    try {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+    } catch (_) {}
     if (callAudioEl) {
       try {
         callAudioEl.pause();
       } catch (_) {}
       callAudioEl = null;
     }
-    if (callTimer) {
-      clearTimeout(callTimer);
-      clearInterval(callTimer);
-      callTimer = null;
-    }
-    const dur =
-      callSession && callSession.activeAt
-        ? Math.floor((Date.now() - callSession.activeAt) / 1000)
-        : 0;
-    const media = (callSession && callSession.media) || "voice";
-    const dir = (callSession && callSession.dir) || "out";
-    callSession = null;
-    postChatPayload({
-      kind: "call",
-      media: media,
-      dir: dir,
-      phase: dur > 0 ? "ended" : "declined",
-      durationSec: dur,
-    }).catch(() => {});
   }
-  function answerCallSession() {
-    if (!callSession || callSession.dir === "out") return;
-    if (callSession.phase !== "invite") return;
-    enterActiveCallUi(document.getElementById("chatCallState"));
+
+  function attachCallSession(msg, opts) {
+    const o = opts || {};
+    const p = (msg && msg.payload) || {};
+    if (
+      callSession &&
+      callSession.id &&
+      msg &&
+      msg.id &&
+      callSession.id === msg.id &&
+      callSession.phase === "invite"
+    ) {
+      const modal = document.getElementById("chatCallModal");
+      if (modal) modal.hidden = false;
+      if (o.ring) startCallRing();
+      return;
+    }
+    if (callSession && callSession.id && msg && msg.id && callSession.id !== msg.id) {
+      shellToast("通话进行中");
+      return;
+    }
+    clearCallTimers();
+    stopCallRing();
+    if (o.peer) setActivePeer(o.peer);
+    callSession = {
+      id: msg && msg.id,
+      media: p.media === "video" ? "video" : "voice",
+      dir: p.dir === "out" ? "out" : "in",
+      phase: p.phase || "invite",
+      activeAt: 0,
+      tick: null,
+      peerTimer: null,
+      ringTimer: null,
+      missTimer: null,
+    };
+    if (o.surface) {
+      bringCallSurface();
+      /* 气泡刷出来；callSession 已占坑，resumeInbound 不会再弹一层 */
+      refreshChatThread();
+    }
+    const modal = document.getElementById("chatCallModal");
+    if (modal) modal.hidden = false;
+    primeSpeechSynth();
+    syncCallModal();
+    if (callSession.dir === "out" && callSession.phase === "invite") {
+      schedulePeerDecision();
+    }
+    if (callSession.dir !== "out" && callSession.phase === "invite") {
+      if (o.ring !== false) startCallRing();
+      callSession.missTimer = setTimeout(() => {
+        if (!callSession || callSession.phase !== "invite") return;
+        const id = callSession.id;
+        clearCallTimers();
+        stopCallRing();
+        hideCallModal();
+        callSession = null;
+        if (id) {
+          fetch(
+            "/api/v1/chat/call/" + encodeURIComponent(id) + "/phase?" + peerQuery(),
+            {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phase: "missed", durationSec: 0 }),
+            }
+          )
+            .then((r) => r.json().catch(() => ({})))
+            .then((data) => {
+              if (data && data.message) {
+                if (threadLayerOpen()) patchMessageBubble(data.message);
+                else refreshUnreadUi();
+              }
+            })
+            .catch(() => {});
+        }
+      }, 45000);
+    }
+    if (o.append && msg) {
+      appendChatMessage(msg);
+      scrollToLatest();
+    }
+  }
+
+  /** 拨出：对方随机接 / 拒 */
+  function schedulePeerDecision() {
+    if (!callSession || callSession.dir !== "out") return;
+    if (callSession.peerTimer) clearTimeout(callSession.peerTimer);
+    const delay = 1800 + Math.floor(Math.random() * 4200);
+    const accept = Math.random() < 0.68;
+    callSession.peerTimer = setTimeout(async () => {
+      if (!callSession || callSession.phase !== "invite") return;
+      callSession.peerTimer = null;
+      if (accept) {
+        try {
+          if (callSession.id) {
+            await patchCallPhase("answered", 0);
+            await new Promise((r) => setTimeout(r, 280));
+            if (!callSession) return;
+            await patchCallPhase("active", 0);
+          }
+          enterActiveCallUi();
+        } catch (e) {
+          shellToast((e && e.message) || "接通失败");
+          hideCallModal();
+          callSession = null;
+        }
+      } else {
+        await showCallRejectedAndClose();
+      }
+    }, delay);
+  }
+
+  /** 拨出被拒：界面先停在「对方已拒绝」，再关层（语音/视频同） */
+  async function showCallRejectedAndClose() {
+    if (!callSession) return;
+    const id = callSession.id;
+    clearCallTimers();
+    stopCallRing();
+    callSession.phase = "rejected";
+    syncCallModal();
+    shellToast("对方已拒绝");
+    try {
+      if (id) await finishCallRemote(id, "rejected", 0);
+    } catch (e) {
+      shellToast((e && e.message) || "对方已拒绝");
+    }
+    await new Promise((r) => setTimeout(r, 1600));
+    if (callSession && callSession.id === id) {
+      hideCallModal();
+      callSession = null;
+    } else if (!callSession) {
+      hideCallModal();
+    }
+  }
+
+  /** 线程里未接邀请 → 弹出接听 */
+  function resumeInboundIfNeeded(msgs) {
+    if (callSession) return;
+    if (!Array.isArray(msgs) || !msgs.length) return;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.kind !== "call" || last.from !== "bot") return;
+    const p = last.payload || {};
+    if (p.dir === "out" || p.phase !== "invite") return;
+    if (Date.now() - (Number(last.ts) || 0) > 90000) return;
+    attachCallSession(last, { ring: true });
+  }
+
+  async function openCall(kind) {
+    if (callSession) {
+      shellToast("通话进行中");
+      return;
+    }
+    const media = kind === "video" ? "video" : "voice";
+    closeCallPicker();
+    setPanels(null);
+    setChatErr("");
+    try {
+      const res = await fetch("/api/v1/chat/call/start?" + peerQuery(), {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPeerBody({ media, dir: "out" })),
+      });
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (_) {
+        data = {};
+      }
+      if (!res.ok) throw new Error(data.message || data.error || "发起通话失败");
+      if (!data.message || !data.message.id) throw new Error("发起通话失败");
+      attachCallSession(data.message, { append: true, ring: false });
+    } catch (e) {
+      shellToast((e && e.message) || "发起通话失败");
+      callSession = null;
+    }
+  }
+
+  async function hangCall() {
+    if (!callSession) {
+      hideCallModal();
+      return;
+    }
+    stopCallRing();
+    clearCallTimers();
+    const phase = callSession.phase;
+    const id = callSession.id;
+    const durationSec =
+      phase === "active" && callSession.activeAt
+        ? Math.max(1, Math.floor((Date.now() - callSession.activeAt) / 1000))
+        : 0;
+    const finPhase =
+      phase === "active" || phase === "answered" ? "ended" : "declined";
+    hideCallModal();
+    callSession = null;
+    try {
+      if (id) await finishCallRemote(id, finPhase, durationSec);
+      else {
+        await postChatPayload({
+          kind: "call",
+          media: "voice",
+          dir: "out",
+          phase: finPhase,
+          durationSec,
+        });
+      }
+    } catch (e) {
+      shellToast((e && e.message) || "结束通话失败");
+    }
+  }
+
+  function closeCall() {
+    hangCall();
+  }
+
+  /** 来电：你点接听 */
+  async function answerCallSession() {
+    if (!callSession || callSession.phase !== "invite") return;
+    if (callSession.dir === "out") return;
+    primeSpeechSynth();
+    stopCallRing();
+    if (callSession.missTimer) {
+      clearTimeout(callSession.missTimer);
+      callSession.missTimer = null;
+    }
+    try {
+      if (callSession.id) {
+        await patchCallPhase("answered", 0);
+        syncCallModal();
+        await new Promise((r) => setTimeout(r, 280));
+        if (!callSession) return;
+        await patchCallPhase("active", 0);
+      }
+      enterActiveCallUi();
+    } catch (e) {
+      shellToast((e && e.message) || "接听失败");
+      hideCallModal();
+      callSession = null;
+    }
   }
   function voiceBubbleSec(p) {
     const src = p || {};
@@ -6354,7 +10487,14 @@
         payload: { media: "voice", dir: "out", phase: "declined", durationSec: 0 },
       }) !== "已取消"
     )
-      throw new Error("call declined");
+      throw new Error("call declined out");
+    if (
+      callBubbleLabel({
+        body: "",
+        payload: { media: "voice", dir: "in", phase: "declined", durationSec: 0 },
+      }) !== "已婉拒"
+    )
+      throw new Error("call declined in");
     if (
       callBubbleLabel({
         body: "",
@@ -6362,6 +10502,13 @@
       }) !== "通话时长 00:07"
     )
       throw new Error("call ended");
+    if (
+      callBubbleLabel({
+        body: "",
+        payload: { media: "video", dir: "in", phase: "missed", durationSec: 0 },
+      }) !== "未接视频通话"
+    )
+      throw new Error("call missed");
   })();
   function pickRecorderMime() {
     const cands = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"];
@@ -6489,9 +10636,7 @@
     if (home) home.addEventListener("click", () => deps.showView("home"));
     const add = document.getElementById("btnChatShellAdd");
     if (add) {
-      add.addEventListener("click", () =>
-        shellToast("已有家机 + 薄巧测试两条会话")
-      );
+      add.addEventListener("click", () => openPeerNewPage());
     }
     const contact = document.getElementById("btnChatContactHome");
     if (contact) {
@@ -6666,6 +10811,16 @@
     }
     const moodMapBack = document.getElementById("btnChatMoodMapBack");
     if (moodMapBack) moodMapBack.addEventListener("click", () => backFromMoodMap());
+    const lexAdd = document.getElementById("btnChatLexAdd");
+    if (lexAdd) lexAdd.addEventListener("click", () => addLexiconFromForm());
+    const topicsBack = document.getElementById("btnChatTopicsBack");
+    if (topicsBack) topicsBack.addEventListener("click", () => backFromTopics());
+    const topicsAdd = document.getElementById("btnChatTopicsAdd");
+    if (topicsAdd) topicsAdd.addEventListener("click", () => createTopicUi());
+    const topicChip = document.getElementById("chatTopicChip");
+    if (topicChip) {
+      topicChip.addEventListener("click", () => openTopicsPage(null));
+    }
     const memoryBack = document.getElementById("btnChatMemoryBack");
     if (memoryBack) memoryBack.addEventListener("click", () => backFromMemory());
     const memoryAdd = document.getElementById("btnChatMemoryAdd");
@@ -6708,6 +10863,34 @@
         togSound.classList.toggle("on");
         lsSet(LS.sound, togSound.classList.contains("on") ? "1" : "0");
         shellToast(togSound.classList.contains("on") ? "提示音开" : "提示音关");
+      });
+    }
+    const togNotifyAi = document.getElementById("chatTogNotifyAi");
+    if (togNotifyAi) {
+      togNotifyAi.addEventListener("click", () => {
+        togNotifyAi.classList.toggle("on");
+        lsSet(LS.notifyAi, togNotifyAi.classList.contains("on") ? "1" : "0");
+        if (togNotifyAi.classList.contains("on")) ensureNotifyPermission();
+        shellToast(togNotifyAi.classList.contains("on") ? "AI 通知开" : "AI 通知关");
+      });
+    }
+    const togNotifyMom = document.getElementById("chatTogNotifyMom");
+    if (togNotifyMom) {
+      togNotifyMom.addEventListener("click", () => {
+        togNotifyMom.classList.toggle("on");
+        lsSet(LS.notifyMom, togNotifyMom.classList.contains("on") ? "1" : "0");
+        if (togNotifyMom.classList.contains("on")) ensureNotifyPermission();
+        shellToast(togNotifyMom.classList.contains("on") ? "朋友圈通知开" : "朋友圈通知关");
+      });
+    }
+    const bannerX = document.getElementById("chatSysBannerX");
+    if (bannerX) bannerX.addEventListener("click", () => hideSysBanner());
+    const bannerGo = document.getElementById("chatSysBannerGo");
+    if (bannerGo) {
+      bannerGo.addEventListener("click", () => {
+        const go = sysBannerGo;
+        hideSysBanner();
+        if (typeof go === "function") go();
       });
     }
     const togRead = document.getElementById("chatTogRead");
@@ -6860,9 +11043,16 @@
     const picView = document.getElementById("chatPicView");
     if (picView) {
       picView.addEventListener("click", (e) => {
-        if (e.target.id === "chatPicView" || e.target.id === "chatPicViewImg") closePicViewer();
+        if (
+          e.target.id === "chatPicView" ||
+          e.target.id === "chatPicViewScrim" ||
+          (e.target.id === "chatPicViewImg" && picScale <= 1.05)
+        ) {
+          closePicViewer();
+        }
       });
     }
+    bindPicGestures();
     const picPrev = document.getElementById("chatPicPrev");
     if (picPrev) picPrev.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -6873,6 +11063,186 @@
       e.stopPropagation();
       stepPic(1);
     });
+    const geoBtn = document.getElementById("chatSheetGeoBtn");
+    if (geoBtn) {
+      geoBtn.addEventListener("click", () => {
+        if (!navigator.geolocation) {
+          shellToast("定位不可用");
+          return;
+        }
+        geoBtn.disabled = true;
+        geoBtn.textContent = "定位中…";
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            const latEl = document.getElementById("chatSheetLat");
+            const lngEl = document.getElementById("chatSheetLng");
+            const nameEl = document.getElementById("chatSheetName");
+            const detailEl = document.getElementById("chatSheetDetail");
+            if (latEl) latEl.value = String(lat);
+            if (lngEl) lngEl.value = String(lng);
+            if (nameEl && !String(nameEl.value || "").trim()) {
+              nameEl.value = "我的位置";
+            }
+            if (detailEl && !String(detailEl.value || "").trim()) {
+              detailEl.value =
+                lat.toFixed(5) + ", " + lng.toFixed(5);
+            }
+            fetch("/api/v1/chat/geo", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                lat,
+                lon: lng,
+                label: "我的位置",
+                source: "browser",
+              }),
+            }).catch(() => {});
+            geoBtn.disabled = false;
+            geoBtn.textContent = "已定位 · 可改名称";
+            shellToast("已写入坐标");
+          },
+          () => {
+            geoBtn.disabled = false;
+            geoBtn.textContent = "用我的位置";
+            shellToast("定位失败");
+          },
+          { enableHighAccuracy: false, timeout: 12000 }
+        );
+      });
+    }
+    const discoverBtn = document.getElementById("btnChatDiscover");
+    if (discoverBtn) {
+      discoverBtn.addEventListener("click", () => openDiscoverPage());
+    }
+    const discoverBack = document.getElementById("btnChatDiscoverBack");
+    if (discoverBack) {
+      discoverBack.addEventListener("click", () => {
+        const el = document.getElementById("chatOvDiscover");
+        if (el) {
+          el.hidden = true;
+          el.classList.remove("active");
+        }
+      });
+    }
+    const discoverMom = document.getElementById("btnChatDiscoverMoments");
+    if (discoverMom) {
+      discoverMom.addEventListener("click", () => {
+        const el = document.getElementById("chatOvDiscover");
+        if (el) {
+          el.hidden = true;
+          el.classList.remove("active");
+        }
+        goChatTab("moments");
+      });
+    }
+    const discoverLetters = document.getElementById("btnChatDiscoverLetters");
+    if (discoverLetters) {
+      discoverLetters.addEventListener("click", () => openLettersPage());
+    }
+    const lettersBack = document.getElementById("btnChatLettersBack");
+    if (lettersBack) lettersBack.addEventListener("click", () => backFromLetters());
+    const lettersCompose = document.getElementById("btnChatLettersCompose");
+    if (lettersCompose) {
+      lettersCompose.addEventListener("click", () => openLettersCompose(null));
+    }
+    const lettersReceive = document.getElementById("btnChatLettersReceive");
+    if (lettersReceive) {
+      lettersReceive.addEventListener("click", () => receiveLetterUi(""));
+    }
+    const letterDraftBtn = document.getElementById("btnChatLetterDraft");
+    if (letterDraftBtn) {
+      letterDraftBtn.addEventListener("click", () => saveLetterDraftUi());
+    }
+    const letterSendBtn = document.getElementById("btnChatLetterSend");
+    if (letterSendBtn) {
+      letterSendBtn.addEventListener("click", () => sendLetterUi(false));
+    }
+    const letterSendReplyBtn = document.getElementById("btnChatLetterSendReply");
+    if (letterSendReplyBtn) {
+      letterSendReplyBtn.addEventListener("click", () => sendLetterUi(true));
+    }
+    const letterRemember = document.getElementById("btnChatLetterRemember");
+    if (letterRemember) {
+      letterRemember.addEventListener("click", () => rememberLetterUi());
+    }
+    const letterAskReply = document.getElementById("btnChatLetterAskReply");
+    if (letterAskReply) {
+      letterAskReply.addEventListener("click", () =>
+        receiveLetterUi(letterReadId)
+      );
+    }
+    const letterDelete = document.getElementById("btnChatLetterDelete");
+    if (letterDelete) {
+      letterDelete.addEventListener("click", () => deleteLetterUi());
+    }
+    const discoverQ = document.getElementById("chatDiscoverQ");
+    if (discoverQ) {
+      discoverQ.addEventListener("input", () => paintDiscoverFeed());
+    }
+    const peerAdd = document.getElementById("btnChatPeerAdd");
+    if (peerAdd) peerAdd.addEventListener("click", () => openPeerNewPage());
+    const peerNewBack = document.getElementById("btnChatPeerNewBack");
+    if (peerNewBack) {
+      peerNewBack.addEventListener("click", () => {
+        const form = document.getElementById("chatPeerNewForm");
+        if (form && !form.hidden) {
+          showPeerNewHub();
+          return;
+        }
+        const el = document.getElementById("chatOvPeerNew");
+        if (el) {
+          el.hidden = true;
+          el.classList.remove("active");
+        }
+      });
+    }
+    const peerNewOk = document.getElementById("btnChatPeerNewOk");
+    if (peerNewOk) peerNewOk.addEventListener("click", () => submitPeerNew());
+    const peerAddDm = document.getElementById("btnChatPeerAddDm");
+    if (peerAddDm) {
+      peerAddDm.addEventListener("click", () => showPeerNewForm("dm"));
+    }
+    const peerAddGroup = document.getElementById("btnChatPeerAddGroup");
+    if (peerAddGroup) {
+      peerAddGroup.addEventListener("click", () => showPeerNewForm("group"));
+    }
+    const peerNewSearch = document.getElementById("chatPeerNewSearch");
+    if (peerNewSearch) {
+      peerNewSearch.addEventListener("input", () =>
+        paintPeerNewHits(peerNewSearch.value)
+      );
+    }
+    const peerAvPick = document.getElementById("btnChatPeerNewAvPick");
+    const peerAvBtn = document.getElementById("btnChatPeerNewAv");
+    const peerAvFile = document.getElementById("chatPeerNewAvFile");
+    const pickAv = () => {
+      if (peerAvFile) peerAvFile.click();
+    };
+    if (peerAvPick) peerAvPick.addEventListener("click", pickAv);
+    if (peerAvBtn) peerAvBtn.addEventListener("click", pickAv);
+    if (peerAvFile) {
+      peerAvFile.addEventListener("change", async () => {
+        const file = peerAvFile.files && peerAvFile.files[0];
+        peerAvFile.value = "";
+        if (!file) return;
+        try {
+          const url = await uploadPeerAvatarFile(file);
+          if (!url) throw new Error("没有头像地址");
+          peerNewAvatarUrl = url;
+          const img = document.getElementById("chatPeerNewAvImg");
+          if (img) img.src = url;
+        } catch (err) {
+          shellToast((err && err.message) || "头像上传失败");
+        }
+      });
+    }
+    const memoryDehydrate = document.getElementById("btnChatMemoryDehydrate");
+    if (memoryDehydrate) {
+      memoryDehydrate.addEventListener("click", () => runMemoryDehydrate());
+    }
     /* H1.84：大图开着时 ←/→ 翻页、Esc 关闭；关着不抢输入 */
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
@@ -6922,6 +11292,18 @@
         if (ok) shellToast("已复制");
       });
     }
+    const fileScrim = document.getElementById("chatFileScrim");
+    if (fileScrim) fileScrim.addEventListener("click", closeFileView);
+    const fileClose = document.getElementById("chatFileClose");
+    if (fileClose) fileClose.addEventListener("click", closeFileView);
+    const fileCopy = document.getElementById("chatFileCopy");
+    if (fileCopy) {
+      fileCopy.addEventListener("click", async () => {
+        if (!fileViewCopy) return;
+        const ok = await copyCtxText(fileViewCopy);
+        if (ok) shellToast("已复制");
+      });
+    }
   }
 
   function bind() {
@@ -6931,6 +11313,10 @@
     const back = document.getElementById("btnChatBack");
     if (back) {
       back.addEventListener("click", () => {
+        if (multiMode) {
+          exitMultiMode();
+          return;
+        }
         const song = document.getElementById("chatSongModal");
         if (song && !song.hidden) {
           closeChatSongModal();
@@ -6944,6 +11330,11 @@
         const loc = document.getElementById("chatLocView");
         if (loc && !loc.hidden) {
           closeLocView();
+          return;
+        }
+        const fileV = document.getElementById("chatFileView");
+        if (fileV && !fileV.hidden) {
+          closeFileView();
           return;
         }
         const pic = document.getElementById("chatPicView");
@@ -6974,6 +11365,18 @@
           if (nearBottom) setNewMsgChip(0);
         },
         { passive: true }
+      );
+      thread.addEventListener(
+        "click",
+        (e) => {
+          if (!multiMode) return;
+          const row = e.target.closest(".wx-row[data-msg-id]");
+          if (!row) return;
+          e.preventDefault();
+          e.stopPropagation();
+          toggleMultiId(row.dataset.msgId);
+        },
+        true
       );
     }
     const form = document.getElementById("chatForm");
@@ -7087,6 +11490,10 @@
     if (pickVideo) pickVideo.addEventListener("click", () => openCall("video"));
     const pickCancel = document.getElementById("chatCallPickCancel");
     if (pickCancel) pickCancel.addEventListener("click", closeCallPicker);
+    const giftBtn = document.getElementById("chatCallGiftBtn");
+    if (giftBtn) giftBtn.addEventListener("click", openCallGiftSheet);
+    const giftCancel = document.getElementById("chatCallGiftCancel");
+    if (giftCancel) giftCancel.addEventListener("click", closeCallGiftSheet);
     const histCancel = document.getElementById("chatHistCancel");
     if (histCancel) histCancel.addEventListener("click", () => closeHist());
     const histQ = document.getElementById("chatHistQ");
@@ -7106,6 +11513,12 @@
     }
     const dateBack = document.getElementById("chatHistDateBack");
     if (dateBack) dateBack.addEventListener("click", () => showHistHome());
+    const dayPrev = document.getElementById("chatHistDayPrev");
+    if (dayPrev) dayPrev.addEventListener("click", () => shiftHistDay(-1));
+    const dayNext = document.getElementById("chatHistDayNext");
+    if (dayNext) dayNext.addEventListener("click", () => shiftHistDay(1));
+    const dayLab = document.getElementById("chatHistDayLab");
+    if (dayLab) dayLab.addEventListener("click", () => showHistDates());
     const calJump = document.getElementById("chatHistCalJump");
     const calMonth = document.getElementById("chatHistCalMonth");
     if (calJump && calMonth) {
@@ -7198,6 +11611,12 @@
         }
       });
     }
+    const multiCancel = document.getElementById("chatMultiCancel");
+    if (multiCancel) multiCancel.addEventListener("click", () => exitMultiMode());
+    const multiArchive = document.getElementById("chatMultiArchive");
+    if (multiArchive) multiArchive.addEventListener("click", () => multiArchiveUi());
+    const multiDigest = document.getElementById("chatMultiDigest");
+    if (multiDigest) multiDigest.addEventListener("click", () => multiDigestUi());
     const multiDel = document.getElementById("chatMultiDel");
     if (multiDel) multiDel.addEventListener("click", () => multiDeleteUi());
     const multiCopy = document.getElementById("chatMultiCopy");
@@ -7214,6 +11633,21 @@
       });
     }
     syncSendPlus();
+  }
+
+  function tryJoinCallGuestFromUrl() {
+    try {
+      const u = new URL(location.href);
+      const gid = String(u.searchParams.get("callGuest") || "").trim();
+      if (!gid) return;
+      u.searchParams.delete("callGuest");
+      try {
+        history.replaceState({}, "", u.pathname + u.search + u.hash);
+      } catch (_) {}
+      deps.showView("chat");
+      startCallGuestPeer(gid);
+      shellToast("对端入会中…");
+    } catch (_) {}
   }
 
   function mount(d) {
@@ -7233,12 +11667,21 @@
       syncShellAvatars();
       applyChatBg();
     } catch (_) {}
+    try {
+      refreshVoiceBarPref();
+    } catch (_) {}
+    try {
+      tryJoinCallGuestFromUrl();
+    } catch (_) {}
   }
 
   global.ChatApp = {
     mount: mount,
     onShow: onShowChatShell,
     refreshThread: refreshChatThread,
+    refreshVoiceBar: refreshVoiceBarPref,
     noteBotPing: noteBotPing,
+    handlePoke: handlePoke,
+    onWs: onCallWsMessage,
   };
 })(typeof window !== "undefined" ? window : globalThis);

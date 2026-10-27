@@ -6,16 +6,49 @@ const {
   createEvent,
   updateEvent,
   deleteEvent,
+  listNotes,
+  createNote,
   localDateISO,
 } = require("../../日历app/gateway/calendar");
 const {
   fetchMcpTools,
   callMcpTool,
+  fetchMcpToolsMulti,
+  callMcpToolMulti,
+  endpointsFromSettings,
+  getMcpStatus,
   sanitizeToolName,
   clearMcpToolsCache,
 } = require("../../共读app/gateway/mcp-remote");
 
 const MAX_TOOL_ROUNDS = 4;
+/** 同轮留笺上限（对齐 IB 日历写入量级） */
+const STICKY_LEAVE_MAX_PER_REPLY = 2;
+
+/**
+ * H4 取数/动作分型：动作类只回传成败，不触发同轮续答。
+ * MCP / 未列入者默认当取数（可续答）。
+ */
+const ACTION_TOOL_NAMES = new Set([
+  "calendar_create_event",
+  "calendar_update_event",
+  "calendar_delete_event",
+  "sticky_leave_note",
+  "auto_memory_upsert",
+  "auto_memory_delete",
+  "moments_post",
+  "moments_comment",
+  "moments_like",
+  "share_music",
+  "start_call",
+  "set_avatar",
+  "block_user",
+  "unblock_user",
+]);
+
+function isActionTool(name) {
+  return ACTION_TOOL_NAMES.has(String(name || "").trim());
+}
 
 /** 设定页 / 气泡展示用；LLM 仍走 function.name */
 const DEFAULT_LABELS = {
@@ -23,10 +56,27 @@ const DEFAULT_LABELS = {
   calendar_create_event: "建行程",
   calendar_update_event: "改行程",
   calendar_delete_event: "删行程",
+  sticky_list_notes: "查便笺",
+  sticky_leave_note: "留便笺",
+  auto_memory_list: "查档案",
+  auto_memory_upsert: "写档案",
+  auto_memory_delete: "删档案",
+  moments_list: "翻朋友圈",
+  moments_post: "发朋友圈",
+  moments_comment: "评朋友圈",
+  moments_like: "赞朋友圈",
+  geo_location: "查定位",
+  weather_now: "查天气",
   cam_check: "看一眼屏幕",
   view_activity: "查看动态",
+  peek_phone: "查手机",
+  phone_device: "手机状态",
   schedule_monitor: "定时监控",
   share_music: "点歌",
+  start_call: "拨打电话",
+  set_avatar: "换头像",
+  block_user: "拉黑对方",
+  unblock_user: "解除拉黑",
 };
 
 /** AionsHome CAM_CHECK：提示后缓冲再截；真摄像头后置，V2 先截主屏 */
@@ -107,6 +157,205 @@ const TOOL_DEFS = [
   {
     type: "function",
     function: {
+      name: "sticky_list_notes",
+      description:
+        "查询日历旁便笺（你与家机共写的日便签，按时间倒序）。" +
+        "想提起某天的便签、核对有没有留过话时用。不等于备忘录 App 杂记。",
+      parameters: {
+        type: "object",
+        properties: {
+          date: { type: "string", description: "YYYY-MM-DD；省略则今日" },
+          limit: {
+            type: "integer",
+            description: "最多条数 1～12，默认 8",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "sticky_leave_note",
+      description:
+        "以家机身份在日历日页留一张便笺（署名 companion）。" +
+        "可挂关联行程 event_id（来自 calendar_list_events）。" +
+        "想叮嘱/提醒/贴一句在某天上时用；每条回复最多 2 次。不要口头说贴了却不调工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          body: { type: "string", description: "便笺正文，短句" },
+          date: { type: "string", description: "YYYY-MM-DD；省略则今日" },
+          event_id: {
+            type: "string",
+            description: "可选，关联行程 id",
+          },
+        },
+        required: ["body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "auto_memory_list",
+      description:
+        "查阅你对对方的长期了解档案（Auto Memory，≠会话记忆库）。" +
+        "核对「我记得你…」或找工作/叮嘱类事实时用。",
+      parameters: {
+        type: "object",
+        properties: {
+          category: {
+            type: "string",
+            description:
+              "work|personal|top_of_mind|history|background|instructions",
+          },
+          q: { type: "string", description: "关键词" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "auto_memory_upsert",
+      description:
+        "写入或更新「你对对方的了解」档案条目（长期事实/偏好/叮嘱）。" +
+        "每条回复最多 3 次；正文≤600字；priority=always 全档最多 3 条。" +
+        "值得记进档案时用；琐碎闲聊别写。不等于记忆库。",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "有则更新" },
+          body: { type: "string", description: "档案正文" },
+          category: {
+            type: "string",
+            description:
+              "work|personal|top_of_mind|history|background|instructions",
+          },
+          priority: {
+            type: "string",
+            enum: ["always", "normal", "low"],
+            description: "always=核心必注入",
+          },
+        },
+        required: ["body"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "auto_memory_delete",
+      description: "删除一条档案（过时/对方更正时）。需 id。",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+        },
+        required: ["id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "moments_list",
+      description:
+        "翻看朋友圈时间线（仅你可见范围内的动态）。想知道对方近况、找可评的帖子时用。",
+      parameters: {
+        type: "object",
+        properties: {
+          limit: { type: "number", description: "条数，默认 12，最大 30" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "moments_post",
+      description:
+        "发一条朋友圈动态（署你的名）。每条回复最多 1 条；正文短文即可。" +
+        "若设定为「需确认」，只提交预览，等对方点同意后才真正发出。",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string", description: "动态正文" },
+        },
+        required: ["text"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "moments_comment",
+      description:
+        "评论一条朋友圈。每条回复最多 2 次。需先 moments_list 拿 post_id。",
+      parameters: {
+        type: "object",
+        properties: {
+          post_id: { type: "string" },
+          text: { type: "string", description: "评论正文" },
+        },
+        required: ["post_id", "text"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "moments_like",
+      description: "给一条朋友圈点赞（或取消）。需 post_id。",
+      parameters: {
+        type: "object",
+        properties: {
+          post_id: { type: "string" },
+        },
+        required: ["post_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "geo_location",
+      description:
+        "读取对方最近一次定位（浏览器上报）或设定里的手动城市。" +
+        "关心「你在哪/到了没」时用；不要每轮都查。",
+      parameters: {
+        type: "object",
+        properties: {
+          city: {
+            type: "string",
+            description: "可选：临时按城市名查坐标（不改对方定位）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "weather_now",
+      description:
+        "查当前天气（Open-Meteo）。默认用对方定位/手动城市；可传 city 查别的城市。" +
+        "出门/冷不冷/带不带伞时用；结果约缓存 45 分钟。",
+      parameters: {
+        type: "object",
+        properties: {
+          city: {
+            type: "string",
+            description: "可选城市名；空则用定位或手动城市",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "cam_check",
       description:
         "主动看一眼对方电脑主屏（会先提示对方并等待数秒再截屏）。" +
@@ -141,6 +390,44 @@ const TOOL_DEFS = [
           why: {
             type: "string",
             description: "为什么要看动态（短中文）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "peek_phone",
+      description:
+        "偷看对方小手机虚拟壳：在哪个 App、是否在微信、跟谁聊（会话名）。" +
+        "吃醋/关心/找人/怀疑在跟谁聊时用；不要每轮都查、不要说「我监控了你」。" +
+        "这不是电脑截屏；电脑请用 view_activity / cam_check。",
+      parameters: {
+        type: "object",
+        properties: {
+          why: {
+            type: "string",
+            description: "为什么要查（短中文）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "phone_device",
+      description:
+        "读小手机设备态：电量/充电、在线网络、是否锁屏、是否 PWA。" +
+        "关心熬夜/没电/是不是还亮着屏时用；不返回跟谁聊天。" +
+        "会话内容请用 peek_phone。",
+      parameters: {
+        type: "object",
+        properties: {
+          why: {
+            type: "string",
+            description: "为什么要看状态（短中文）",
           },
         },
       },
@@ -218,6 +505,97 @@ const TOOL_DEFS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "start_call",
+      description:
+        "向对方发起语音/视频来电（对方手机弹出接听层，像微信来电）。" +
+        "用于：对方说打电话/打过来/语音通话/视频通话/拨给我。" +
+        "必须真调本工具，禁止只回复「打了」或说没有拨号工具。" +
+        "默认 voice；对方明确要视频时用 video。",
+      parameters: {
+        type: "object",
+        properties: {
+          media: {
+            type: "string",
+            enum: ["voice", "video"],
+            description: "voice=语音（默认），video=视频",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "block_user",
+      description:
+        "拉黑对方：之后不再回复，但仍能读到对方发来的消息（和好/道歉等）。" +
+        "生气到不想理人、冷战时用。必须真调本工具；解除用 unblock_user。" +
+        "拉黑后本回合仍可说一句冷的收尾，之后系统会自动不接话。",
+      parameters: {
+        type: "object",
+        properties: {
+          why: {
+            type: "string",
+            description: "可选，为何拉黑（短）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "unblock_user",
+      description:
+        "解除对对方的拉黑，恢复正常回复。对方示好/道歉/求和且你愿意理了就调。" +
+        "必须真调；禁止只说「不黑了」却不调工具。",
+      parameters: {
+        type: "object",
+        properties: {
+          why: {
+            type: "string",
+            description: "可选，为何解除（短）",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_avatar",
+      description:
+        "把聊天里对方发来的图设成头像（默认换你自己的头像）。" +
+        "对方发多张候选并说选一个喜欢的/换头像时：先看图，再调用本工具。" +
+        "用 pick=候选编号（见 [候选头像#N]），或 url=/api/v1/chat/media/…；也可 message_id。" +
+        "必须真调；禁止只说「换成这张了」。",
+      parameters: {
+        type: "object",
+        properties: {
+          pick: {
+            type: "integer",
+            description: "候选头像编号 1…N（优先）",
+          },
+          url: {
+            type: "string",
+            description: "图片地址，如 /api/v1/chat/media/….jpg",
+          },
+          message_id: {
+            type: "string",
+            description: "某条图片消息的 id",
+          },
+          who: {
+            type: "string",
+            enum: ["bot", "you"],
+            description: "bot=换我的头像（默认）；you=换对方头像（少用）",
+          },
+        },
+      },
+    },
+  },
 ];
 
 function parseArgs(raw) {
@@ -229,6 +607,18 @@ function parseArgs(raw) {
     return o && typeof o === "object" ? o : {};
   } catch {
     return {};
+  }
+}
+
+/** H3 操作卡展开用：格式化截断，勿塞超长 */
+function formatToolDetail(result) {
+  const raw = String(result == null ? "" : result).trim();
+  if (!raw) return "";
+  try {
+    const o = JSON.parse(raw);
+    return JSON.stringify(o, null, 2).slice(0, 1200);
+  } catch (_) {
+    return raw.slice(0, 1200);
   }
 }
 
@@ -265,6 +655,9 @@ function summarizeToolResult(name, result, ok) {
       return "「" + t + "」";
     }
     if (o && (o.deleted || o.ok === true) && n.includes("delete")) return "已删除";
+    if (o && typeof o.summary === "string" && o.summary.trim()) {
+      return o.summary.trim().slice(0, 40);
+    }
     if (o && typeof o.message === "string" && o.message.trim()) {
       return o.message.trim().slice(0, 40);
     }
@@ -326,6 +719,91 @@ function summarizeToolResult(name, result, ok) {
       }
       return "已发音乐卡";
     }
+    if (n === "start_call") {
+      return o && o.media === "video" ? "已拨视频" : "已拨语音";
+    }
+    if (n === "set_avatar") {
+      if (o && o.pick) return "已换#" + o.pick;
+      return o && o.who === "you" ? "已换对方头像" : "已换头像";
+    }
+    if (n === "block_user") return "已拉黑";
+    if (n === "unblock_user") return "已解除拉黑";
+    if (n === "sticky_list_notes") {
+      if (o && Array.isArray(o.notes)) {
+        if (!o.notes.length) return "无便笺";
+        const first = String((o.notes[0] && o.notes[0].body) || "").trim().slice(0, 16);
+        let s = o.notes.length + " 条";
+        if (first) s += "：「" + first + (String(o.notes[0].body || "").length > 16 ? "…" : "") + "」";
+        return s.length > 48 ? s.slice(0, 48) + "…" : s;
+      }
+      return "已查便笺";
+    }
+    if (n === "sticky_leave_note") {
+      if (o && o.note && o.note.body) {
+        const t = String(o.note.body).trim().slice(0, 16);
+        const link = o.note.event_title
+          ? "·" + String(o.note.event_title).slice(0, 8)
+          : "";
+        return "已留「" + t + (String(o.note.body).length > 16 ? "…" : "") + "」" + link;
+      }
+      return "已留便笺";
+    }
+    if (n === "auto_memory_list") {
+      if (o && Array.isArray(o.entries)) {
+        if (!o.entries.length) return "档案空";
+        return o.entries.length + " 条档案";
+      }
+      return "已查档案";
+    }
+    if (n === "auto_memory_upsert") {
+      if (o && o.entry && o.entry.body) {
+        const t = String(o.entry.body).trim().slice(0, 16);
+        return (o.created ? "已记「" : "已改「") + t + (o.entry.body.length > 16 ? "…" : "") + "」";
+      }
+      return "已写档案";
+    }
+    if (n === "auto_memory_delete") return "已删档案";
+    if (n === "moments_list") {
+      if (o && Array.isArray(o.posts)) {
+        if (!o.posts.length) return "圈里空";
+        return "看到 " + o.posts.length + " 条";
+      }
+      return "已翻朋友圈";
+    }
+    if (n === "moments_post") {
+      if (o && o.needs_confirm) return "待你同意发动态";
+      if (o && o.post && o.post.txt) {
+        const t = String(o.post.txt).trim().slice(0, 16);
+        return "已发「" + t + (o.post.txt.length > 16 ? "…" : "") + "」";
+      }
+      return "已发动态";
+    }
+    if (n === "moments_comment") {
+      if (o && o.needs_confirm) return "待你同意评论";
+      return "已评论";
+    }
+    if (n === "moments_like") {
+      if (o && o.needs_confirm) return "待你同意点赞";
+      return o && o.liked === false ? "已取消赞" : "已赞";
+    }
+    if (n === "geo_location") {
+      if (o && o.label) return String(o.label).slice(0, 24);
+      if (o && o.lat != null) return "已定位";
+      return "已查定位";
+    }
+    if (n === "weather_now") {
+      if (o && o.weather != null && o.temperature_c != null) {
+        return (
+          String(o.place || "").slice(0, 10) +
+          " " +
+          o.weather +
+          " " +
+          o.temperature_c +
+          "°C"
+        ).trim();
+      }
+      return "已查天气";
+    }
   } catch {
     /* plain / MCP 文本 */
   }
@@ -334,7 +812,7 @@ function summarizeToolResult(name, result, ok) {
   return t.length > 48 ? t.slice(0, 48) + "…" : t;
 }
 
-function runBuiltinTool(name, argsRaw) {
+function runBuiltinTool(name, argsRaw, opts) {
   const args = parseArgs(argsRaw);
   const n = String(name || "").trim();
   try {
@@ -379,6 +857,170 @@ function runBuiltinTool(name, argsRaw) {
       const r = deleteEvent(args.id);
       return { ok: true, name: n, result: JSON.stringify(r) };
     }
+    if (n === "sticky_list_notes") {
+      const day = args.date
+        ? String(args.date).trim()
+        : localDateISO(new Date());
+      let lim = Math.floor(Number(args.limit));
+      if (!Number.isFinite(lim) || lim < 1) lim = 8;
+      if (lim > 12) lim = 12;
+      const r = listNotes({ date: day });
+      const notes = (r.notes || [])
+        .slice()
+        .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
+        .slice(0, lim)
+        .map((note) => ({
+          id: note.id,
+          date: note.date,
+          body: note.body,
+          owner: note.owner,
+          liked: !!note.liked,
+          event_id: note.event_id || undefined,
+          event_title: note.event_title || undefined,
+          updated_at: note.updated_at,
+        }));
+      return {
+        ok: true,
+        name: n,
+        result: JSON.stringify({
+          ok: true,
+          today: localDateISO(new Date()),
+          date: day,
+          notes,
+        }),
+      };
+    }
+    if (n === "sticky_leave_note") {
+      const used = Number(opts && opts.stickyLeaveUsed) || 0;
+      if (used >= STICKY_LEAVE_MAX_PER_REPLY) {
+        return {
+          ok: false,
+          name: n,
+          result: JSON.stringify({
+            ok: false,
+            error: "sticky_limit",
+            message: "本轮留笺已达上限（" + STICKY_LEAVE_MAX_PER_REPLY + "）",
+          }),
+        };
+      }
+      const body = String(args.body || "").trim();
+      const date = args.date
+        ? String(args.date).trim()
+        : localDateISO(new Date());
+      const r = createNote({
+        body,
+        date,
+        owner: "companion",
+        event_id: args.event_id,
+      });
+      return { ok: true, name: n, result: JSON.stringify(r) };
+    }
+    if (
+      n === "moments_list" ||
+      n === "moments_post" ||
+      n === "moments_comment" ||
+      n === "moments_like"
+    ) {
+      const { runMomentsAi } = require("./moments");
+      let botName = "家机";
+      try {
+        const { listPeers, currentPeerId } = require("./daily-chat");
+        const pid = String((opts && opts.peerId) || currentPeerId() || "daily");
+        const hit = ((listPeers().peers || []).find((p) => p && p.id === pid));
+        if (hit && hit.name) botName = String(hit.name).slice(0, 32);
+      } catch (_) {}
+      const settings = (opts && opts.settings) || {};
+      const mode =
+        String(settings.moments_ai_mode || "confirm").toLowerCase() === "auto"
+          ? "auto"
+          : "confirm";
+      const act =
+        n === "moments_list"
+          ? "list"
+          : n === "moments_post"
+            ? "post"
+            : n === "moments_comment"
+              ? "comment"
+              : "like";
+      const r = runMomentsAi(act, args, {
+        mode,
+        peerId: opts && opts.peerId,
+        botName,
+        postsUsed: Number(opts && opts.momentsPostsUsed) || 0,
+        commentsUsed: Number(opts && opts.momentsCommentsUsed) || 0,
+      });
+      return {
+        ok: !!(r && r.ok),
+        name: n,
+        result: JSON.stringify(r),
+      };
+    }
+    if (
+      n === "auto_memory_list" ||
+      n === "auto_memory_upsert" ||
+      n === "auto_memory_delete"
+    ) {
+      const {
+        listEntries,
+        upsertEntry,
+        deleteEntry,
+        OPS_MAX_PER_REPLY,
+        normalizePeerId,
+      } = require("./auto-memory");
+      let pid = normalizePeerId(opts && opts.peerId);
+      if (!pid || pid === "daily") {
+        try {
+          const { currentPeerId } = require("./daily-chat");
+          pid = normalizePeerId(currentPeerId());
+        } catch (_) {
+          pid = "daily";
+        }
+      }
+      if (n === "auto_memory_list") {
+        const r = listEntries(pid, {
+          category: args.category,
+          q: args.q,
+          limit: 24,
+        });
+        return {
+          ok: true,
+          name: n,
+          result: JSON.stringify({
+            ok: true,
+            entries: (r.entries || []).map((e) => ({
+              id: e.id,
+              category: e.category,
+              priority: e.priority,
+              body: e.body,
+            })),
+            chars: r.chars,
+          }),
+        };
+      }
+      const opsUsed = Number(opts && opts.autoMemoryOpsUsed) || 0;
+      if (opsUsed >= OPS_MAX_PER_REPLY) {
+        return {
+          ok: false,
+          name: n,
+          result: JSON.stringify({
+            ok: false,
+            error: "auto_memory_limit",
+            message: "本轮档案操作已达上限（" + OPS_MAX_PER_REPLY + "）",
+          }),
+        };
+      }
+      if (n === "auto_memory_upsert") {
+        const r = upsertEntry(pid, {
+          id: args.id,
+          body: args.body,
+          category: args.category,
+          priority: args.priority,
+        });
+        return { ok: true, name: n, result: JSON.stringify(r) };
+      }
+      const r = deleteEntry(pid, args.id);
+      return { ok: true, name: n, result: JSON.stringify(r) };
+    }
     return null;
   } catch (e) {
     return {
@@ -409,7 +1051,35 @@ async function getToolBundle(settings = {}) {
       ? settings.mcp_tool_hidden.map((x) => String(x || "").trim()).filter(Boolean)
       : []
   );
-  const defs = TOOL_DEFS.slice();
+  const defs = TOOL_DEFS.filter((t) => {
+    const n = t && t.function && t.function.name;
+    if (n === "peek_phone" && settings.peek_phone_enabled === false) return false;
+    if (n === "phone_device" && settings.phone_device_enabled === false) {
+      return false;
+    }
+    /* 未开 PC 前台采样则不暴露查看动态（关了 AI 不知道有这招） */
+    if (n === "view_activity" && !settings.activity_enabled) return false;
+    if (
+      (n === "auto_memory_list" ||
+        n === "auto_memory_upsert" ||
+        n === "auto_memory_delete") &&
+      !settings.auto_memory_enabled
+    ) {
+      return false;
+    }
+    if (
+      (n === "moments_list" ||
+        n === "moments_post" ||
+        n === "moments_comment" ||
+        n === "moments_like") &&
+      !settings.moments_ai_enabled
+    ) {
+      return false;
+    }
+    if (n === "geo_location" && !settings.geo_tool_enabled) return false;
+    if (n === "weather_now" && !settings.weather_tool_enabled) return false;
+    return true;
+  });
   const used = new Set(
     defs.map((t) => t.function && t.function.name).filter(Boolean)
   );
@@ -428,13 +1098,11 @@ async function getToolBundle(settings = {}) {
   let mcpError = null;
 
   const mcpOn = !!settings.mcp_enabled;
-  const mcpUrl = String(settings.mcp_url || "").trim();
-  if (mcpOn && mcpUrl) {
+  const mcpEndpoints = endpointsFromSettings(settings);
+  if (mcpOn && mcpEndpoints.length) {
     try {
-      const remote = await fetchMcpTools({
-        url: mcpUrl,
-        token: settings.mcp_token,
-      });
+      const bundled = await fetchMcpToolsMulti(mcpEndpoints);
+      const remote = (bundled && bundled.tools) || [];
       for (const rt of remote) {
         let llmName = sanitizeToolName(rt.name);
         if (used.has(llmName)) llmName = sanitizeToolName("mcp_" + rt.name);
@@ -479,18 +1147,31 @@ async function getToolBundle(settings = {}) {
  * @returns {Promise<{ ok: true, count: number, names: string[] }>}
  */
 async function pingMcpConnection(opts = {}) {
+  const endpoints = [];
   const url = String(opts.url != null ? opts.url : "").trim();
   const token = String(opts.token != null ? opts.token : "").trim();
-  if (!url) {
+  if (url) endpoints.push({ url, token, label: "主" });
+  const url2 = String(opts.url_2 != null ? opts.url_2 : "").trim();
+  const token2 = String(opts.token_2 != null ? opts.token_2 : "").trim();
+  if (url2) endpoints.push({ url: url2, token: token2, label: "备" });
+  if (!endpoints.length) {
     const err = new Error("请先填写 MCP Base URL");
     err.code = "mcp_no_url";
     throw err;
   }
-  const tools = await fetchMcpTools({ url, token, force: true });
-  const names = (tools || [])
+  const bundled = await fetchMcpToolsMulti(endpoints, { force: true });
+  const tools = (bundled && bundled.tools) || [];
+  const names = tools
     .map((t) => String((t && t.name) || "").trim())
     .filter(Boolean);
-  return { ok: true, count: names.length, names: names.slice(0, 12) };
+  const st = getMcpStatus();
+  return {
+    ok: true,
+    count: names.length,
+    names: names.slice(0, 12),
+    via: (bundled.endpoint && bundled.endpoint.label) || "",
+    status: st,
+  };
 }
 
 /** 设定页 / 自检：当前可调工具一览 */
@@ -672,6 +1353,166 @@ function clampActivityWindowMin(args) {
  * 点歌：网易云/Apple 真卡（或共听当前曲）。聊天工具路径；与共听页弹窗无关，勿删。
  * @param {{ query?: string, name?: string, artist?: string, pick_id?: number, from_presence?: boolean, title?: string }} opts
  */
+/** 从近期候选图 / url / message_id 换头像 */
+function runSetAvatar(opts = {}) {
+  const a = opts && typeof opts === "object" ? opts : {};
+  const who = a.who === "you" ? "you" : "bot";
+  try {
+    const {
+      listRecentYouImages,
+      applyChatAvatar,
+      listMessages,
+    } = require("./daily-chat");
+    let url = String(a.url || a.avatar || "").trim();
+    const mid = String(a.message_id || a.messageId || "").trim();
+    const pick = Math.floor(Number(a.pick != null ? a.pick : a.index) || 0);
+    if (!url && mid) {
+      const hit = (listMessages().messages || []).find((m) => m && m.id === mid);
+      if (hit && hit.kind === "image") url = String(hit.body || "").trim();
+    }
+    const cands = listRecentYouImages(8);
+    if (!url && pick > 0) {
+      const hit = cands.find((c) => c.pick === pick);
+      if (hit) url = hit.url;
+    }
+    if (!url && cands.length === 1) url = cands[0].url;
+    const urlOk =
+      url.startsWith("/api/v1/chat/media/") ||
+      url.startsWith("/assets/") ||
+      /^https?:\/\//i.test(url);
+    if (!url || !urlOk) {
+      return {
+        ok: false,
+        name: "set_avatar",
+        result: JSON.stringify({
+          ok: false,
+          error: "no_image",
+          message:
+            cands.length > 1
+              ? "请用 pick=1…" + cands.length + " 指定候选，或给 url"
+              : "近期没有可用图片，请对方先发图",
+          candidates: cands.map((c) => ({ pick: c.pick, url: c.url })),
+        }),
+      };
+    }
+    const applied = applyChatAvatar({ url, who });
+    const usedPick = (cands.find((c) => c.url === url) || {}).pick || pick || 0;
+    return {
+      ok: true,
+      name: "set_avatar",
+      result: JSON.stringify({
+        ok: true,
+        who: applied.who,
+        url: applied.url,
+        peerId: applied.peerId,
+        pick: usedPick || undefined,
+        hint: "头像已换好；用一两句说说喜欢哪点即可，勿再说「没法换」。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "set_avatar",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "avatar_failed",
+        message: String((e && e.message) || e || "换头像失败").slice(0, 160),
+      }),
+    };
+  }
+}
+
+function runBlockUser(opts = {}) {
+  try {
+    const { setPeerBlocksYou } = require("./daily-chat");
+    setPeerBlocksYou(true);
+    const why = String((opts && opts.why) || "").trim().slice(0, 40);
+    return {
+      ok: true,
+      name: "block_user",
+      result: JSON.stringify({
+        ok: true,
+        blocks_you: true,
+        why: why || undefined,
+        hint:
+          "已拉黑对方。之后系统不会再代你回复，但你仍能读到对方消息；对方求和时用 unblock_user 解除。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "block_user",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "block_failed",
+        message: String((e && e.message) || e || "拉黑失败").slice(0, 160),
+      }),
+    };
+  }
+}
+
+function runUnblockUser(opts = {}) {
+  try {
+    const { setPeerBlocksYou } = require("./daily-chat");
+    setPeerBlocksYou(false);
+    const why = String((opts && opts.why) || "").trim().slice(0, 40);
+    return {
+      ok: true,
+      name: "unblock_user",
+      result: JSON.stringify({
+        ok: true,
+        blocks_you: false,
+        why: why || undefined,
+        hint: "已解除拉黑，可正常回复对方。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "unblock_user",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "unblock_failed",
+        message: String((e && e.message) || e || "解除失败").slice(0, 160),
+      }),
+    };
+  }
+}
+
+/** 家机主动拨过来：落一条 inbound 通话邀请 */
+function runStartCall(opts = {}) {
+  const a = opts && typeof opts === "object" ? opts : {};
+  const media = a.media === "video" ? "video" : "voice";
+  try {
+    const { startChatCall } = require("./daily-chat");
+    const out = startChatCall(media, "in");
+    const lab = media === "video" ? "视频" : "语音";
+    return {
+      ok: true,
+      name: "start_call",
+      result: JSON.stringify({
+        ok: true,
+        media,
+        message: out && out.message,
+        hint:
+          "已向对方发起" +
+          lab +
+          "来电，对方会弹出接听界面。用一两句口语说打过去了即可；勿再说没有拨号工具、勿假装还在拨号中。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "start_call",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "call_failed",
+        message: String((e && e.message) || e || "拨号失败").slice(0, 160),
+      }),
+    };
+  }
+}
+
 async function runShareMusic(opts = {}) {
   const a = opts && typeof opts === "object" ? opts : {};
   const fromPresence = !!(a.from_presence || a.fromPresence);
@@ -1015,6 +1856,160 @@ function runViewActivity(opts = {}) {
   }
 }
 
+function runPeekPhone(settings) {
+  try {
+    const { summarizePeek } = require("./phone-presence");
+    const s = settings || {};
+    if (s.peek_phone_enabled === false) {
+      return {
+        ok: false,
+        name: "peek_phone",
+        result: JSON.stringify({
+          ok: false,
+          error: "peek_disabled",
+          message: "对方关掉了「查手机」权限",
+        }),
+      };
+    }
+    const out = summarizePeek({ l1: !!s.peek_phone_l1_enabled });
+    return {
+      ok: true,
+      name: "peek_phone",
+      result: JSON.stringify({
+        ...out,
+        hint: "用一两句口语提起即可；勿说「我查了你手机」。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "peek_phone",
+      result: JSON.stringify({
+        ok: false,
+        error: e.code || "peek_failed",
+        message: String((e && e.message) || e).slice(0, 160),
+      }),
+    };
+  }
+}
+
+function runPhoneDevice(settings) {
+  try {
+    const { summarizeDevice } = require("./phone-presence");
+    const s = settings || {};
+    if (s.phone_device_enabled === false) {
+      return {
+        ok: false,
+        name: "phone_device",
+        result: JSON.stringify({
+          ok: false,
+          error: "device_disabled",
+          message: "对方关掉了「手机状态」权限",
+        }),
+      };
+    }
+    const out = summarizeDevice();
+    return {
+      ok: true,
+      name: "phone_device",
+      result: JSON.stringify({
+        ...out,
+        hint: "关心电量/锁屏时用；勿说「我监控了你」。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "phone_device",
+      result: JSON.stringify({
+        ok: false,
+        error: e.code || "device_failed",
+        message: String((e && e.message) || e).slice(0, 160),
+      }),
+    };
+  }
+}
+
+async function runGeoLocation(args, settings) {
+  try {
+    const s = settings || {};
+    if (!s.geo_tool_enabled) {
+      return {
+        ok: false,
+        name: "geo_location",
+        result: JSON.stringify({
+          ok: false,
+          error: "geo_disabled",
+          message: "对方关掉了「定位」权限",
+        }),
+      };
+    }
+    const { getLocationTool } = require("./weather");
+    const out = await getLocationTool({
+      city: args && args.city,
+      manualCity: s.weather_city,
+    });
+    return {
+      ok: true,
+      name: "geo_location",
+      result: JSON.stringify({
+        ...out,
+        hint: "用口语关心即可；勿说精确坐标连环追问。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "geo_location",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "geo_failed",
+        message: String((e && e.message) || e).slice(0, 160),
+      }),
+    };
+  }
+}
+
+async function runWeatherNow(args, settings) {
+  try {
+    const s = settings || {};
+    if (!s.weather_tool_enabled) {
+      return {
+        ok: false,
+        name: "weather_now",
+        result: JSON.stringify({
+          ok: false,
+          error: "weather_disabled",
+          message: "对方关掉了「天气」权限",
+        }),
+      };
+    }
+    const { getWeatherTool } = require("./weather");
+    const out = await getWeatherTool({
+      city: args && args.city,
+      manualCity: s.weather_city,
+    });
+    return {
+      ok: true,
+      name: "weather_now",
+      result: JSON.stringify({
+        ...out,
+        hint: "用一两句提气温/雨雪即可；勿念原始 JSON。",
+      }),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      name: "weather_now",
+      result: JSON.stringify({
+        ok: false,
+        error: (e && e.code) || "weather_failed",
+        message: String((e && e.message) || e).slice(0, 160),
+      }),
+    };
+  }
+}
+
 async function runChatTool(name, argsRaw, ctx = {}) {
   const n = String(name || "").trim();
   if (n === "cam_check") {
@@ -1033,6 +2028,18 @@ async function runChatTool(name, argsRaw, ctx = {}) {
       why: args.why,
     });
   }
+  if (n === "geo_location") {
+    return runGeoLocation(parseArgs(argsRaw), ctx && ctx.settings);
+  }
+  if (n === "weather_now") {
+    return runWeatherNow(parseArgs(argsRaw), ctx && ctx.settings);
+  }
+  if (n === "peek_phone") {
+    return runPeekPhone(ctx && ctx.settings);
+  }
+  if (n === "phone_device") {
+    return runPhoneDevice(ctx && ctx.settings);
+  }
   if (n === "schedule_monitor") {
     const args = parseArgs(argsRaw);
     return runScheduleMonitor(args);
@@ -1041,17 +2048,34 @@ async function runChatTool(name, argsRaw, ctx = {}) {
     const args = parseArgs(argsRaw);
     return await runShareMusic(args);
   }
-  const builtin = runBuiltinTool(n, argsRaw);
+  if (n === "start_call") {
+    const args = parseArgs(argsRaw);
+    return runStartCall(args);
+  }
+  if (n === "set_avatar") {
+    const args = parseArgs(argsRaw);
+    return runSetAvatar(args);
+  }
+  if (n === "block_user") {
+    const args = parseArgs(argsRaw);
+    return runBlockUser(args);
+  }
+  if (n === "unblock_user") {
+    const args = parseArgs(argsRaw);
+    return runUnblockUser(args);
+  }
+  const builtin = runBuiltinTool(n, argsRaw, ctx);
   if (builtin) return builtin;
 
   const mcpMap = ctx.mcpMap;
   const settings = ctx.settings || {};
   const remoteName =
     mcpMap && typeof mcpMap.get === "function" ? mcpMap.get(n) : null;
-  if (remoteName && settings.mcp_enabled && settings.mcp_url) {
+  const mcpEps = endpointsFromSettings(settings);
+  if (remoteName && settings.mcp_enabled && mcpEps.length) {
     try {
-      const text = await callMcpTool(
-        { url: settings.mcp_url, token: settings.mcp_token },
+      const text = await callMcpToolMulti(
+        mcpEps,
         remoteName,
         parseArgs(argsRaw)
       );
@@ -1080,19 +2104,70 @@ if (require.main === module) {
   (async () => {
     const catalog = await listChatTools();
     console.assert(catalog.ok && catalog.tools.length >= 8);
-    console.assert(catalog.tools.every((t) => t.enabled === true));
     console.assert(catalog.tools.some((t) => t.name === "calendar_list_events"));
+    console.assert(catalog.tools.some((t) => t.name === "sticky_list_notes"));
+    console.assert(catalog.tools.some((t) => t.name === "sticky_leave_note"));
+    console.assert(isActionTool("sticky_leave_note"));
+    console.assert(isActionTool("calendar_create_event"));
+    console.assert(isActionTool("auto_memory_upsert"));
+    console.assert(!isActionTool("auto_memory_list"));
+    console.assert(!isActionTool("calendar_list_events"));
+    console.assert(!isActionTool("sticky_list_notes"));
+    const noAm = await getToolBundle({ auto_memory_enabled: false });
+    console.assert(
+      !noAm.defs.some((t) => t.function.name === "auto_memory_upsert")
+    );
+    const withAm = await getToolBundle({ auto_memory_enabled: true });
+    console.assert(
+      withAm.defs.some((t) => t.function.name === "auto_memory_upsert")
+    );
     console.assert(catalog.tools.some((t) => t.name === "cam_check"));
-    console.assert(catalog.tools.some((t) => t.name === "view_activity"));
+    console.assert(catalog.tools.some((t) => t.name === "peek_phone"));
+    console.assert(catalog.tools.some((t) => t.name === "phone_device"));
+    const withAct = await getToolBundle({ activity_enabled: true });
+    console.assert(withAct.defs.some((t) => t.function.name === "view_activity"));
+    const noAct = await getToolBundle({ activity_enabled: false });
+    console.assert(!noAct.defs.some((t) => t.function.name === "view_activity"));
+    const offPeek = await getToolBundle({ peek_phone_enabled: false });
+    console.assert(!offPeek.defs.some((t) => t.function.name === "peek_phone"));
     console.assert(catalog.tools.some((t) => t.name === "schedule_monitor"));
     console.assert(catalog.tools.some((t) => t.name === "share_music"));
+    console.assert(catalog.tools.some((t) => t.name === "start_call"));
+    console.assert(catalog.tools.some((t) => t.name === "set_avatar"));
     console.assert(
       catalog.tools.find((t) => t.name === "calendar_list_events").label === "查行程"
     );
     console.assert(resolveToolLabel("cam_check") === "看一眼屏幕");
     console.assert(resolveToolLabel("view_activity") === "查看动态");
+    console.assert(resolveToolLabel("peek_phone") === "查手机");
+    console.assert(resolveToolLabel("phone_device") === "手机状态");
     console.assert(resolveToolLabel("schedule_monitor") === "定时监控");
     console.assert(resolveToolLabel("share_music") === "点歌");
+    console.assert(resolveToolLabel("start_call") === "拨打电话");
+    console.assert(resolveToolLabel("set_avatar") === "换头像");
+    {
+      const dial = await runChatTool("start_call", { media: "voice" });
+      console.assert(dial.ok, "start_call ok");
+      const o = JSON.parse(dial.result);
+      console.assert(o.message && o.message.kind === "call" && o.message.from === "bot");
+      console.assert(o.message.payload && o.message.payload.dir === "in");
+      console.assert(summarizeToolResult("start_call", dial.result, true) === "已拨语音");
+    }
+    {
+      const { saveChatMedia, appendMessage, applyChatAvatar } = require("./daily-chat");
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64"
+      );
+      const media = saveChatMedia(png, "image/png");
+      appendMessage("you", media.url, "image");
+      const av = await runChatTool("set_avatar", { pick: 1 });
+      console.assert(av.ok, "set_avatar ok");
+      const ao = JSON.parse(av.result);
+      console.assert(ao.url === media.url);
+      console.assert(summarizeToolResult("set_avatar", av.result, true) === "已换#1");
+      applyChatAvatar({ url: "/assets/cafe/avatar-bot.png", who: "bot" });
+    }
     console.assert(
       summarizeToolResult(
         "cam_check",
@@ -1212,8 +2287,54 @@ if (require.main === module) {
       title: ev.title + "-改",
     });
     console.assert(upd.ok);
+    const left = await runChatTool(
+      "sticky_leave_note",
+      { body: "H4自检便笺", date: ev.date, event_id: ev.id },
+      { stickyLeaveUsed: 0 }
+    );
+    console.assert(left.ok, "sticky_leave ok");
+    const leftNote = JSON.parse(left.result).note;
+    console.assert(leftNote && leftNote.owner === "companion");
+    console.assert(leftNote.event_id === ev.id);
+    console.assert(
+      summarizeToolResult("sticky_leave_note", left.result, true).includes("已留")
+    );
+    const stickies = await runChatTool("sticky_list_notes", { date: ev.date });
+    console.assert(stickies.ok && stickies.result.includes("H4自检便笺"));
+    const capped = await runChatTool(
+      "sticky_leave_note",
+      { body: "超限", date: ev.date },
+      { stickyLeaveUsed: STICKY_LEAVE_MAX_PER_REPLY }
+    );
+    console.assert(capped.ok === false);
+    const { deleteNote } = require("../../日历app/gateway/calendar");
+    if (leftNote && leftNote.id) deleteNote(leftNote.id);
     const del = await runChatTool("calendar_delete_event", { id: ev.id });
     console.assert(del.ok);
+    const am = await runChatTool(
+      "auto_memory_upsert",
+      {
+        body: "H6档案自检-" + Date.now(),
+        category: "personal",
+        priority: "normal",
+      },
+      { peerId: "daily", autoMemoryOpsUsed: 0 }
+    );
+    console.assert(am.ok, am.result);
+    const amEntry = JSON.parse(am.result).entry;
+    console.assert(amEntry && amEntry.id);
+    const amList = await runChatTool(
+      "auto_memory_list",
+      { q: "H6档案自检" },
+      { peerId: "daily" }
+    );
+    console.assert(amList.ok && amList.result.includes("H6档案自检"));
+    const amDel = await runChatTool(
+      "auto_memory_delete",
+      { id: amEntry.id },
+      { peerId: "daily", autoMemoryOpsUsed: 0 }
+    );
+    console.assert(amDel.ok);
     console.log("chat-tools ok");
   })().catch((e) => {
     console.error(e);
@@ -1225,18 +2346,26 @@ module.exports = {
   TOOL_DEFS,
   DEFAULT_LABELS,
   MAX_TOOL_ROUNDS,
+  STICKY_LEAVE_MAX_PER_REPLY,
   CAM_CHECK_DELAY_SEC,
+  ACTION_TOOL_NAMES,
+  isActionTool,
   runChatTool,
   runCamCheck,
   runViewActivity,
   runScheduleMonitor,
   runShareMusic,
+  runStartCall,
+  runSetAvatar,
+  runBlockUser,
+  runUnblockUser,
   clampActivityWindowMin,
   parseArgs,
   listChatTools,
   pingMcpConnection,
   resolveToolLabel,
   summarizeToolResult,
+  formatToolDetail,
   getToolBundle,
   clearMcpToolsCache,
 };

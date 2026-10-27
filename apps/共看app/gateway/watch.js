@@ -665,6 +665,59 @@ function deleteTitle(id) {
   return { ok: true, deleted: tid };
 }
 
+/** 扫 media/watch：磁盘上有、片库没有的视频补元数据（不改文件名、不复制） */
+function scanMediaLibrary() {
+  ensureDirs();
+  const all = readAll();
+  const known = new Set(all.titles.map((t) => t.file));
+  let entries;
+  try {
+    entries = fs.readdirSync(MEDIA_DIR, { withFileTypes: true });
+  } catch {
+    return { ok: true, added: [], skipped: 0, scanned: 0 };
+  }
+  const added = [];
+  let skipped = 0;
+  let scanned = 0;
+  for (const ent of entries) {
+    if (!ent.isFile()) continue;
+    const file = ent.name;
+    if (!VIDEO_EXT.has(path.extname(file).toLowerCase())) continue;
+    scanned++;
+    if (known.has(file) || file.includes("..")) {
+      skipped++;
+      continue;
+    }
+    let st;
+    try {
+      st = fs.statSync(path.join(MEDIA_DIR, file));
+    } catch {
+      skipped++;
+      continue;
+    }
+    if (!st.isFile() || st.size <= 0) {
+      skipped++;
+      continue;
+    }
+    const title = normalizeTitle({
+      id: randomUUID(),
+      name: safeDisplayName(file),
+      file,
+      bytes: st.size,
+      ts: Date.now(),
+    });
+    if (!title) {
+      skipped++;
+      continue;
+    }
+    all.titles.unshift(title);
+    known.add(file);
+    added.push(title);
+  }
+  if (added.length) writeAll(all);
+  return { ok: true, added, skipped, scanned };
+}
+
 if (require.main === module) {
   ensureDirs();
   const stamp = "selfcheck-watch-" + Date.now() + ".mp4";
@@ -720,6 +773,16 @@ if (require.main === module) {
         console.assert(!listTitles().titles.some((t) => t.id === created.title.id));
         console.assert(!fs.existsSync(fp));
         console.assert(!readAll().passes.some((x) => x.titleId === created.title.id));
+        const orphan = "selfcheck-scan-" + Date.now() + ".webm";
+        fs.writeFileSync(path.join(MEDIA_DIR, orphan), Buffer.from("webm-scan"));
+        const scanned = scanMediaLibrary();
+        console.assert(scanned.added.some((t) => t.file === orphan));
+        const again = scanMediaLibrary();
+        console.assert(!again.added.some((t) => t.file === orphan));
+        const hit = listTitles().titles.find((t) => t.file === orphan);
+        console.assert(hit);
+        deleteTitle(hit.id);
+        console.assert(!fs.existsSync(path.join(MEDIA_DIR, orphan)));
         console.log("watch ok");
       }
     );
@@ -745,6 +808,7 @@ module.exports = {
   addPassTokensUsed,
   passBudgetExhausted,
   addTitleFromStream,
+  scanMediaLibrary,
   deleteTitle,
   readAll,
   WATCH_PATH,

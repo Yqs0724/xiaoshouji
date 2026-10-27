@@ -1,0 +1,80 @@
+  <div class="view" id="view-memo">
+    <div class="memo-shell">
+      <header class="memo-bar" id="memoListBar">
+        <button type="button" class="memo-ico" id="btnMemoBack" title="回桌面" aria-label="回桌面">←</button>
+        <button type="button" class="memo-title-btn" id="memoTitleBtn" aria-haspopup="listbox" aria-expanded="false">
+          <span id="memoTitle">全部便签</span>
+          <span class="memo-caret" aria-hidden="true">▾</span>
+        </button>
+        <button type="button" class="memo-ico" id="btnMemoCompose" title="新建" aria-label="新建">＋</button>
+      </header>
+
+      <header class="memo-bar memo-edit-bar" id="memoEditBar" hidden>
+        <button type="button" class="memo-ico" id="btnMemoEditBack" title="返回" aria-label="返回">←</button>
+        <div class="memo-edit-title" id="memoEditBarTitle">写便签</div>
+        <button type="button" class="memo-ico" id="btnMemoEditDone" title="完成" aria-label="完成">✓</button>
+      </header>
+
+      <div class="memo-menu" id="memoMenu" hidden>
+        <button type="button" class="memo-menu-item" data-filter="all">
+          <span>全部便签</span><span class="memo-menu-n" id="memoMenuAll">0</span>
+        </button>
+        <button type="button" class="memo-menu-item" data-filter="star">
+          <span>加星便签</span><span class="memo-menu-n" id="memoMenuStar">0</span>
+        </button>
+        <button type="button" class="memo-menu-item" data-filter="keys">
+          <span>密钥</span><span class="memo-menu-n" id="memoMenuKeys">0</span>
+        </button>
+      </div>
+
+      <section class="memo-pane on" id="memoHome">
+        <div class="memo-search-wrap">
+          <input id="memoSearch" type="search" autocomplete="off" placeholder="快速搜寻关键字" />
+        </div>
+        <ul class="memo-card-list" id="memoClipList"></ul>
+      </section>
+
+      <section class="memo-pane" id="memoKeys">
+        <ul class="memo-card-list" id="memoKeyList"></ul>
+      </section>
+
+      <section class="memo-pane" id="memoKeyEdit">
+        <div class="memo-form glass">
+          <label for="memoKeyLabel">名称</label>
+          <input id="memoKeyLabel" type="text" maxlength="40" placeholder="例：家机零花" />
+          <label for="memoKeyValue">内容</label>
+          <input id="memoKeyValue" type="text" maxlength="200" placeholder="例：CASH" />
+          <input id="memoKeyId" type="hidden" />
+          <button type="button" class="memo-danger" id="memoKeyDel" hidden style="width:100%;margin-top:14px">删除</button>
+        </div>
+      </section>
+
+      <section class="memo-pane memo-editor-pane" id="memoEditor">
+        <input id="memoNoteId" type="hidden" />
+        <div class="memo-edit-meta">
+          <span class="memo-folder-chip" id="memoEditFolder">全部便签</span>
+          <span class="memo-edit-when" id="memoEditWhen"></span>
+          <span class="memo-edit-count" id="memoEditCount">0</span>
+          <button type="button" class="memo-star-btn" id="memoNoteStar" aria-pressed="false" title="加星">☆</button>
+          <button type="button" class="memo-del-link" id="memoNoteDel" hidden>删除</button>
+        </div>
+        <input id="memoNoteTitle" type="hidden" />
+        <div
+          id="memoNoteBody"
+          class="memo-body-ed"
+          contenteditable="true"
+          role="textbox"
+          aria-multiline="true"
+          data-placeholder="开始书写…"
+        ></div>
+        <div class="memo-fmt" id="memoFmt" hidden>
+          <button type="button" class="memo-fmt-btn" data-fmt="h"><span class="ico">H</span><span class="lab">标题</span></button>
+          <button type="button" class="memo-fmt-btn" data-fmt="center"><span class="ico ico-center" aria-hidden="true"></span><span class="lab">居中</span></button>
+          <button type="button" class="memo-fmt-btn" data-fmt="list"><span class="ico ico-list" aria-hidden="true"></span><span class="lab">列表</span></button>
+          <button type="button" class="memo-fmt-btn" data-fmt="bold"><span class="ico">B</span><span class="lab">粗体</span></button>
+          <button type="button" class="memo-fmt-btn" data-fmt="quote"><span class="ico">“</span><span class="lab">引用</span></button>
+          <button type="button" class="memo-fmt-btn" data-fmt="todo"><span class="ico">☑</span><span class="lab">待办事项</span></button>
+        </div>
+      </section>
+    </div>
+  </div>

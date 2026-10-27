@@ -30,7 +30,7 @@
    position: absolute;
    left: 50%;
    transform: translateX(-50%);
-   max-width: calc(100% - 140px);
+   max-width: calc(100% - 180px);
    text-align: center;
    font-size: 17px;
    font-weight: 600;
@@ -40,6 +40,15 @@
    text-overflow: ellipsis;
    pointer-events: none;
  }
+ .cw-bar-actions {
+   display: flex;
+   align-items: center;
+   gap: 6px;
+   position: relative;
+   z-index: 1;
+   flex-shrink: 0;
+ }
+ .cw-bar .scan,
  .cw-bar .add {
    border: 0;
    background: rgba(90, 140, 120, .18);
@@ -49,9 +58,12 @@
    padding: 6px 12px;
    border-radius: 999px;
    cursor: pointer;
-   position: relative;
-   z-index: 1;
  }
+ .cw-bar .scan {
+   background: rgba(90, 110, 140, .14);
+   color: #3a4a5a;
+ }
+ .cw-bar .scan:disabled,
  .cw-bar .add:disabled {
    opacity: .45;
    cursor: default;

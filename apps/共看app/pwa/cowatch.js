@@ -420,7 +420,7 @@ async function refreshCowatchList() {
       const hint = document.createElement("p");
       hint.style.margin = "6px 0 0";
       hint.style.fontSize = "12px";
-      hint.textContent = "点右上角「加入」选本地视频";
+      hint.textContent = "「加入」选文件，或把片放进 media/watch 后点「扫库」";
       empty.append(img, p, hint);
       box.append(empty);
       return;
@@ -510,6 +510,37 @@ async function uploadCowatchFile(file) {
   }
 }
 
+async function scanCowatchLibrary() {
+  const btn = document.getElementById("btnCowatchScan");
+  const add = document.getElementById("btnCowatchAdd");
+  if (btn) btn.disabled = true;
+  if (add) add.disabled = true;
+  setCowatchMsg("正在扫库…", "");
+  try {
+    const res = await fetch("/api/v1/watch/titles/scan", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || "扫库失败");
+    const n = Array.isArray(data.added) ? data.added.length : 0;
+    setCowatchMsg(
+      n
+        ? "扫到 " + n + " 部新片"
+        : data.scanned
+          ? "没有新片（已在库 " + (data.skipped || 0) + "）"
+          : "片库目录还没有视频",
+      "ok"
+    );
+    await refreshCowatchList();
+  } catch (e) {
+    setCowatchMsg((e && e.message) || "扫库失败", "bad");
+  } finally {
+    if (btn) btn.disabled = false;
+    if (add) add.disabled = false;
+  }
+}
+
 function bind() {
   const back = document.getElementById("btnCowatchBack");
   if (back) back.addEventListener("click", () => deps.showView("home"));
@@ -558,6 +589,8 @@ function bind() {
       if (f) uploadCowatchFile(f);
     });
   }
+  const scan = document.getElementById("btnCowatchScan");
+  if (scan) scan.addEventListener("click", () => scanCowatchLibrary());
 }
 
   function mount(d) {

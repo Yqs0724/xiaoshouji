@@ -7,7 +7,7 @@ const { synthesizeSpeech, fishConfigured } = require("./tts");
 const { readSettings } = require("../../共读app/gateway/settings");
 
 /**
- * @param {{ buf: Buffer, contentType?: string, filename?: string }} input
+ * @param {{ buf: Buffer, contentType?: string, filename?: string, video?: boolean }} input
  */
 async function runVoiceTurn(input) {
   const buf = input && input.buf;
@@ -29,6 +29,24 @@ async function runVoiceTurn(input) {
   }
 
   observeUserText(userText);
+  try {
+    const {
+      peerBlocksYou,
+      maybeSoftUnblockFromText,
+    } = require("./daily-chat");
+    if (peerBlocksYou()) {
+      if (!maybeSoftUnblockFromText(userText)) {
+        return {
+          ok: true,
+          user_text: userText,
+          bot_text: "",
+          skipped: true,
+          skip_reason: "blocks_you",
+          provider: "none",
+        };
+      }
+    }
+  } catch (_) {}
   const gate = decideReplyGate({ slowReply: false, coalesced: true });
   if (gate.skip) {
     return {
@@ -43,19 +61,27 @@ async function runVoiceTurn(input) {
 
   const settings = readSettings();
   const nameBot = String(settings.name_bot || "家机").trim() || "家机";
+  const isVideo = !!(input && input.video);
   let memPrompt = "";
   try {
     const { buildMemoryPrompt } = require("./memory");
     const { currentPeerId } = require("./daily-chat");
     memPrompt = (await buildMemoryPrompt(currentPeerId(), userText)) || "";
   } catch (_) {}
-  const system =
+  let system =
     "你是" +
     nameBot +
-    "，正在和用户语音通话。回复要短（一两句）、口语、自然。" +
+    "，正在和用户" +
+    (isVideo ? "视频" : "语音") +
+    "通话。回复要短（一两句）、口语、自然。" +
     "不要列表、不要markdown。\n" +
     (gate.moodPrompt || buildMoodPrompt(gate.mood) || "") +
     (memPrompt ? "\n" + memPrompt : "");
+  if (settings.call_gift_enabled && isVideo) {
+    system +=
+      "\n视频通话仪式礼物（无支付）：想送时可在回复末尾写 [[gift:1]]～[[gift:5]]" +
+      "（1小心心 2花束 3夏日烟火 4流星雨 5银河铁道之夜），每条最多一枚。";
+  }
 
   const raw = await chatCompletion({
     system,
@@ -63,46 +89,50 @@ async function runVoiceTurn(input) {
     think: false,
     replyKind: "chat",
   });
-  const botText = String((raw && raw.content) || "").trim().slice(0, 280);
+  let botText = String((raw && raw.content) || "").trim().slice(0, 280);
   if (!botText) {
     const err = new Error("家机没接上话");
     err.code = "llm_empty";
     throw err;
   }
 
+  let gift = null;
+  if (settings.call_gift_enabled && isVideo) {
+    try {
+      const { extractGiftTag } = require("./call-gifts");
+      const parsed = extractGiftTag(botText);
+      botText = parsed.text || botText;
+      gift = parsed.gift;
+    } catch (_) {}
+  }
+
   const tokens =
     (Number(raw.tokens_in) || 0) + (Number(raw.tokens_out) || 0) || 300;
 
+  const base = {
+    ok: true,
+    user_text: userText,
+    bot_text: botText,
+    used: tokens,
+    gift: gift || undefined,
+  };
+
   if (!fishConfigured()) {
-    return {
-      ok: true,
-      user_text: userText,
-      bot_text: botText,
-      provider: "browser",
-      used: tokens,
-    };
+    return Object.assign(base, { provider: "browser" });
   }
 
   try {
     const audio = await synthesizeSpeech(botText);
-    return {
-      ok: true,
-      user_text: userText,
-      bot_text: botText,
+    return Object.assign(base, {
       provider: "fish",
       content_type: audio.contentType,
       audio_base64: audio.buf.toString("base64"),
-      used: tokens,
-    };
+    });
   } catch (e) {
-    return {
-      ok: true,
-      user_text: userText,
-      bot_text: botText,
+    return Object.assign(base, {
       provider: "browser",
       tts_error: e.message || String(e),
-      used: tokens,
-    };
+    });
   }
 }
 

@@ -1,5 +1,6 @@
 /**
  * V1 Sentinel/Core：定时截主屏 → 轻量模型 JSON 是否唤醒 → Core 写一条家机主动话。
+ * H5 Presence 骰子：同循环掷骰 → 动态 → 日程便笺 → 开口（不依赖截屏）。
  * 默认关；截图失败则纯文本态仍可跑哨兵。
  */
 const fs = require("node:fs");
@@ -12,7 +13,18 @@ const STATE_PATH = path.join(DATA_DIR, "presence-state.json");
 const DEFAULT_INTERVAL_MIN = 15;
 const DEFAULT_COOLDOWN_MIN = 30;
 const DEFAULT_MAX_WAKE_DAY = 8;
+const DEFAULT_DICE_CHANCE = 0.35;
+/** 自动发动态最短间隔（毫秒） */
+const MOMENTS_GAP_MS = 4 * 60 * 60 * 1000;
 const CAPTURE_MAX_W = 1280;
+
+const DICE_MOMENT_LINES = [
+  "今天也想你了一下。",
+  "窗外光很好，随便记一笔。",
+  "在忙什么呢，我先贴一句。",
+  "路过日历，想起你。",
+  "浅浅冒个泡～",
+];
 
 let loopTimer = null;
 let tickBusy = false;
@@ -32,7 +44,235 @@ function emptyState() {
     last_error: "",
     last_capture_ok: false,
     running: false,
+    last_dice_kind: "",
+    last_dice_at: 0,
+    last_moments_at: 0,
   };
+}
+
+function clampChance(n, fallback = DEFAULT_DICE_CHANCE) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return fallback;
+  return Math.max(0.05, Math.min(1, x));
+}
+
+function markWake(patch = {}) {
+  const day = localDateISO();
+  const prev = readState();
+  const wake_count = prev.wake_day === day ? (prev.wake_count || 0) + 1 : 1;
+  return writeState({
+    last_wake_at: Date.now(),
+    wake_day: day,
+    wake_count,
+    ...patch,
+  });
+}
+
+/** 今日 + 明日行程（有标题的） */
+function listNearbyEvents(now = new Date()) {
+  const { listEvents, localDateISO: calDay } = require(
+    "../../日历app/gateway/calendar"
+  );
+  const today = calDay(now);
+  const tomorrow = calDay(new Date(now.getTime() + 86400000));
+  const a = (listEvents({ date: today }).events || []).map((e) => ({
+    ...e,
+    _day: today,
+  }));
+  const b = (listEvents({ date: tomorrow }).events || []).map((e) => ({
+    ...e,
+    _day: tomorrow,
+  }));
+  return a.concat(b).filter((e) => e && String(e.title || "").trim());
+}
+
+/**
+ * H5：掷骰后的优先级链。
+ * @param {{ force?: boolean, forceKind?: 'moments'|'cal_sticky'|'poke', roll?: number }} opts
+ */
+function runPresenceDiceTick(opts = {}) {
+  const { readSettings } = require("../../共读app/gateway/settings");
+  const settings = readSettings();
+  const force = !!opts.force;
+  if (!force && !settings.presence_dice_enabled) {
+    return { ok: true, skipped: "disabled" };
+  }
+  const state = readState();
+  const gate = gateAllowsWake(settings, state, force);
+  if (!gate.ok) {
+    writeState({ last_tick_at: Date.now(), last_error: "" });
+    return { ok: true, skipped: gate.skip };
+  }
+
+  const chance = clampChance(settings.presence_dice_chance);
+  const roll =
+    opts.roll != null && Number.isFinite(Number(opts.roll))
+      ? Number(opts.roll)
+      : Math.random();
+  if (!force && roll >= chance) {
+    writeState({ last_tick_at: Date.now(), last_error: "" });
+    return { ok: true, rolled: false, chance, roll };
+  }
+
+  const forceKind = String(opts.forceKind || "").trim();
+
+  try {
+    const { appendMonitorLog } = require("./monitor-log");
+
+    /* 1) 社交圈动态 */
+    if (
+      (!forceKind || forceKind === "moments") &&
+      settings.presence_dice_moments !== false
+    ) {
+      const gapOk =
+        force ||
+        !state.last_moments_at ||
+        Date.now() - state.last_moments_at >= MOMENTS_GAP_MS;
+      if (gapOk) {
+        const { createPost } = require("./moments");
+        const line =
+          DICE_MOMENT_LINES[
+            Math.floor(Math.random() * DICE_MOMENT_LINES.length)
+          ];
+        const posted = createPost({
+          text: line,
+          author: "bot",
+          name: "家机",
+          scope: "public",
+        });
+        markWake({
+          last_tick_at: Date.now(),
+          last_dice_at: Date.now(),
+          last_dice_kind: "moments",
+          last_moments_at: Date.now(),
+          last_reason: "dice:moments",
+          last_error: "",
+        });
+        appendMonitorLog({
+          kind: "presence_dice",
+          monitoringlog: "骰子·发动态：" + line.slice(0, 40),
+          call_core: false,
+          woke: true,
+          dice_kind: "moments",
+        });
+        return {
+          ok: true,
+          rolled: true,
+          kind: "moments",
+          post: posted.post,
+          chance,
+          roll,
+        };
+      }
+      if (forceKind === "moments") {
+        return { ok: true, skipped: "moments_gap", chance, roll };
+      }
+    }
+
+    /* 2) 临近日程 + 留笺 + 开口提醒 */
+    if (!forceKind || forceKind === "cal_sticky") {
+      const near = listNearbyEvents();
+      if (near.length) {
+        const ev = near[0];
+        const { createNote } = require("../../日历app/gateway/calendar");
+        const body =
+          "记得「" + String(ev.title).trim().slice(0, 24) + "」哦";
+        const note = createNote({
+          body,
+          date: ev._day || ev.date,
+          owner: "companion",
+          event_id: ev.id,
+        }).note;
+        const {
+          appendMessage,
+          withPeer,
+          DEFAULT_PEER_ID,
+          unreadCount,
+        } = require("./daily-chat");
+        const tip =
+          "提醒你一下：" +
+          (ev._day || ev.date) +
+          " 有「" +
+          String(ev.title).trim().slice(0, 24) +
+          "」，我贴便签了。";
+        const message = withPeer(DEFAULT_PEER_ID, () =>
+          appendMessage("bot", tip, "text", { source: "presence_dice" })
+        );
+        markWake({
+          last_tick_at: Date.now(),
+          last_dice_at: Date.now(),
+          last_dice_kind: "cal_sticky",
+          last_reason: "dice:cal_sticky",
+          last_error: "",
+        });
+        appendMonitorLog({
+          kind: "presence_dice",
+          monitoringlog: "骰子·日程便笺：" + String(ev.title).slice(0, 40),
+          call_core: false,
+          woke: true,
+          dice_kind: "cal_sticky",
+        });
+        return {
+          ok: true,
+          rolled: true,
+          kind: "cal_sticky",
+          note,
+          event: { id: ev.id, title: ev.title, date: ev._day || ev.date },
+          message,
+          count: withPeer(DEFAULT_PEER_ID, () => unreadCount().count),
+          chance,
+          roll,
+        };
+      }
+      if (forceKind === "cal_sticky") {
+        return { ok: true, skipped: "no_nearby_events", chance, roll };
+      }
+    }
+
+    /* 3) 主动开口（复用 poke） */
+    if (!forceKind || forceKind === "poke") {
+      const { pokeDaily, withPeer, DEFAULT_PEER_ID, unreadCount } = require(
+        "./daily-chat"
+      );
+      const poked = withPeer(DEFAULT_PEER_ID, () => pokeDaily({}));
+      if (!poked.poked) {
+        writeState({ last_tick_at: Date.now() });
+        return { ok: true, skipped: "poke_cap", chance, roll };
+      }
+      markWake({
+        last_tick_at: Date.now(),
+        last_dice_at: Date.now(),
+        last_dice_kind: "poke",
+        last_reason: "dice:poke",
+        last_error: "",
+      });
+      appendMonitorLog({
+        kind: "presence_dice",
+        monitoringlog:
+          "骰子·开口：" +
+          String((poked.message && poked.message.body) || "").slice(0, 40),
+        call_core: false,
+        woke: true,
+        dice_kind: "poke",
+      });
+      return {
+        ok: true,
+        rolled: true,
+        kind: "poke",
+        message: poked.message,
+        count: withPeer(DEFAULT_PEER_ID, () => unreadCount().count),
+        chance,
+        roll,
+      };
+    }
+
+    writeState({ last_tick_at: Date.now() });
+    return { ok: true, skipped: "no_action", chance, roll };
+  } catch (e) {
+    const msg = String((e && e.message) || e).slice(0, 200);
+    writeState({ last_tick_at: Date.now(), last_error: msg });
+    return { ok: false, error: "dice_failed", message: msg };
+  }
 }
 
 function readState() {
@@ -292,6 +532,13 @@ async function askCore({ decision, model, chatCompletion }) {
   if (card) system += "\n人设（请遵守，勿整段复述）：\n" + card.slice(0, 2000);
   const nameBot = String(settings.name_bot || "").trim();
   if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+  try {
+    const { maybeSilentPrefetch } = require("./phone-presence");
+    const silent = maybeSilentPrefetch(settings);
+    if (silent) system += "\n" + silent;
+  } catch (_) {
+    /* 查岗可选 */
+  }
   const recent = recentChatLines(6);
   const user =
     "（以下仅供你了解情况，不要复述、不要输出 JSON）\n观察原因：" +
@@ -480,15 +727,7 @@ async function runSentinelTick(opts = {}) {
     const message = withPeer(DEFAULT_PEER_ID, () =>
       appendMessage("bot", text, "text", { source: "sentinel" })
     );
-    const day = localDateISO();
-    const prev = readState();
-    const wake_count = prev.wake_day === day ? (prev.wake_count || 0) + 1 : 1;
-    writeState({
-      last_wake_at: Date.now(),
-      wake_day: day,
-      wake_count,
-      last_reason: decision.reason || "",
-    });
+    markWake({ last_reason: decision.reason || "" });
     appendMonitorLog({
       kind: "core_wake",
       monitoringlog: "Core 已唤醒并回复：" + text.slice(0, 80),
@@ -517,6 +756,9 @@ function getPresenceStatus() {
   return {
     ok: true,
     enabled: !!s.sentinel_enabled,
+    dice_enabled: !!s.presence_dice_enabled,
+    dice_chance: clampChance(s.presence_dice_chance),
+    dice_moments: s.presence_dice_moments !== false,
     interval_min: clampInt(
       s.sentinel_interval_min,
       5,
@@ -546,6 +788,28 @@ function getPresenceStatus() {
   };
 }
 
+/** 间隔心跳：骰子优先；未掷中或未开骰子再跑哨兵 */
+async function runPresenceHeartbeat(opts = {}) {
+  const { readSettings } = require("../../共读app/gateway/settings");
+  const settings = readSettings();
+  const force = !!opts.force;
+  let dice = null;
+  if (force || settings.presence_dice_enabled) {
+    dice = runPresenceDiceTick(opts);
+    /* 掷中并落地 → 本拍不再截屏 */
+    if (dice && dice.kind) return { ok: true, path: "dice", dice };
+  }
+  if (force || settings.sentinel_enabled) {
+    const sentinel = await runSentinelTick(opts);
+    return { ok: true, path: "sentinel", dice, sentinel };
+  }
+  return {
+    ok: true,
+    path: "idle",
+    dice: dice || { ok: true, skipped: "disabled" },
+  };
+}
+
 function stopPresenceLoop() {
   if (loopTimer) {
     clearInterval(loopTimer);
@@ -562,11 +826,13 @@ function restartPresenceLoop() {
   stopPresenceLoop();
   const { readSettings } = require("../../共读app/gateway/settings");
   const s = readSettings();
-  if (!s.sentinel_enabled) return { ok: true, running: false };
+  if (!s.sentinel_enabled && !s.presence_dice_enabled) {
+    return { ok: true, running: false };
+  }
   const min = clampInt(s.sentinel_interval_min, 5, 120, DEFAULT_INTERVAL_MIN);
   const ms = min * 60 * 1000;
   loopTimer = setInterval(() => {
-    runSentinelTick({}).catch((e) => {
+    runPresenceHeartbeat({}).catch((e) => {
       writeState({
         last_error: String((e && e.message) || e).slice(0, 200),
       });
@@ -575,10 +841,16 @@ function restartPresenceLoop() {
   /* 启动后约 45s 先踢一脚，免得干等一整格间隔 */
   firstKickTimer = setTimeout(() => {
     firstKickTimer = null;
-    runSentinelTick({}).catch(() => {});
+    runPresenceHeartbeat({}).catch(() => {});
   }, 45_000);
   writeState({ running: true });
-  return { ok: true, running: true, interval_min: min };
+  return {
+    ok: true,
+    running: true,
+    interval_min: min,
+    dice: !!s.presence_dice_enabled,
+    sentinel: !!s.sentinel_enabled,
+  };
 }
 
 async function selfCheck() {
@@ -651,6 +923,58 @@ async function selfCheck() {
       writeAll(all);
     });
   } catch (_) {}
+
+  console.assert(clampChance(0, 0.35) === 0.05);
+  console.assert(clampChance(2) === 1);
+  const miss = runPresenceDiceTick({ force: false, roll: 0.99 });
+  console.assert(miss.skipped === "disabled" || miss.rolled === false || miss.ok);
+  const pokeDice = runPresenceDiceTick({
+    force: true,
+    forceKind: "poke",
+    roll: 0,
+  });
+  console.assert(pokeDice.ok && pokeDice.kind === "poke" && pokeDice.message, pokeDice);
+  try {
+    const { readAll, writeAll, withPeer, DEFAULT_PEER_ID } = require("./daily-chat");
+    const mid = pokeDice.message && pokeDice.message.id;
+    if (mid) {
+      withPeer(DEFAULT_PEER_ID, () => {
+        const all = readAll();
+        all.messages = (all.messages || []).filter((m) => m && m.id !== mid);
+        writeAll(all);
+      });
+    }
+  } catch (_) {}
+  const { createEvent, deleteEvent, deleteNote, localDateISO: calDay } = require(
+    "../../日历app/gateway/calendar"
+  );
+  const day = calDay(new Date());
+  const ev = createEvent({
+    title: "H5骰子自检",
+    date: day,
+    owner: "companion",
+  });
+  /* 拉开动态间隔，强制走日程链 */
+  writeState({ last_moments_at: Date.now() });
+  const calDice = runPresenceDiceTick({
+    force: true,
+    forceKind: "cal_sticky",
+    roll: 0,
+  });
+  console.assert(calDice.ok && calDice.kind === "cal_sticky" && calDice.note, calDice);
+  if (calDice.note && calDice.note.id) deleteNote(calDice.note.id);
+  if (ev.event && ev.event.id) deleteEvent(ev.event.id);
+  try {
+    const { readAll, writeAll, withPeer, DEFAULT_PEER_ID } = require("./daily-chat");
+    const mid = calDice.message && calDice.message.id;
+    if (mid) {
+      withPeer(DEFAULT_PEER_ID, () => {
+        const all = readAll();
+        all.messages = (all.messages || []).filter((m) => m && m.id !== mid);
+        writeAll(all);
+      });
+    }
+  } catch (_) {}
   console.log("presence self-check ok");
 }
 
@@ -677,6 +1001,9 @@ module.exports = {
   sanitizeCoreReply,
   askCore,
   runSentinelTick,
+  runPresenceDiceTick,
+  runPresenceHeartbeat,
+  listNearbyEvents,
   getPresenceStatus,
   restartPresenceLoop,
   stopPresenceLoop,
@@ -685,7 +1012,10 @@ module.exports = {
   selfCheck,
   parseBool,
   clampInt,
+  clampChance,
   DEFAULT_INTERVAL_MIN,
   DEFAULT_COOLDOWN_MIN,
   DEFAULT_MAX_WAKE_DAY,
+  DEFAULT_DICE_CHANCE,
+  MOMENTS_GAP_MS,
 };

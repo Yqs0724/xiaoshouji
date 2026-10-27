@@ -23,8 +23,8 @@
   function onShow() {
     const frame = document.getElementById("walletFrame");
     if (!frame) return;
-    const want = "/app-ui/资产app/pwa/wealth.html?v=w7";
-    if ((frame.getAttribute("src") || "").indexOf("v=w7") < 0) {
+    const want = "/app-ui/资产app/pwa/wealth.html?v=w18";
+    if ((frame.getAttribute("src") || "").indexOf("v=w18") < 0) {
       frame.src = want;
     }
   }
