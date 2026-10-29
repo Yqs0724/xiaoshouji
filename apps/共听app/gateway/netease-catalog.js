@@ -285,21 +285,7 @@ async function getAudioUrl(songId, quality) {
   }
   function pickPlayableUrl(hit) {
     if (!hit || !hit.url) return null;
-    /* 免费试听片段（常约几十秒）≠ 整曲；教程 §4.2 / §21 会员与登录态 */
-    const trial = hit.freeTrialInfo;
-    if (trial && typeof trial === "object") {
-      const start = Number(trial.start);
-      const end = Number(trial.end);
-      if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
-        const err = new Error(
-          "当前只有试听片段（约 " +
-            Math.max(1, Math.round(end - start)) +
-            " 秒），整曲需会员或重新扫码登录"
-        );
-        err.code = "MUSIC_TRIAL_ONLY";
-        throw err;
-      }
-    }
+    /* 试听片段也能播（几十秒）；整曲仍靠会员/扫码。拒播会让切歌/点列表像「没反应」。 */
     return String(hit.url);
   }
 
@@ -326,9 +312,7 @@ async function getAudioUrl(songId, quality) {
       lastErr = e;
       if (
         e &&
-        (e.code === "netease_unreachable" ||
-          e.code === "netease_timeout" ||
-          e.code === "MUSIC_TRIAL_ONLY")
+        (e.code === "netease_unreachable" || e.code === "netease_timeout")
       ) {
         throw e;
       }
@@ -336,7 +320,6 @@ async function getAudioUrl(songId, quality) {
     }
   }
   if (lastErr && lastErr.code === "bad_api_base") throw lastErr;
-  if (lastErr && lastErr.code === "MUSIC_TRIAL_ONLY") throw lastErr;
   return null;
 }
 

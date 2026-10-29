@@ -426,13 +426,19 @@
       padding: 10px 0;
       border-bottom: 1px solid rgba(255,255,255,.05);
       font-size: 12px;
+      text-align: left;
     }
-    .ledger .amt { color: var(--gold); font-size: 13px; }
+    .ledger .amt {
+      color: var(--gold);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.02em;
+    }
     .ledger .amt.out { color: var(--danger); }
     .ledger .amt.in { color: var(--safe); }
-    .ledger .title { margin-top: 4px; color: var(--text); }
-    .ledger .desc { color: var(--muted); font-size: 11px; margin-top: 2px; }
-    .ledger .note { color: var(--gold2); font-size: 11px; margin-top: 4px; }
+    .ledger .title { margin-top: 4px; color: var(--text); line-height: 1.35; }
+    .ledger .desc { color: var(--muted); font-size: 11px; margin-top: 2px; line-height: 1.35; }
+    .ledger .note { color: var(--gold2); font-size: 11px; margin-top: 4px; line-height: 1.4; }
 
     /* AI bar */
     #aiBar {
@@ -1240,31 +1246,52 @@
           ["现金", "便利店", "-¥15.00"],
         ];
       })();
-      const pocketMeMacro = [
-        { amt: 800, title: "工资尾款", desc: "招行", note: "你的卡。", dir: "in" },
-        { amt: -50, title: "转给家机零花", desc: "微信", note: "和好费。", dir: "out" },
-        { amt: -320, title: "生活采购", desc: "支付宝", note: "—", dir: "out" },
-      ];
-      const pocketMeMicro = [
-        { t: "08:40", amt: -15, title: "便利店", desc: "现金" },
-        { t: "12:10", amt: -32, title: "午饭", desc: "支付宝" },
-        { t: "16:00", amt: -50, title: "转给家机", desc: "微信" },
-      ];
+      let botDisplayName = "沈言之";
+      let userDisplayName = "你";
+      let pocketMeMacro = [];
+      let pocketMeMicro = [];
+      let pocketMacro = [];
+      let pocketMicro = [];
+      let pocketFlavorHint = "";
 
-      const pocketMacro = [
-        { amt: 12800, title: "工资入账 · 工行借记卡", desc: "十月份薪水", note: "已留房租，其余可划到支付宝。", dir: "in" },
-        { amt: -4500, title: "房租代扣", desc: "银行卡自动扣款", note: "下月同日。", dir: "out" },
-        { amt: -800, title: "生活费划转 → 支付宝", desc: "银行卡转出", note: "零花备用。", dir: "out" },
-        { amt: 200, title: "家机转来的生活费", desc: "微信收款", note: "记零花，不进剧场。", dir: "in" },
-        { amt: -286, title: "水电煤", desc: "银行卡代扣", note: "—", dir: "out" },
-      ];
-      const pocketMicro = [
-        { t: "09:12", amt: -36, title: "咖啡分摊", desc: "支付宝" },
-        { t: "12:40", amt: -12.5, title: "代付零食 → 家机", desc: "微信转账" },
-        { t: "15:56", amt: 1.0, title: "摸鱼补贴红包", desc: "微信" },
-        { t: "18:20", amt: -128.4, title: "超市", desc: "支付宝" },
-        { t: "20:05", amt: -42, title: "晚饭外卖", desc: "支付宝" },
-      ];
+      async function ensurePocketFlavorUi(force) {
+        try {
+          const res = await fetch("/api/v1/wallet/pocket-flavor", {
+            method: force ? "POST" : "GET",
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: force ? { "Content-Type": "application/json" } : undefined,
+            body: force ? JSON.stringify({ force: true }) : undefined,
+          });
+          let data = await res.json().catch(() => ({}));
+          if ((!res.ok || !data.has_data) && !force) {
+            const gen = await fetch("/api/v1/wallet/pocket-flavor", {
+              method: "POST",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ force: false }),
+            });
+            data = await gen.json().catch(() => ({}));
+            if (!gen.ok) throw new Error(data.message || "生成失败");
+          } else if (!res.ok) {
+            throw new Error(data.message || "读取失败");
+          }
+          if (data.bot_name) botDisplayName = String(data.bot_name);
+          if (data.user_name) userDisplayName = String(data.user_name);
+          if (data.bot && Array.isArray(data.bot.macro)) pocketMacro = data.bot.macro;
+          if (data.bot && Array.isArray(data.bot.micro)) pocketMicro = data.bot.micro;
+          if (data.you && Array.isArray(data.you.macro)) pocketMeMacro = data.you.macro;
+          if (data.you && Array.isArray(data.you.micro)) pocketMeMicro = data.you.micro;
+          pocketFlavorHint =
+            (mode === "pocket_me"
+              ? (data.you && data.you.hint) || ""
+              : (data.bot && data.bot.hint) || "") || "";
+          return true;
+        } catch (e) {
+          pocketFlavorHint = (e && e.message) || "生成失败";
+          return false;
+        }
+      }
 
       const macroLedger = [
         { amt: -450000000, title: "战略收购：完成北欧航运控股", desc: "股权交割完成，并表进入家族长期组合", note: "相关资产已纳入家族长期战略投资组合。", dir: "out" },
@@ -1318,6 +1345,13 @@
       }
       function isPocket() {
         return mode === "pocket_me" || mode === "pocket_bot";
+      }
+      function escapeHtml(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
       }
       function dataset() {
         if (mode === "pocket_me") return pocketMeData;
@@ -2098,9 +2132,13 @@
         try {
           await hydrateWealthMode();
         } catch (_) { /* 离线仍用 DEMO */ }
+        if (isPocket()) {
+          $("aiHello").textContent = "正在按人设生成零花账单…";
+          await ensurePocketFlavorUi(false);
+        }
         ["gateKey", "gateFace", "gateFp", "gateIris"].forEach((x) => $(x).classList.remove("on"));
         $("main").classList.add("on");
-        $("playerName").textContent = PLAYER;
+        $("playerName").textContent = mode === "pocket_bot" ? botDisplayName : mode === "pocket_me" ? userDisplayName : PLAYER;
         applyChrome();
         renderAll();
         startFeed();
@@ -2119,7 +2157,9 @@
             : "CHAR POCKET";
         $("netLab").innerHTML = theater
           ? "TOTAL NET WORTH<em>总资产估值</em>"
-          : "TOTAL POCKET<em>" + (mine ? "你的" : "家机的") + "可花合计（聊天零花+储蓄卡）</em>";
+          : "TOTAL POCKET<em>" +
+            (mine ? userDisplayName + "的" : botDisplayName + "的") +
+            "可花合计（聊天零花+储蓄卡）</em>";
         $("holdsLab").textContent = theater ? "CORE HOLDINGS · 核心持仓" : "ACCOUNTS · 账户";
         $("catsLab").textContent = theater ? "ASSET MATRIX · 资产矩阵" : "CHANNELS · 支付通道";
         $("cfOffice").textContent = theater
@@ -2131,10 +2171,16 @@
         $("aiCap").textContent = theater
           ? "PRIVATE OFFICE AI · AWAITING YOUR INSTRUCTION"
           : mine
-            ? "你的零花 · 快捷操作"
-            : "家机零花 · 他心情不好时可能换钥";
+            ? userDisplayName + "的零花 · 快捷操作"
+            : botDisplayName +
+              "零花" +
+              (pocketFlavorHint ? " · " + pocketFlavorHint : " · 心情不好时可能换钥");
         $("donutCenter").nextElementSibling.textContent = theater ? "NAV" : "合计";
-        $("playerName").textContent = mine ? "你" : PLAYER;
+        $("playerName").textContent = mine
+          ? userDisplayName
+          : theater
+            ? PLAYER
+            : botDisplayName;
       }
 
       function backToKey() {
@@ -2213,57 +2259,112 @@
         $("aiActions").innerHTML = "";
         const aiBtns = isPocket()
           ? (mode === "pocket_me"
-              ? [["salary", "记一笔工资"], ["today", "今日花哪了"], ["xfer", "转给家机"]]
-              : [["salary", "记他一笔工资"], ["today", "他今天花哪了"], ["xfer", "要红包"]])
+              ? [
+                  ["salary", "记一笔工资"],
+                  ["today", "今日花哪了"],
+                  ["xfer", "转给" + botDisplayName],
+                  ["regen", "按人设重生成账单"],
+                ]
+              : [
+                  ["salary", "记一笔入账"],
+                  ["today", "今天花哪了"],
+                  ["xfer", "要红包"],
+                  ["regen", "按人设重生成账单"],
+                ])
           : [["liquidity", "流动性压力测试"], ["rebalance", "再平衡执行草案"], ["hedge", "下行对冲报价"]];
         aiBtns.forEach(([id, lab]) => {
           const b = document.createElement("button");
           b.type = "button";
           b.textContent = lab;
-          b.addEventListener("click", () => aiAnswer(id));
+          b.addEventListener("click", () => {
+            if (id === "regen") {
+              $("aiHello").textContent = "正在按人设重生成…";
+              ensurePocketFlavorUi(true).then(() => {
+                applyChrome();
+                renderAll();
+              });
+              return;
+            }
+            aiAnswer(id);
+          });
           $("aiActions").appendChild(b);
         });
         let inflow = 0, outflow = 0;
         macros.forEach((x) => {
-          if (x.dir === "in") inflow += x.amt;
-          else outflow += Math.abs(x.amt);
+          if (x.dir === "in") inflow += Math.abs(Number(x.amt) || 0);
+          else outflow += Math.abs(Number(x.amt) || 0);
         });
         $("inflow").textContent = moneyShort(inflow);
         $("outflow").textContent = moneyShort(outflow);
         $("netflow").textContent = moneyShort(inflow - outflow);
 
-        $("macroLedger").innerHTML = macros
-          .map((x) => {
-            const cls = x.dir === "in" ? "in" : "out";
-            const sign = x.dir === "in" ? "+" : "";
-            return (
-              "<li><div class=\"amt " + cls + "\">" + sign + money(Math.abs(x.amt) * (x.dir === "in" ? 1 : -1)) + "</div>" +
-              "<div class=\"title\">" + x.title + "</div>" +
-              "<div class=\"desc\">" + x.desc + "</div>" +
-              "<div class=\"note\">" + (isPocket() ? (mode === "pocket_me" ? "你" : "家机") : PLAYER) + " NOTE：" + x.note + "</div></li>"
-            );
-          })
-          .join("");
+        const noteWho = isPocket()
+          ? mode === "pocket_me"
+            ? userDisplayName
+            : botDisplayName
+          : PLAYER;
+        $("macroLedger").innerHTML = macros.length
+          ? macros
+              .map((x) => {
+                const amt = Number(x.amt) || 0;
+                const isIn = x.dir === "in" || amt > 0;
+                const cls = isIn ? "in" : "out";
+                const sign = isIn ? "+" : "−";
+                return (
+                  "<li><div class=\"amt " +
+                  cls +
+                  "\">" +
+                  sign +
+                  money(Math.abs(amt)) +
+                  "</div>" +
+                  "<div class=\"title\">" +
+                  escapeHtml(x.title) +
+                  "</div>" +
+                  "<div class=\"desc\">" +
+                  escapeHtml(x.desc) +
+                  "</div>" +
+                  "<div class=\"note\">" +
+                  escapeHtml(noteWho) +
+                  " NOTE：" +
+                  escapeHtml(x.note) +
+                  "</div></li>"
+                );
+              })
+              .join("")
+          : "<li><div class=\"desc\">账单空 · 点下方「按人设重生成账单」</div></li>";
 
         let todayOut = 0;
-        micros.forEach((x) => (todayOut += Math.abs(x.amt)));
+        micros.forEach((x) => (todayOut += Math.abs(Number(x.amt) || 0)));
         $("todayOut").textContent = money(todayOut);
-        $("microLedger").innerHTML = micros
-          .map((x) => {
-            const neg = x.amt < 0;
-            return (
-              "<li><div style=\"color:var(--muted)\">" + x.t + "</div>" +
-              "<div class=\"amt " + (neg ? "out" : "in") + "\">" + money(x.amt) + "</div>" +
-              "<div class=\"title\">" + x.title + "</div>" +
-              "<div class=\"desc\">" + x.desc + "</div></li>"
-            );
-          })
-          .join("");
+        $("microLedger").innerHTML = micros.length
+          ? micros
+              .map((x) => {
+                const amt = Number(x.amt) || 0;
+                const neg = amt < 0;
+                return (
+                  "<li><div style=\"color:var(--muted)\">" +
+                  escapeHtml(x.t) +
+                  "</div>" +
+                  "<div class=\"amt " +
+                  (neg ? "out" : "in") +
+                  "\">" +
+                  money(amt) +
+                  "</div>" +
+                  "<div class=\"title\">" +
+                  escapeHtml(x.title) +
+                  "</div>" +
+                  "<div class=\"desc\">" +
+                  escapeHtml(x.desc) +
+                  "</div></li>"
+                );
+              })
+              .join("")
+          : "<li><div class=\"desc\">今日微流空</div></li>";
 
         $("aiHello").textContent = mode === "pocket_me"
-          ? "这是你的零花。聊天转账从这儿出；和家机零花、剧场资本都分账。"
+          ? "这是" + userDisplayName + "的零花。聊天转账从这儿出；和" + botDisplayName + "零花、剧场资本都分账。"
           : mode === "pocket_bot"
-            ? "这是家机的零花。冷战换钥后旧钥作废。"
+            ? "这是" + botDisplayName + "的零花。账单按人设 LLM 生成；冷战换钥后旧钥作废。"
             : "「" + PLAYER + "」，晚上好。您的私人 AI 财富顾问已上线，随时为您执行大额交易或税务优化分析。";
       }
 

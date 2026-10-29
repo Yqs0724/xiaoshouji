@@ -48,6 +48,7 @@ const {
   createMessageWithReplyStream,
   recallMessageWithReplyStream,
   regenerateMessageStream,
+  continueFromYouMessageStream,
   setMessageVariant,
   deleteMessage,
   recallMessage,
@@ -57,6 +58,7 @@ const {
   createPat,
   createMessage,
   assertRegenTarget,
+  assertContinueTarget,
   unreadCount,
   markAllRead,
   pokeDaily,
@@ -164,9 +166,14 @@ const {
 } = require("../../聊天app/gateway/memory");
 const {
   addUserSticker,
+  removeUserSticker,
   resolveUserStickerPath,
   STICKER_MAX_BYTES,
 } = require("../../聊天app/gateway/stickers");
+const {
+  getPocketFlavor,
+  ensurePocketFlavor,
+} = require("../../资产app/gateway/pocket-flavor");
 const { listChatTools, pingMcpConnection } = require("../../聊天app/gateway/chat-tools");
 const {
   listMoments,
@@ -525,6 +532,65 @@ const server = http.createServer(async (req, res) => {
       bind_port: PORT,
       lan_open: lanOpen,
     });
+    return;
+  }
+
+  /* 本机（跑网关的电脑）电池；手机浏览器读不到本机电量时桌面端用 */
+  if (req.method === "GET" && urlPath === "/api/v1/device/battery") {
+    try {
+      const { execFileSync } = require("node:child_process");
+      if (process.platform === "win32") {
+        const raw = execFileSync(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance -ClassName Win32_Battery | Select-Object -First 1 EstimatedChargeRemaining,BatteryStatus | ConvertTo-Json -Compress)",
+          ],
+          { encoding: "utf8", timeout: 8000, windowsHide: true }
+        ).trim();
+        if (!raw || raw === "null") {
+          sendJson(res, 200, {
+            ok: true,
+            level: null,
+            charging: true,
+            source: "ac",
+            label: "插电",
+          });
+          return;
+        }
+        const j = JSON.parse(raw);
+        const pct = Number(j.EstimatedChargeRemaining);
+        const status = Number(j.BatteryStatus);
+        const level =
+          Number.isFinite(pct) && pct >= 0 ? Math.min(1, Math.max(0, pct / 100)) : null;
+        const charging = status === 2 || status >= 6;
+        sendJson(res, 200, {
+          ok: true,
+          level,
+          charging,
+          source: "host",
+          label: level == null ? "—" : Math.round(level * 100) + "%",
+        });
+        return;
+      }
+      sendJson(res, 200, {
+        ok: true,
+        level: null,
+        charging: false,
+        source: "unsupported",
+        label: "—",
+      });
+    } catch (e) {
+      sendJson(res, 200, {
+        ok: false,
+        level: null,
+        charging: false,
+        source: "error",
+        label: "—",
+        message: (e && e.message) || "battery",
+      });
+    }
     return;
   }
 
@@ -3041,6 +3107,40 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "GET" && urlPath === "/api/v1/wallet/pocket-flavor") {
+    try {
+      sendJson(res, 200, getPocketFlavor());
+    } catch (e) {
+      sendJson(res, 500, {
+        ok: false,
+        error: e.code || "pocket_flavor_failed",
+        message: e.message || "读取零花账单失败",
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && urlPath === "/api/v1/wallet/pocket-flavor") {
+    try {
+      const raw = await readBody(req);
+      const body = raw ? JSON.parse(raw) : {};
+      const out = await ensurePocketFlavor({ force: !!(body && body.force) });
+      sendJson(res, 200, out);
+    } catch (e) {
+      const status =
+        e.code === "no_persona" || e.code === "flavor_parse" || e.code === "flavor_empty"
+          ? 400
+          : e.code === "llm_http"
+            ? 502
+            : 500;
+      sendJson(res, status, {
+        ok: false,
+        error: e.code || "pocket_flavor_gen_failed",
+        message: e.message || "生成零花账单失败",
+      });
+    }
+    return;
+  }
+
   if (req.method === "GET" && urlPath === "/api/v1/wallet") {
     try {
       sendJson(res, 200, getWallet());
@@ -3403,7 +3503,12 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && urlPath === "/api/v1/chat/stickers") {
     try {
       const buf = await readBodyBuffer(req, STICKER_MAX_BYTES);
-      const label = String((req.headers["x-sticker-label"] || "")).trim();
+      let label = String(req.headers["x-sticker-label"] || "").trim();
+      try {
+        label = decodeURIComponent(label);
+      } catch (_) {
+        /* keep raw */
+      }
       const out = addUserSticker(buf, req.headers["content-type"], label);
       sendJson(res, 200, out);
     } catch (e) {
@@ -3420,6 +3525,29 @@ const server = http.createServer(async (req, res) => {
       });
     }
     return;
+  }
+
+  {
+    const delSticker = urlPath.match(/^\/api\/v1\/chat\/stickers\/([^/]+)$/);
+    if (req.method === "DELETE" && delSticker) {
+      try {
+        const out = removeUserSticker(decodeURIComponent(delSticker[1]));
+        sendJson(res, 200, out);
+      } catch (e) {
+        const status =
+          e.code === "sticker_missing"
+            ? 404
+            : e.code === "sticker_not_custom"
+              ? 400
+              : 500;
+        sendJson(res, status, {
+          ok: false,
+          error: e.code || "sticker_delete_failed",
+          message: e.message || "删除失败",
+        });
+      }
+      return;
+    }
   }
 
   {
@@ -3519,7 +3647,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(
         res,
         200,
-        withPeer(DEFAULT_PEER_ID, () => pokeDaily({}))
+        await withPeer(DEFAULT_PEER_ID, () => pokeDaily({}))
       );
     } catch (e) {
       sendJson(res, 500, {
@@ -3706,12 +3834,22 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  /* 反查：家机的虚拟手机 */
+  /* 反查：家机的虚拟手机（种子跟人设走，勿写死父母） */
+  function botPhoneOpts(s) {
+    return {
+      userName: (s && s.name_user) || "",
+      persona: (s && s.persona_card) || "",
+    };
+  }
   if (req.method === "GET" && urlPath === "/api/v1/bot-phone") {
     try {
       const { getOverview } = require("../../聊天app/gateway/bot-phone");
       const s = readSettings();
-      sendJson(res, 200, getOverview((s && s.name_bot) || "家机"));
+      sendJson(
+        res,
+        200,
+        getOverview((s && s.name_bot) || "沈言之", botPhoneOpts(s))
+      );
     } catch (e) {
       sendJson(res, 500, {
         ok: false,
@@ -3730,7 +3868,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(
         res,
         200,
-        openApp((body && body.app) || "home", (s && s.name_bot) || "家机")
+        openApp(
+          (body && body.app) || "home",
+          (s && s.name_bot) || "沈言之",
+          botPhoneOpts(s)
+        )
       );
     } catch (e) {
       sendJson(res, 500, {
@@ -3749,7 +3891,8 @@ const server = http.createServer(async (req, res) => {
       const s = readSettings();
       const out = openChat(
         (body && body.chat_id) || "",
-        (s && s.name_bot) || "家机"
+        (s && s.name_bot) || "沈言之",
+        botPhoneOpts(s)
       );
       sendJson(res, out.ok ? 200 : 404, out);
     } catch (e) {
@@ -3770,7 +3913,8 @@ const server = http.createServer(async (req, res) => {
       const out = updateMemo(
         (body && body.id) || "",
         (body && body.body) || "",
-        (s && s.name_bot) || "家机"
+        (s && s.name_bot) || "沈言之",
+        botPhoneOpts(s)
       );
       sendJson(res, out.ok ? 200 : 404, out);
     } catch (e) {
@@ -4447,19 +4591,38 @@ const server = http.createServer(async (req, res) => {
         const id = decodeURIComponent(regenMatch[1]);
         const peer = peerForMessageOp(req, null, id);
         await withPeer(peer, async () => {
+        let mode = "regen";
         try {
           assertRegenTarget(id);
         } catch (e) {
-          const bad =
-            e.code === "not_found" ||
-            e.code === "not_regen_target" ||
-            e.code === "not_latest";
-          sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
-            ok: false,
-            error: e.code || "chat_regen_failed",
-            message: e.message || "重新生成失败",
-          });
-          return;
+          if (e.code === "not_regen_target") {
+            try {
+              assertContinueTarget(id);
+              mode = "continue";
+            } catch (e2) {
+              const bad =
+                e2.code === "not_found" ||
+                e2.code === "not_continue_target" ||
+                e2.code === "not_latest";
+              sendJson(res, e2.code === "not_found" ? 404 : bad ? 400 : 500, {
+                ok: false,
+                error: e2.code || "chat_regen_failed",
+                message: e2.message || "重新生成失败",
+              });
+              return;
+            }
+          } else {
+            const bad =
+              e.code === "not_found" ||
+              e.code === "not_regen_target" ||
+              e.code === "not_latest";
+            sendJson(res, e.code === "not_found" ? 404 : bad ? 400 : 500, {
+              ok: false,
+              error: e.code || "chat_regen_failed",
+              message: e.message || "重新生成失败",
+            });
+            return;
+          }
         }
         res.writeHead(200, {
           "Content-Type": "text/event-stream; charset=utf-8",
@@ -4477,7 +4640,8 @@ const server = http.createServer(async (req, res) => {
             const ok = res.write(line, (err) => (err ? reject(err) : resolve()));
             if (!ok) res.once("drain", resolve);
           });
-        await regenerateMessageStream(id, emit);
+        if (mode === "continue") await continueFromYouMessageStream(id, emit);
+        else await regenerateMessageStream(id, emit);
         res.end();
         });
       } catch (e) {
@@ -6256,17 +6420,11 @@ const server = http.createServer(async (req, res) => {
       }
       const startedAt = Number(body.startedAt || body.started_at) || undefined;
       const session = endSession(bookKey, startedAt);
-      let pass_lore;
-      if (body.append_lore || body.write_lore || body.writeLore) {
-        pass_lore = appendSessionToPassLore(session);
-      }
+      // 本刷摘要已下线：结束本场不再写入 pass lore
       sendJson(res, 200, {
         ok: true,
         session,
-        lore_written: !!pass_lore,
-        pass_lore: pass_lore || undefined,
-        // 兼容旧前端字段名
-        lore_summary: pass_lore ? pass_lore.text : undefined,
+        lore_written: false,
       });
     } catch (e) {
       if (e instanceof SyntaxError) {

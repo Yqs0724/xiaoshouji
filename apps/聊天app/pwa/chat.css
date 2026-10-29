@@ -135,8 +135,9 @@
    white-space: nowrap;
    cursor: pointer;
  }
- /* 心情占原 Thin choco 副标位：同字号/字距，无胶囊 */
+ /* 心情占原 Thin choco 副标位：同字号/字距，无胶囊；可点看详情（手机无 hover） */
  .wx-mood-cap {
+   font: inherit;
    font-size: 11px;
    font-weight: 400;
    color: var(--choco-dark);
@@ -146,11 +147,14 @@
    background: none;
    border: 0;
    border-radius: 0;
-   padding: 0;
+   padding: 2px 0;
+   margin: 0;
    max-width: 100%;
    white-space: nowrap;
    overflow: hidden;
    text-overflow: ellipsis;
+   cursor: pointer;
+   -webkit-tap-highlight-color: transparent;
  }
  .wx-mood-cap[hidden] { display: none !important; }
  .wx-mood-cap.is-cold { color: #6a7a90; opacity: 0.85; }
@@ -637,6 +641,18 @@
    margin-top: 10px;
    margin-bottom: 6px;
    border-radius: 20px;
+   /* 挡系统长按菜单，留给聊天气泡菜单 */
+   -webkit-touch-callout: none;
+   -webkit-user-select: none;
+   user-select: none;
+ }
+ #chatThread .wx-row .av,
+ #chatThread .wx-row .av img,
+ #chatThread .wx-row .bubble img {
+   -webkit-touch-callout: none;
+   -webkit-user-select: none;
+   user-select: none;
+   -webkit-user-drag: none;
  }
  .wx-bubble-text.is-recall.is-peek { cursor: pointer; }
  .wx-peek {
@@ -4322,31 +4338,31 @@
    background: transparent;
    cursor: pointer;
  }
- #view-chat .chat-me-av-presets {
+ #view-chat .chat-me-av-acts {
    display: flex;
-   flex-wrap: wrap;
-   gap: 10px;
+   flex-direction: column;
+   gap: 8px;
    margin: 4px 0 14px;
  }
- #view-chat .chat-me-av-presets button {
-   width: 52px;
-   height: 52px;
-   padding: 0;
-   border-radius: 50%;
-   border: 2px solid rgba(181, 161, 152, 0.45);
-   background: #f8fcfb;
-   overflow: hidden;
+ #view-chat .chat-me-av-acts[hidden] {
+   display: none !important;
+ }
+ #view-chat .chat-me-av-act {
+   border: 1.5px solid rgba(110, 88, 79, 0.22);
+   border-radius: 12px;
+   background: rgba(248, 252, 251, 0.96);
+   color: var(--choco-dark);
+   font: inherit;
+   font-size: 14px;
+   font-weight: 650;
+   padding: 11px 12px;
    cursor: pointer;
+   text-align: center;
  }
- #view-chat .chat-me-av-presets button.on {
-   border-color: var(--choco-brown);
-   box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.55);
- }
- #view-chat .chat-me-av-presets button img {
-   width: 100%;
-   height: 100%;
-   object-fit: cover;
-   display: block;
+ #view-chat .chat-me-av-act.ghost {
+   background: transparent;
+   font-weight: 550;
+   opacity: 0.75;
  }
  #view-chat .chat-me-head .av {
    width: 64px;

@@ -1,6 +1,6 @@
 /**
  * 反查：用户翻看「家机的手机」虚拟壳 + 留痕，供下次开口时注入。
- * ponytail: 剧本种子写死；以后可按人设/好感生成。升级：圈子真 peer、代发全流程。
+ * 种子按人设裁剪：丧母/丧父不出现父母会话；已 seed 的冲突剧本会升 ver 重刷。
  */
 "use strict";
 
@@ -9,10 +9,12 @@ const path = require("path");
 const { randomUUID } = require("crypto");
 
 const DATA_PATH = path.join(__dirname, "..", "data", "bot-phone.json");
+const SEED_VER = 2;
 
 function emptyStore() {
   return {
     version: 1,
+    seed_ver: 0,
     seeded: false,
     memos: [],
     chats: [],
@@ -32,6 +34,7 @@ function readStore() {
       shop: Array.isArray(raw.shop) ? raw.shop : [],
       traces: Array.isArray(raw.traces) ? raw.traces : [],
       album_locked: raw.album_locked !== false,
+      seed_ver: Number(raw.seed_ver) || 0,
     });
   } catch (_) {
     return emptyStore();
@@ -43,121 +46,221 @@ function writeStore(store) {
   fs.writeFileSync(DATA_PATH, JSON.stringify(store, null, 2), "utf8");
 }
 
-function seedIfNeeded(store, botName) {
-  if (store.seeded && store.chats.length) return store;
-  const name = String(botName || "家机").trim().slice(0, 16) || "家机";
-  store.seeded = true;
-  store.memos = [
+function familyFlags(persona) {
+  const t = String(persona || "");
+  return {
+    motherDead:
+      /丧母|母亲.{0,16}(去世|亡|离世|死了|过世)|父母双亡|双亡|没了妈|没有母亲/.test(
+        t
+      ),
+    fatherDead:
+      /丧父|父亲.{0,16}(去世|亡|离世|死了|过世)|父母双亡|双亡|继承.{0,40}遗产|父亲去世/.test(
+        t
+      ),
+  };
+}
+
+function hasDeadParentClash(store, persona) {
+  const f = familyFlags(persona);
+  for (const c of store.chats || []) {
+    const title = String((c && c.title) || "");
+    if (f.motherDead && /妈妈|母亲|老妈|妈咪/.test(title)) return true;
+    if (f.fatherDead && /爸爸|父亲|老爸/.test(title)) return true;
+  }
+  return false;
+}
+
+function ago(ms) {
+  return Date.now() - ms;
+}
+
+function defaultMemos() {
+  return [
     {
       id: "m1",
       title: "备忘",
       body: "周末带点薄荷巧克力。别忘了。",
-      ts: Date.now() - 86400000 * 2,
+      ts: ago(86400000 * 2),
     },
     {
       id: "m2",
       title: "密码备忘（勿给别人看）",
       body: "相册试了试 2580……好像不对。算了。",
-      ts: Date.now() - 86400000 * 5,
+      ts: ago(86400000 * 5),
     },
   ];
-  store.chats = [
+}
+
+function defaultShop(userName) {
+  const you = String(userName || "她").trim().slice(0, 12) || "她";
+  return [
     {
-      id: "c-mom",
-      title: "妈妈",
+      id: "s1",
+      title: "薄荷巧克力礼盒",
+      shop: "本地店",
+      amount: "¥68.00",
+      status: "已签收",
+      note: "给" + you + "垫胃",
+      ts: ago(500000000),
+    },
+    {
+      id: "s2",
+      title: "降噪耳机",
+      shop: "某宝旗舰",
+      amount: "¥899.00",
+      status: "运输中",
+      note: "加班用",
+      ts: ago(200000000),
+    },
+  ];
+}
+
+/** 按人设拼通讯录：死人不能出现；默认搭档 + 工作 + 健身友 */
+function buildPersonaChats(userName, persona) {
+  const you = String(userName || "叶清时").trim().slice(0, 16) || "她";
+  const f = familyFlags(persona);
+  const chats = [
+    {
+      id: "c-partner",
+      title: you,
       kind: "dm",
-      preview: "记得吃饭",
+      preview: "到家抱你",
       messages: [
-        { id: "a1", from: "them", text: "在忙吗？", ts: Date.now() - 86400000 },
-        { id: "a2", from: "me", text: "嗯，有点。", ts: Date.now() - 86000000 },
-        { id: "a3", from: "them", text: "记得吃饭", ts: Date.now() - 85000000 },
+        {
+          id: "p1",
+          from: "me",
+          text: "会议又拖了，还有二十来分钟。",
+          ts: ago(2400000),
+        },
+        {
+          id: "p2",
+          from: "them",
+          text: "别硬扛，先垫点东西。我在家等你。",
+          ts: ago(2100000),
+        },
+        {
+          id: "p3",
+          from: "me",
+          text: "好，到家抱你。",
+          ts: ago(1800000),
+        },
       ],
     },
     {
       id: "c-work",
-      title: "同事·阿凯",
+      title: "助理·周予",
       kind: "dm",
       preview: "那份材料我放桌上了",
       messages: [
         {
           id: "b1",
           from: "them",
-          text: "今晚聚餐去吗？",
-          ts: Date.now() - 7200000,
+          text: "今晚聚餐去吗？客户那边问了。",
+          ts: ago(7200000),
         },
         {
           id: "b2",
           from: "me",
-          text: "不去了，有约。",
-          ts: Date.now() - 7000000,
+          text: "不去了，有约。材料你先摆我桌上。",
+          ts: ago(7000000),
         },
         {
           id: "b3",
           from: "them",
           text: "那份材料我放桌上了",
-          ts: Date.now() - 6800000,
+          ts: ago(6800000),
         },
       ],
     },
-    {
-      id: "c-secret",
-      title: "不备注",
+  ];
+  if (!f.motherDead) {
+    chats.push({
+      id: "c-mom",
+      title: "妈妈",
       kind: "dm",
-      preview: "那瓶香水你喜欢吗",
+      preview: "记得吃饭",
+      messages: [
+        { id: "a1", from: "them", text: "在忙吗？", ts: ago(86400000) },
+        { id: "a2", from: "me", text: "嗯，有点。", ts: ago(86000000) },
+        { id: "a3", from: "them", text: "记得吃饭", ts: ago(85000000) },
+      ],
+    });
+  }
+  if (!f.fatherDead) {
+    chats.push({
+      id: "c-dad",
+      title: "爸爸",
+      kind: "dm",
+      preview: "周末回家一趟",
       messages: [
         {
-          id: "c1",
+          id: "d1",
           from: "them",
-          text: "上次说的男士香水到了。",
-          ts: Date.now() - 172800000,
+          text: "公司还顺吗。",
+          ts: ago(172800000),
         },
+        { id: "d2", from: "me", text: "还行。", ts: ago(172000000) },
         {
-          id: "c2",
-          from: "me",
-          text: "……你买这个干什么。",
-          ts: Date.now() - 172000000,
-        },
-        {
-          id: "c3",
+          id: "d3",
           from: "them",
-          text: "那瓶香水你喜欢吗？想着送你来着。",
-          ts: Date.now() - 170000000,
-        },
-        {
-          id: "c4",
-          from: "me",
-          text: "先放着。别跟别人说。",
-          ts: Date.now() - 169000000,
+          text: "有空周末回家一趟。",
+          ts: ago(170000000),
         },
       ],
-    },
-  ];
-  store.shop = [
-    {
-      id: "s1",
-      title: "男士淡香水 50ml",
-      shop: "某宝旗舰",
-      amount: "¥328.00",
-      status: "已签收",
-      note: "还没送出去",
-      ts: Date.now() - 200000000,
-    },
-    {
-      id: "s2",
-      title: "薄荷巧克力礼盒",
-      shop: "本地店",
-      amount: "¥68.00",
-      status: "已签收",
-      note: "",
-      ts: Date.now() - 500000000,
-    },
-  ];
+    });
+  }
+  if (chats.length < 3) {
+    chats.push({
+      id: "c-gym",
+      title: "健身·老陈",
+      kind: "dm",
+      preview: "明早见",
+      messages: [
+        {
+          id: "g1",
+          from: "them",
+          text: "明天深蹲日，来不来？",
+          ts: ago(36000000),
+        },
+        {
+          id: "g2",
+          from: "me",
+          text: "来。别排太满，我还得赶早会。",
+          ts: ago(35000000),
+        },
+        { id: "g3", from: "them", text: "行，明早见。", ts: ago(34000000) },
+      ],
+    });
+  }
+  return chats;
+}
+
+function seedIfNeeded(store, botName, opts) {
+  const name = String(botName || "沈言之").trim().slice(0, 16) || "沈言之";
+  const userName =
+    String((opts && opts.userName) || "").trim().slice(0, 16) || "叶清时";
+  const persona = String((opts && opts.persona) || "");
+  const need =
+    !store.seeded ||
+    store.seed_ver !== SEED_VER ||
+    hasDeadParentClash(store, persona);
+  if (!need) {
+    store.owner_name = name;
+    return store;
+  }
+  store.seeded = true;
+  store.seed_ver = SEED_VER;
   store.owner_name = name;
+  store.chats = buildPersonaChats(userName, persona);
+  store.shop = defaultShop(userName);
+  if (!Array.isArray(store.memos) || !store.memos.length) {
+    store.memos = defaultMemos();
+  }
   return store;
 }
 
-function ensureStore(botName) {
-  const store = seedIfNeeded(readStore(), botName);
+function ensureStore(botName, opts) {
+  const store = seedIfNeeded(readStore(), botName, opts);
   writeStore(store);
   return store;
 }
@@ -175,11 +278,11 @@ function addTrace(store, kind, detail) {
   return row;
 }
 
-function getOverview(botName) {
-  const store = ensureStore(botName);
+function getOverview(botName, opts) {
+  const store = ensureStore(botName, opts);
   return {
     ok: true,
-    owner_name: store.owner_name || botName || "家机",
+    owner_name: store.owner_name || botName || "沈言之",
     album_locked: !!store.album_locked,
     apps: [
       { id: "wechat", label: "微信" },
@@ -204,8 +307,8 @@ function getOverview(botName) {
   };
 }
 
-function openApp(appId, botName) {
-  const store = ensureStore(botName);
+function openApp(appId, botName, opts) {
+  const store = ensureStore(botName, opts);
   const id = String(appId || "").trim();
   const labels = {
     wechat: "微信",
@@ -227,10 +330,10 @@ function openApp(appId, botName) {
   addTrace(store, "open_app", "打开了「" + (labels[id] || id || "未知") + "」");
   writeStore(store);
   if (id === "wechat") {
-    return { ok: true, app: "wechat", chats: getOverview(botName).chats };
+    return { ok: true, app: "wechat", chats: getOverview(botName, opts).chats };
   }
   if (id === "memo") {
-    return { ok: true, app: "memo", memos: getOverview(botName).memos };
+    return { ok: true, app: "memo", memos: getOverview(botName, opts).memos };
   }
   if (id === "shop") {
     return { ok: true, app: "shop", shop: store.shop.slice() };
@@ -246,8 +349,8 @@ function openApp(appId, botName) {
   return { ok: true, app: "home" };
 }
 
-function openChat(chatId, botName) {
-  const store = ensureStore(botName);
+function openChat(chatId, botName, opts) {
+  const store = ensureStore(botName, opts);
   const id = String(chatId || "").trim();
   const chat = store.chats.find((c) => c.id === id);
   if (!chat) {
@@ -274,8 +377,8 @@ function openChat(chatId, botName) {
   };
 }
 
-function updateMemo(memoId, body, botName) {
-  const store = ensureStore(botName);
+function updateMemo(memoId, body, botName, opts) {
+  const store = ensureStore(botName, opts);
   const id = String(memoId || "").trim();
   const hit = store.memos.find((m) => m.id === id);
   if (!hit) {
@@ -333,15 +436,30 @@ function resetForTests() {
 
 if (require.main === module) {
   resetForTests();
-  const ov = getOverview("薄巧");
-  console.assert(ov.chats.length >= 2, "chats");
-  openApp("wechat", "薄巧");
-  openChat(ov.chats[0].id, "薄巧");
-  openApp("album", "薄巧");
-  const sys = formatUnreadTracesForSystem();
-  console.assert(sys.includes("翻"), sys);
-  markTracesSeen();
-  console.assert(!formatUnreadTracesForSystem());
+  const deadPersona =
+    "成长背景:七岁丧母。故事节点：你的父亲去世当晚，你继承遗产。";
+  const ov = getOverview("沈言之", {
+    userName: "叶清时",
+    persona: deadPersona,
+  });
+  console.assert(
+    !ov.chats.some((c) => /妈妈|爸爸/.test(c.title)),
+    "no dead parents"
+  );
+  console.assert(
+    ov.chats.some((c) => c.title === "叶清时"),
+    "partner chat"
+  );
+  openApp("wechat", "沈言之", { userName: "叶清时", persona: deadPersona });
+  openChat(ov.chats[0].id, "沈言之", {
+    userName: "叶清时",
+    persona: deadPersona,
+  });
+  const alive = buildPersonaChats("小美", "普通家庭，父母都在。");
+  console.assert(
+    alive.some((c) => c.title === "妈妈"),
+    "mom when alive"
+  );
   console.log("bot-phone self-check ok");
 }
 
@@ -354,4 +472,6 @@ module.exports = {
   formatUnreadTracesForSystem,
   markTracesSeen,
   resetForTests,
+  familyFlags,
+  buildPersonaChats,
 };

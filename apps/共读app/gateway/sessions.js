@@ -246,14 +246,16 @@ function startSession(bookKey) {
         open.weread_read_seconds_at_start = Number(bookReady.weread_read_seconds) || 0;
         dirty = true;
       }
-      // 进程被杀/后台回来：丢掉未结算的墙钟段，从前台此刻重新计
+      // 进程被杀/后台回来：丢掉未结算墙钟段；计时须用户点「开始/继续」才 resume
       if (open.active_ms == null) {
         open.active_ms = 0;
         dirty = true;
       }
       normalizeOpenIdle(open);
-      open.active_since = Date.now();
-      dirty = true;
+      if (open.active_since) {
+        open.active_since = null;
+        dirty = true;
+      }
       if (dirty) {
         all.open = open;
         writeAll(all);
@@ -282,7 +284,7 @@ function startSession(bookKey) {
     pass_ordinal: Number(bookReady.active_pass) || 1,
     started_at: Date.now(),
     active_ms: 0,
-    active_since: Date.now(),
+    active_since: null,
     follow_paused: false,
     lore_light: false,
     follow_tone: Object.prototype.hasOwnProperty.call(bookReady, "default_tone")
@@ -295,8 +297,6 @@ function startSession(bookKey) {
     tokens_used: 0,
     chats: [],
     weread_read_seconds_at_start: Number(bookReady.weread_read_seconds) || 0,
-    active_ms: 0,
-    active_since: Date.now(),
     idle_offset: 0,
     idle_log: [],
   };

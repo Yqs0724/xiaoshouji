@@ -24,7 +24,7 @@
             <span class="chat-av-wrap sm av-frame-full">
               <img id="chatContactAv" src="/assets/cafe/avatar-bot.png" alt="" />
             </span>
-            <span class="chat-contact-nm" id="chatContactName">家机</span>
+            <span class="chat-contact-nm" id="chatContactName">沈言之</span>
           </button>
         </div>
         <div class="chat-sec-lab" id="chatGroupSecLab">群聊</div>
@@ -118,16 +118,20 @@
       </header>
       <div class="chat-ov-pad chat-persona-pad">
         <div class="chat-peer-head">
-          <button type="button" class="chat-peer-av-wrap av-frame-full chat-me-av-btn" id="btnChatMeAvPick" aria-label="换头像">
+          <button type="button" class="chat-peer-av-wrap av-frame-full chat-me-av-btn" id="btnChatMeAvPick" aria-label="头像">
             <img id="chatMeProfileAv" src="/assets/cafe/avatar-you.png" alt="" />
           </button>
           <div class="chat-peer-meta">
             <div class="nm" id="chatMeProfileTitle">你</div>
-            <div class="sub">点头像换图 · 预设或相册</div>
+            <div class="sub">点头像 · 查看大图或更换</div>
           </div>
         </div>
         <input type="file" id="chatMeAvFile" accept="image/*" hidden />
-        <div class="chat-me-av-presets" id="chatMeAvPresets" role="listbox" aria-label="头像预设"></div>
+        <div class="chat-me-av-acts" id="chatMeAvActs" hidden>
+          <button type="button" class="chat-me-av-act" id="btnChatMeAvView">查看大图</button>
+          <button type="button" class="chat-me-av-act" id="btnChatMeAvChange">更换头像</button>
+          <button type="button" class="chat-me-av-act ghost" id="btnChatMeAvActsClose">取消</button>
+        </div>
         <label class="chat-persona-lab" for="chatMeNickInput">网名</label>
         <input
           type="text"
@@ -165,7 +169,7 @@
             <img id="chatProfileAv" src="/assets/cafe/avatar-bot.png" alt="" />
           </span>
           <div class="chat-peer-meta">
-            <div class="nm" id="chatProfileName">家机</div>
+            <div class="nm" id="chatProfileName">沈言之</div>
             <div class="sub" id="chatProfileSub">沿用小屋人设</div>
           </div>
         </div>
@@ -362,7 +366,7 @@
         <p class="chat-clear-hint">勾选要清空的会话。收藏和朋友圈会留下。</p>
         <label class="chat-clear-peer">
           <input type="checkbox" id="chatClearPeerDaily" value="daily" />
-          <span id="chatClearPeerName">家机</span>
+          <span id="chatClearPeerName">沈言之</span>
         </label>
         <div class="chat-clear-acts">
           <button type="button" id="btnChatClearCancel">取消</button>
@@ -634,7 +638,7 @@
     <div class="chat-overlay" id="chatOvPeer" hidden>
       <header class="chat-top">
         <button type="button" class="chat-top-side left" id="btnChatPeerBack" aria-label="返回">←</button>
-        <span class="chat-top-title" id="chatPeerPageTitle">家机</span>
+        <span class="chat-top-title" id="chatPeerPageTitle">沈言之</span>
       </header>
       <div class="chat-ov-pad">
         <p class="chat-hint-line">会话与家机</p>
@@ -754,9 +758,9 @@
       <header class="wx-bar">
         <button type="button" class="back" id="btnChatBack" title="返回" aria-label="返回">←</button>
         <div class="wx-bar-mid">
-          <div class="who" id="chatPeerName">家机</div>
+          <div class="who" id="chatPeerName">沈言之</div>
           <button type="button" class="wx-topic-chip" id="chatTopicChip" hidden title="话题频道"></button>
-          <span class="wx-mood-cap" id="chatMoodCap" hidden></span>
+          <button type="button" class="wx-mood-cap" id="chatMoodCap" hidden title="点按看心情详情" aria-label="心情详情"></button>
         </div>
         <button type="button" class="more" id="btnChatPeerMore" title="更多" aria-label="更多">···</button>
       </header>
@@ -899,7 +903,7 @@
             <img id="chatCallAvatar" class="wx-call-avatar" alt="" />
           </div>
           <div class="wx-call-kind" id="chatCallKind">语音通话</div>
-          <div class="wx-call-peer" id="chatCallPeer">家机</div>
+          <div class="wx-call-peer" id="chatCallPeer">沈言之</div>
           <div class="wx-call-state" id="chatCallState">邀请你语音通话</div>
           <div class="wx-call-video" id="chatCallVideoWrap" hidden>
             <video id="chatCallVideoRemote" class="is-remote" playsinline autoplay hidden></video>

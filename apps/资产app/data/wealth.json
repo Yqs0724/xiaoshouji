@@ -1,29 +1,142 @@
 {
   "owner": "ARIA",
   "currency": "USD",
-  "totalNetWorth": 12800,
-  "change24h": -0.012,
+  "totalNetWorth": 12800000,
+  "change24h": 0.008,
   "allocation": [
     {
-      "en": "Cash & Deposit",
-      "cn": "现金存款",
-      "pct": 55,
+      "en": "Public Equity",
+      "cn": "公开市场",
+      "pct": 35,
       "color": "#9ec9bc"
     },
     {
-      "en": "Daily Spend",
-      "cn": "日常开支备用",
-      "pct": 30,
+      "en": "Private",
+      "cn": "另类",
+      "pct": 40,
       "color": "#6fa896"
     },
     {
-      "en": "Other",
-      "cn": "其它",
-      "pct": 15,
+      "en": "Cash",
+      "cn": "现金",
+      "pct": 25,
       "color": "#c4a574"
     }
   ],
-  "savedAt": 1793005380254,
-  "lastAdjustNote": "开局档 · 穷",
-  "lastAdjustAt": 1793005101019
+  "savedAt": 1793116823219,
+  "lastAdjustNote": "开局档 · 富",
+  "lastAdjustAt": 1793116823218,
+  "tierId": "rich",
+  "matrix": "lite",
+  "categories": {
+    "book": {
+      "en": "01 BOOK",
+      "cn": "账面",
+      "subs": {
+        "eq": {
+          "en": "Equity",
+          "cn": "权益",
+          "items": [
+            {
+              "en": "Index Sleeve",
+              "cn": "指数袖",
+              "code": "IDX",
+              "cost": 1,
+              "qty": 4480000,
+              "pnl": 8.2,
+              "custodian": "Broker",
+              "pledged": "No",
+              "lastTrade": "本周",
+              "risk": "Market"
+            },
+            {
+              "en": "Private Note",
+              "cn": "私募票据",
+              "code": "PN",
+              "cost": 1,
+              "qty": 5120000,
+              "pnl": 12,
+              "custodian": "FO",
+              "pledged": "No",
+              "lastTrade": "本季",
+              "risk": "Illiquid"
+            }
+          ]
+        },
+        "cash": {
+          "en": "Cash",
+          "cn": "现金",
+          "items": [
+            {
+              "en": "Operating USD",
+              "cn": "美元运营",
+              "code": "USD",
+              "cost": 1,
+              "qty": 3200000,
+              "pnl": 0,
+              "custodian": "PB",
+              "pledged": "No",
+              "lastTrade": "今天",
+              "risk": "Low"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "coreHoldings": [
+    {
+      "en": "Index Sleeve",
+      "cn": "指数袖",
+      "code": "IDX",
+      "cost": 1,
+      "qty": 4480000,
+      "pnl": 8.2,
+      "custodian": "Broker",
+      "pledged": "No",
+      "lastTrade": "本周",
+      "risk": "Market"
+    },
+    {
+      "en": "Private Note",
+      "cn": "私募票据",
+      "code": "PN",
+      "cost": 1,
+      "qty": 5120000,
+      "pnl": 12,
+      "custodian": "FO",
+      "pledged": "No",
+      "lastTrade": "本季",
+      "risk": "Illiquid"
+    },
+    {
+      "en": "Operating USD",
+      "cn": "美元运营",
+      "code": "USD",
+      "cost": 1,
+      "qty": 3200000,
+      "pnl": 0,
+      "custodian": "PB",
+      "pledged": "No",
+      "lastTrade": "今天",
+      "risk": "Low"
+    }
+  ],
+  "feedPool": [
+    [
+      "经纪",
+      "分红到账",
+      "+$42,000"
+    ],
+    [
+      "私募",
+      "Call 通知",
+      "−$180,000"
+    ],
+    [
+      "现金",
+      "Sweep",
+      "+$12,500"
+    ]
+  ]
 }

@@ -1,10 +1,8 @@
 {
   "theater": "ARIA",
   "me": "ME",
-  "bot": "DONTLOOK",
-  "botPrev": [
-    "CASH"
-  ],
-  "cold": true,
-  "updatedAt": 1793079428486
+  "bot": "CASH",
+  "botPrev": [],
+  "cold": false,
+  "updatedAt": 0
 }

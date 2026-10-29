@@ -51,8 +51,12 @@
       padding: env(safe-area-inset-top, 0px) 14px 0;
       color: var(--chocolate);
       background: transparent;
-      pointer-events: none;
+      /* S8.3：可点/下拉开通知中心（薄条挡点击可接受） */
+      pointer-events: auto;
+      cursor: pointer;
+      touch-action: none;
       z-index: 40;
+      -webkit-tap-highlight-color: transparent;
     }
     #phoneStatus.is-off { display: none; }
     /* App 方案1改：浅薄荷雾状态带（贴薄荷绿顶栏同系，避奶油在共听跳色） */
@@ -139,6 +143,411 @@
     #phoneStatus .lock-status {
       margin-left: auto;
       flex: 0 0 auto;
+      pointer-events: none;
+    }
+    #phoneStatus .phone-status-time,
+    #phoneStatus .phone-status-now {
+      pointer-events: none;
+    }
+    /* S8.3 通知中心 · 整屏（布局参考真机下拉：大时钟 + 日期 + 通知区） */
+    #phoneShade {
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      display: flex;
+      flex-direction: column;
+      pointer-events: none;
+    }
+    #phoneShade.is-off { display: none !important; }
+    #phoneShade.is-open { pointer-events: auto; }
+    .phone-shade-sheet {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      max-height: none;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      overscroll-behavior: contain;
+      /* 薄巧实色皮：奶油→薄荷，勿用毛玻璃换皮 */
+      background:
+        linear-gradient(180deg, #f7f1ea 0%, #eef6f1 52%, #e8f0eb 100%);
+      border-radius: 0;
+      box-shadow: none;
+      transform: translateY(-104%);
+      transition: transform .24s ease;
+      padding: calc(8px + env(safe-area-inset-top, 0px)) 18px calc(10px + env(safe-area-inset-bottom, 0px));
+      box-sizing: border-box;
+      color: #5c4033;
+    }
+    #phoneShade.is-open .phone-shade-sheet { transform: translateY(0); }
+    .phone-shade-grab {
+      width: 44px;
+      height: 5px;
+      border-radius: 999px;
+      background: rgba(92, 64, 51, .28);
+      margin: 0 auto;
+      flex-shrink: 0;
+      pointer-events: none;
+    }
+    .phone-shade-head {
+      flex-shrink: 0;
+      margin-bottom: 8px;
+      padding-top: 6px;
+    }
+    .phone-shade-hero {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .phone-shade-clock {
+      flex-shrink: 0;
+      font-size: 52px;
+      font-weight: 300;
+      letter-spacing: -.02em;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      color: #5c4033;
+      padding-top: 2px;
+    }
+    .phone-shade-hero-side {
+      flex: 1;
+      min-width: 0;
+      padding-top: 10px;
+    }
+    .phone-shade-date {
+      font-size: 14px;
+      font-weight: 650;
+      line-height: 1.3;
+      opacity: .88;
+    }
+    .phone-shade-facts-line {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.45;
+      opacity: .62;
+      word-break: break-word;
+    }
+    .phone-shade-facts-line .sep {
+      margin: 0 5px;
+      opacity: .45;
+    }
+    .phone-shade-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .phone-shade-list {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 6px 0 8px;
+    }
+    .phone-shade-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      text-align: left;
+      border: 0;
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: rgba(255, 252, 247, .92);
+      box-shadow: inset 0 0 0 1px rgba(92, 64, 51, .08);
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .phone-shade-row:active { background: rgba(223, 243, 232, .95); }
+    .phone-shade-row-av {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      flex-shrink: 0;
+      border-radius: 50%;
+      overflow: visible;
+    }
+    .phone-shade-row-av img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+      display: block;
+      border: 1px solid rgba(255, 255, 255, .55);
+    }
+    .phone-shade-row-av.av-frame-full::after {
+      content: "";
+      position: absolute;
+      inset: -32%;
+      background: url("/assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .phone-shade-row-body {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .phone-shade-row .k {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      opacity: .55;
+    }
+    .phone-shade-row .t {
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    .phone-shade-empty {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 18%;
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      opacity: .48;
+      text-align: center;
+      pointer-events: none;
+    }
+    .phone-shade-empty[hidden] { display: none !important; }
+    .phone-shade-foot {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      min-height: 36px;
+      padding: 8px 0 6px;
+      touch-action: none;
+    }
+    .phone-shade-clear {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 50%;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(92, 64, 51, .05);
+      color: rgba(92, 64, 51, .38);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .phone-shade-clear svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+    .phone-shade-clear:active {
+      background: rgba(92, 64, 51, .1);
+      color: rgba(92, 64, 51, .55);
+    }
+    .phone-shade-row.is-listen {
+      align-items: center;
+      gap: 14px;
+      padding: 14px 14px;
+      min-height: 96px;
+    }
+    .phone-shade-cover {
+      width: 72px;
+      height: 72px;
+      border-radius: 14px;
+      flex-shrink: 0;
+      align-self: center;
+      overflow: hidden;
+      background: rgba(198, 231, 209, .55);
+      border: 1px solid rgba(92, 64, 51, .12);
+      display: grid;
+      place-items: center;
+    }
+    .phone-shade-cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .phone-shade-cover .ph {
+      font-size: 22px;
+      opacity: .45;
+    }
+    .phone-shade-listen-mid {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      justify-content: center;
+      align-self: center;
+    }
+    .phone-shade-listen-acts {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+    }
+    .phone-shade-listen-acts button {
+      width: 34px;
+      height: 34px;
+      border: 0;
+      border-radius: 11px;
+      padding: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(198, 231, 209, .55);
+      color: #5c4033;
+      cursor: pointer;
+    }
+    .phone-shade-listen-acts button.is-play {
+      width: 40px;
+      height: 40px;
+      border-radius: 999px;
+      background: #c6e7d1;
+      box-shadow: inset 0 0 0 1.5px rgba(92, 64, 51, .16);
+    }
+    .phone-shade-listen-acts button svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+    .phone-shade-listen-acts button.is-play svg {
+      width: 18px;
+      height: 18px;
+    }
+    .phone-shade-listen-acts button:active {
+      background: rgba(198, 231, 209, .9);
+    }
+    /* 壳级消息 / 来电弹窗（桌面也能看见，不只是细条 toast） */
+    #phoneAlert {
+      position: fixed;
+      left: 50%;
+      top: calc(var(--phone-status-pad, 28px) + 10px);
+      transform: translateX(-50%);
+      z-index: 70;
+      width: min(92%, 340px);
+      border-radius: 18px;
+      padding: 12px 12px 12px 12px;
+      background: rgba(255, 252, 247, .97);
+      border: 1.5px solid rgba(92, 64, 51, .14);
+      box-shadow: 0 10px 28px rgba(92, 64, 51, .18);
+      color: #5c4033;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: auto;
+    }
+    #phoneAlert[hidden] { display: none !important; }
+    .phone-alert-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 0;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      text-align: left;
+      color: inherit;
+      font: inherit;
+      cursor: pointer;
+      width: 100%;
+    }
+    .phone-alert-av {
+      position: relative;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      overflow: visible;
+      flex-shrink: 0;
+      background: #dff3e8;
+    }
+    .phone-alert-av img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, .55);
+    }
+    .phone-alert-av.av-frame-full::after {
+      content: "";
+      position: absolute;
+      inset: -32%;
+      background: url("/assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .phone-alert-body { flex: 1; min-width: 0; }
+    .phone-alert-kind {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      opacity: .55;
+    }
+    .phone-alert-title {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-top: 2px;
+    }
+    .phone-alert-txt {
+      font-size: 12px;
+      font-weight: 550;
+      opacity: .72;
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .phone-alert-acts {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .phone-alert-acts[hidden] { display: none !important; }
+    .phone-alert-acts button {
+      flex: 1;
+      border: 0;
+      border-radius: 12px;
+      padding: 9px 10px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .phone-alert-decline {
+      background: rgba(92, 64, 51, .08);
+      color: #5c4033;
+    }
+    .phone-alert-accept {
+      background: #c6e7d1;
+      color: #5c4033;
+      box-shadow: inset 0 0 0 1.5px rgba(92, 64, 51, .18);
+    }
+    .phone-shade-foot .phone-shade-grab-hit {
+      width: 100%;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 0 10px;
+      cursor: grab;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
     }
     .view {
       display: none !important;
@@ -995,7 +1404,7 @@
       padding: 0;
       font: inherit;
       color: inherit;
-      overflow: hidden;
+      overflow: visible; /* 薄巧头像框外溢 */
     }
     .desk-item.desk-peer .home-av .face {
       width: 44px;
@@ -1003,7 +1412,9 @@
     }
     .desk-item.desk-peer .home-avatars {
       width: 100%;
-      padding: 0;
+      padding: 12px 8px 2px;
+      box-sizing: border-box;
+      overflow: visible;
     }
     .desk-item.desk-peer .home-capsule {
       margin-bottom: 0;
@@ -1184,7 +1595,9 @@
       pointer-events: auto;
       user-select: none;
     }
-    #homeFloat.is-off { display: none; }
+    #homeFloat.is-off,
+    #homeFloat[data-stub="1"],
+    #homeFloat[hidden] { display: none !important; }
     body.phone-status-app #homeFloat { display: none !important; }
     #homeFloat.is-drag { cursor: grabbing; }
     #homeFloat .hf-orb {
@@ -1664,10 +2077,12 @@
       flex-shrink: 0;
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 10px;
       padding: calc(10px + var(--safe-top, 0px)) 14px 10px;
       border-bottom: 2px solid rgba(92, 64, 51, 0.18);
       background: rgba(255, 250, 245, 0.92);
+      position: relative;
     }
     .bot-phone-top button {
       border: 2px solid #5c4033;
@@ -1679,12 +2094,21 @@
       font-size: 13px;
       padding: 6px 12px;
       cursor: pointer;
+      min-width: 4.5em;
+      z-index: 1;
     }
     .bot-phone-top .ttl {
-      flex: 1;
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
       font-weight: 800;
       font-size: 15px;
       text-align: center;
+      pointer-events: none;
+      max-width: 46%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .bot-phone-body {
       flex: 1;
@@ -1975,9 +2399,10 @@
     .home-avatars {
       display: flex;
       justify-content: center;
-      gap: 22px;
-      padding: 0;
+      gap: 28px;
+      padding: 10px 4px 0;
       flex-shrink: 0;
+      overflow: visible;
     }
     .home-av {
       text-align: center;
@@ -1994,12 +2419,12 @@
       width: 48px;
       height: 48px;
       border-radius: 50%;
-      border: 2px solid #9ec9bc;
+      border: 1px solid rgba(255, 255, 255, .55);
       background: #fff;
-      box-shadow: 0 3px 10px rgba(0, 0, 0, .1);
+      box-shadow: none;
       position: relative;
       overflow: visible;
-      margin: 0 auto;
+      margin: 10px auto 0;
     }
     .home-av .face > img:first-child {
       width: 100%;
@@ -2008,21 +2433,47 @@
       border-radius: 50%;
       display: block;
     }
-    .home-av .deco {
+    /* 聊天同款薄巧头像框（assets/chat/skin/avatar-frame.png） */
+    .home-av .face.av-frame-full::after {
+      content: "";
       position: absolute;
-      right: -6px;
-      bottom: -3px;
-      width: 20px;
-      height: 20px;
-      object-fit: contain;
-      filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .2));
+      inset: -32%;
+      background: url("/assets/chat/skin/avatar-frame.png") center / contain no-repeat;
+      pointer-events: none;
+      z-index: 2;
+    }
+    /* 壳级推送条：聊天页外也能看见（原 toast 画在 #view-chat 里） */
+    #phonePushToast {
+      position: fixed;
+      left: 50%;
+      top: calc(var(--phone-status-pad, 28px) + 8px);
+      transform: translateX(-50%);
+      z-index: 60;
+      max-width: min(88%, 320px);
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(92, 64, 51, .92);
+      color: #f7f1e8;
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.35;
+      text-align: center;
+      box-shadow: 0 4px 14px rgba(92, 64, 51, .28);
       pointer-events: none;
     }
+    #phonePushToast[hidden] { display: none !important; }
     .home-av .lab {
+      display: block;
       font-size: 10px;
       color: #5c4033;
-      margin-top: 4px;
+      margin: 4px auto 0;
       font-weight: 600;
+      text-align: center;
+      line-height: 1.2;
+      max-width: 4.8em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .home-capsule {
       align-self: center;
@@ -2272,7 +2723,381 @@
     }
 
     #view-cabin {
-      background: linear-gradient(180deg, #f3ebe0 0%, #ebe2d4 100%);
+      --mint-green: #e1f6f1;
+      --mint-glass: rgba(225, 246, 241, 0.88);
+      --mint-focus: #7eb8a8;
+      --choco-brown: #b5a198;
+      --choco-dark: #6e584f;
+      background: linear-gradient(180deg, #e1f6f1 0%, #f3ebe0 42%, #ebe2d4 100%);
+      color: var(--choco-dark);
+    }
+    #view-cabin .cabin-top {
+      position: relative;
+      justify-content: center;
+      background: var(--mint-glass);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-bottom: 2px solid var(--choco-brown);
+      color: var(--choco-dark);
+      padding: 12px 48px 10px;
+    }
+    #view-cabin .cabin-top .spacer { display: none; }
+    #view-cabin .cabin-top .down {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--choco-dark);
+    }
+    #view-cabin #cabinTitle {
+      font-size: 17px;
+      font-weight: 650;
+      letter-spacing: 0.02em;
+      text-align: center;
+    }
+    #view-cabin .shelf-bar button {
+      background: var(--choco-dark);
+    }
+    /* 笔记/记录「导出」是文字链，勿被上面实心钮样式盖住 */
+    #view-cabin .shelf-bar button.stat-export {
+      background: transparent;
+      color: var(--choco-dark);
+      border-radius: 0;
+      padding: 5px 2px 5px 8px;
+      font-size: 13px;
+      font-weight: 650;
+      box-shadow: none;
+    }
+    #view-cabin .shelf-bar input[type="search"] {
+      border-color: rgba(181, 161, 152, 0.55);
+      background: rgba(255, 252, 247, 0.92);
+    }
+    #view-cabin .shelf-bar input[type="search"]:focus {
+      border-color: var(--mint-focus);
+      box-shadow: 0 0 0 2px rgba(126, 184, 168, 0.35);
+    }
+    /* 书架：上下滑；一屏约 3×3，格间留白相同 */
+    #view-cabin #tab-shelf.active {
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+    #view-cabin #shelfRoot {
+      flex: 1;
+      min-height: 0;
+    }
+    #view-cabin .shelf-grid {
+      --shelf-gap: 10px;
+      --shelf-row: auto;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--shelf-gap);
+      padding: var(--shelf-gap);
+      align-items: stretch;
+      box-sizing: border-box;
+      grid-auto-rows: var(--shelf-row);
+    }
+    #view-cabin .shelf-tile {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: inherit;
+      text-align: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      box-sizing: border-box;
+    }
+    #view-cabin .shelf-tile .cover {
+      width: 90%;
+      max-width: 90%;
+      aspect-ratio: 3 / 4;
+      max-height: calc(100% - 2.7em);
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(255, 252, 247, 0.82);
+      border: 1.5px solid rgba(181, 161, 152, 0.4);
+      box-shadow: 0 2px 8px rgba(92, 64, 51, 0.1);
+      flex: 0 1 auto;
+    }
+    #view-cabin .shelf-tile .cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #view-cabin .shelf-tile .cover img[src*="decor-"] {
+      object-fit: contain;
+      padding: 18%;
+      background: rgba(225, 246, 241, 0.65);
+    }
+    #view-cabin .shelf-tile .nm {
+      width: 90%;
+      max-width: 90%;
+      flex: 0 0 auto;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      height: 2.6em;
+      color: var(--choco-dark);
+      overflow: hidden;
+      text-align: center;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      white-space: normal;
+      word-break: break-word;
+    }
+    /* 笔记 Tab：与书架同构的封面网格 */
+    #view-cabin .notes-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      padding: 6px 2px 14px;
+    }
+    #view-cabin .notes-tile {
+      border: 0;
+      background: transparent;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: inherit;
+      text-align: center;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    #view-cabin .notes-tile .cover {
+      width: 90%;
+      aspect-ratio: 3 / 4;
+      border-radius: 6px;
+      overflow: hidden;
+      background: rgba(255, 252, 247, 0.82);
+      border: 1.5px solid rgba(181, 161, 152, 0.4);
+      box-shadow: 0 2px 8px rgba(92, 64, 51, 0.1);
+    }
+    #view-cabin .notes-tile .cover img,
+    #view-cabin .shelf-tile .cover img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    #view-cabin .notes-tile .cover img[src*="decor-"],
+    #view-cabin .shelf-tile .cover img[src*="decor-"] {
+      object-fit: contain;
+      padding: 18%;
+      background: rgba(225, 246, 241, 0.65);
+    }
+    #view-cabin .cover-text,
+    #shelfBookSheet .cover-text,
+    .book-row .thumb .cover-text {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 8px;
+      text-align: center;
+      background: linear-gradient(160deg, #e8f4ef 0%, #f3ebe0 100%);
+      color: var(--choco-dark, #6e584f);
+      font-size: 12px;
+      font-weight: 650;
+      line-height: 1.35;
+      word-break: break-word;
+    }
+    #view-cabin .notes-tile .cover .cover-text,
+    #view-cabin .shelf-tile .cover .cover-text {
+      font-size: 11px;
+      padding: 8px 6px;
+    }
+    #shelfBookSheet .thumb .cover-text {
+      font-size: 13px;
+      padding: 12px 10px;
+    }
+    /* 笔记详情：微信读书风划线卡 */
+    #view-cabin .notes-book-head {
+      text-align: center;
+      padding: 4px 8px 10px;
+      color: var(--choco-dark);
+    }
+    #view-cabin .notes-book-head .t {
+      font-size: 14px;
+      font-weight: 650;
+    }
+    #view-cabin .notes-book-head .s {
+      font-size: 11px;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+    #view-cabin .notes-chap-bar {
+      margin: 10px 4px 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 650;
+      color: #6e584f;
+      background: rgba(255, 252, 247, 0.72);
+      border-radius: 8px;
+    }
+    #view-cabin .note-hl-card {
+      background: rgba(255, 252, 247, 0.94);
+      border: 1px solid rgba(181, 161, 152, 0.35);
+      border-radius: 12px;
+      padding: 10px 12px 10px 14px;
+      margin: 0 4px 8px;
+      box-shadow: 0 2px 8px rgba(92, 64, 51, 0.06);
+      position: relative;
+    }
+    #view-cabin .note-hl-card.mark {
+      border-left: 3px solid #e6c35c;
+    }
+    #view-cabin .note-hl-card.follow {
+      border-left: 3px solid #7eb8a8;
+    }
+    #view-cabin .note-hl-card .kind {
+      font-size: 11px;
+      font-weight: 650;
+      color: #6e584f;
+      opacity: 0.75;
+      margin-bottom: 4px;
+    }
+    #view-cabin .note-hl-card .body {
+      font-size: 13px;
+      line-height: 1.55;
+      color: #3a2e24;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    #view-cabin .note-hl-card .meta {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #8a7a6a;
+    }
+    #view-cabin .notes-tile .nm {
+      width: 90%;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.3;
+      height: 2.6em;
+      color: var(--choco-dark);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      word-break: break-word;
+    }
+    #view-cabin .notes-tile .ns {
+      width: 90%;
+      font-size: 10px;
+      line-height: 1.3;
+      color: var(--choco-dark);
+      opacity: 0.7;
+    }
+    /* 书卡 / 本场菜单：水平垂直居中 */
+    #shelfBookSheet.sheet,
+    #sheet.sheet {
+      align-items: center;
+      padding: 14px;
+    }
+    #shelfBookSheet .shelf-book-panel {
+      width: min(100%, 420px);
+      max-height: min(78vh, 560px);
+      overflow: auto;
+      background: rgba(248, 252, 251, 0.96);
+      border: 2px solid #b5a198;
+      border-radius: 18px;
+      box-shadow: 0 8px 28px rgba(110, 88, 79, 0.18);
+      padding: 14px 14px 16px;
+      position: relative;
+      color: #6e584f;
+    }
+    #shelfBookSheet .shelf-book-x {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      border: 0;
+      background: transparent;
+      color: #6e584f;
+      font-size: 22px;
+      line-height: 1;
+      padding: 4px 8px;
+      cursor: pointer;
+      opacity: 0.7;
+      z-index: 2;
+      /* 绝对定位，不挤占封面/标题居中 */
+      width: 36px;
+      height: 36px;
+    }
+    #view-coread .cr-top .clock-slot,
+    #view-coread .cr-top .more {
+      display: none !important;
+    }
+    #view-coread .cr-read-acts {
+      margin-left: auto;
+    }
+    #shelfBookSheet .shelf-book-panel .book-row {
+      padding: 8px 0 0;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      text-align: center;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #shelfBookSheet .shelf-book-panel .book-row .thumb {
+      width: 120px;
+      height: 160px;
+      border-radius: 10px;
+    }
+    #shelfBookSheet .shelf-book-panel .book-row .book-main {
+      width: 100%;
+      min-width: 0;
+      text-align: center;
+    }
+    #shelfBookSheet .shelf-book-panel .book-row .pill-row {
+      justify-content: center;
+    }
+    #shelfBookSheet .shelf-book-panel .book-row .meta {
+      text-align: center;
+    }
+    #shelfBookSheet .shelf-more {
+      margin-top: 8px;
+      border: 0;
+      background: transparent;
+      color: #6e584f;
+      font: inherit;
+      font-size: 12px;
+      opacity: 0.75;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    #shelfBookSheet .shelf-more-body[hidden] {
+      display: none !important;
+    }
+    #shelfBookSheet .shelf-more-body {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 8px;
     }
 
     /* 日历：独立布局，不套小屋 cabin-frame / 和纸画框 */
@@ -2312,65 +3137,24 @@
     .cabin-frame {
       flex: 1;
       min-height: 0;
-      margin: 0 10px;
+      margin: 0;
       position: relative;
       display: flex;
       flex-direction: column;
-      border-radius: 18px;
+      border-radius: 0;
       overflow: hidden;
       background-color: #c5d4cc;
       background-image: url("/assets/cafe/wall.jpg");
       background-size: 140px;
       background-repeat: repeat;
-      border: 2px solid rgba(180, 150, 120, .45);
-      box-shadow:
-        0 6px 18px rgba(90, 70, 50, .12),
-        inset 0 0 0 1px rgba(255, 255, 255, .35);
+      border: 0;
+      box-shadow: none;
     }
-    .frame-washi {
-      flex-shrink: 0;
-      height: 20px;
-      background: url("/assets/cafe/washi.png") center / auto 100% repeat-x;
-      opacity: .95;
-      z-index: 2;
-    }
-    .frame-washi.bot {
-      background-image: url("/assets/cafe/washi2.png");
-    }
+    /* 外框装饰已撤：和纸条 / 角花（含左上蝴蝶结） */
+    .frame-washi,
     .frame-corner {
-      position: absolute;
-      width: 36px;
-      height: 36px;
-      object-fit: contain;
-      z-index: 3;
-      pointer-events: none;
-      filter: drop-shadow(0 1px 2px rgba(60, 40, 20, .2));
+      display: none !important;
     }
-    .frame-corner.tl {
-      top: 14px;
-      left: 6px;
-      width: 50px;
-      height: 38px;
-      transform: rotate(-6deg);
-      opacity: .96;
-      /* 黑剪影 → 白蕾丝；双阴影压在薄荷格上 */
-      filter: brightness(0) invert(1)
-        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
-        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
-    }
-    .frame-corner.tr {
-      top: 10px;
-      right: 4px;
-      width: 50px;
-      height: 38px;
-      transform: rotate(6deg);
-      opacity: .96;
-      filter: brightness(0) invert(1)
-        drop-shadow(0 0 0.6px rgba(92, 74, 58, .55))
-        drop-shadow(0 2px 3px rgba(90, 70, 50, .3));
-    }
-    .frame-corner.bl { bottom: 14px; left: 6px; transform: rotate(6deg); }
-    .frame-corner.br { bottom: 14px; right: 6px; transform: rotate(-12deg); width: 34px; height: 34px; }
 
     .cabin-body {
       flex: 1;
@@ -2473,9 +3257,15 @@
     .shelf-bar .msg {
       font-size: 12px;
       color: var(--muted);
-      flex: 1;
-      min-width: 0;
+      /* 独占一行，避免挤在搜索旁变成竖排一字一行 */
+      flex: 1 1 100%;
+      min-width: 100%;
+      max-width: 100%;
+      line-height: 1.35;
+      white-space: normal;
+      word-break: break-word;
     }
+    .shelf-bar .msg:empty { display: none; }
     .shelf-bar .msg.ok { color: var(--ok); }
     .shelf-bar .msg.bad { color: #a33; }
     .shelf-bar input[type="search"] {
@@ -2728,7 +3518,22 @@
 
     .tabs-dock {
       flex-shrink: 0;
-      padding: 8px 14px calc(10px + var(--safe-bottom));
+      padding: 0;
+    }
+    /* 共读底栏：聊天 dock 同款薄巧条，图标/文案仍用现有四个 tab */
+    #view-cabin .tabs-dock .tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      align-items: center;
+      justify-content: stretch;
+      background: rgba(225, 246, 241, 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 0;
+      border-top: 2px solid #b5a198;
+      border-radius: 0;
+      padding: 6px 0 calc(8px + var(--safe-bottom));
+      box-shadow: 0 -4px 15px rgba(181, 161, 152, 0.2);
     }
     .tabs {
       display: flex;
@@ -2755,6 +3560,11 @@
       align-items: center;
       gap: 2px;
     }
+    #view-cabin .tabs button {
+      color: #6e584f;
+      opacity: 0.72;
+      font-weight: 500;
+    }
     .tabs button .ico {
       width: 22px;
       height: 22px;
@@ -2764,6 +3574,15 @@
     }
     .tabs button.on { color: #5c4030; font-weight: 600; }
     .tabs button.on .ico { opacity: 1; }
+    #view-cabin .tabs button.on {
+      opacity: 1;
+      color: #6e584f;
+      font-weight: 650;
+    }
+    #view-cabin .tabs button.on .ico {
+      opacity: 1;
+      transform: scale(1.08);
+    }
 
     /* —— 共读中 —— */
     #view-coread {
@@ -2781,13 +3600,37 @@
     .cr-top {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 12px;
+      gap: 6px;
+      padding: 10px;
       background: rgba(247, 241, 232, .92);
       flex-shrink: 0;
     }
+    .cr-read-acts {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .cr-read-btn {
+      border: 1.5px solid rgba(181, 161, 152, 0.55);
+      background: rgba(255, 252, 247, 0.92);
+      color: #6e584f;
+      border-radius: 999px;
+      padding: 4px 10px;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 650;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .cr-read-btn.danger {
+      border-color: rgba(160, 80, 70, 0.45);
+      color: #8a4038;
+    }
+    .cr-read-btn[hidden] { display: none !important; }
     .cr-top .title {
       flex: 1;
+      min-width: 0;
       font-size: 14px;
       font-weight: 400;
       white-space: nowrap;
@@ -3121,9 +3964,12 @@
     .av img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .avatar-pick {
       display: flex;
-      gap: 10px;
+      gap: 12px;
       flex-wrap: wrap;
       align-items: center;
+    }
+    .avatar-pick.avatar-pick-single {
+      flex-wrap: nowrap;
     }
     .avatar-pick button {
       width: 44px;
@@ -3135,6 +3981,12 @@
       background: #e8dfd4;
       cursor: pointer;
     }
+    .avatar-pick.avatar-pick-single button {
+      width: 72px;
+      height: 72px;
+      border-color: #6a9e8e;
+      box-shadow: 0 0 0 2px rgba(106, 158, 142, .35);
+    }
     .avatar-pick button img {
       width: 100%;
       height: 100%;
@@ -3144,6 +3996,11 @@
     .avatar-pick button.on {
       border-color: #6a9e8e;
       box-shadow: 0 0 0 2px rgba(106, 158, 142, .35);
+    }
+    .avatar-pick-hint {
+      font-size: 12px;
+      font-weight: 600;
+      color: rgba(92, 64, 51, .55);
     }
     .dialog-sheet {
       align-items: center;
@@ -3815,25 +4672,29 @@
       font-weight: 600;
     }
     .sheet-panel.summary-panel {
-      padding: 16px 20px calc(16px + var(--safe-bottom));
+      padding: 20px 20px calc(16px + var(--safe-bottom));
+    }
+    .summary-panel > .sum-head {
+      padding: 8px 12px 16px;
+    }
+    .summary-panel #sumBody {
+      padding: 22px 0 20px;
     }
     .summary-panel .sum-line {
       font-size: 13px;
       color: var(--muted);
-      line-height: 1.55;
-      margin-bottom: 4px;
+      line-height: 1.65;
+      margin-bottom: 8px;
       padding: 0 18px;
       box-sizing: border-box;
       text-align: center;
     }
+    .summary-panel .sum-line:last-child {
+      margin-bottom: 0;
+    }
     .summary-panel .sum-line strong {
       color: var(--ink);
       font-weight: 600;
-    }
-    /* 结束弹窗：追加本刷 = 与「更多」同款开关行 */
-    .summary-panel .sum-lore-opt.sheet-switch {
-      border-top: 1px solid rgba(168, 201, 188, .28);
-      border-bottom: 0;
     }
     .summary-panel .sum-actions {
       margin-top: 0;
@@ -3893,29 +4754,6 @@
       flex-wrap: wrap;
       gap: 8px;
       margin-top: 8px;
-    }
-    /* 结束弹窗：导出跟其它 sheet 行同构 */
-    .summary-panel .sum-export-wrap {
-      margin-top: 8px;
-    }
-    .summary-panel .sum-export-wrap > .export-btn,
-    .summary-panel .sum-export-pick .export-btn {
-      display: block;
-      width: 100%;
-      border: 0;
-      border-radius: 0;
-      border-bottom: 1px solid rgba(168, 201, 188, .28);
-      background: transparent;
-      padding: 14px 18px;
-      text-align: left;
-      font-size: 15px;
-      box-shadow: none;
-    }
-    .summary-panel .sum-export-pick:not([hidden]) {
-      display: block;
-    }
-    .summary-panel .sum-export-pick .export-btn:last-child {
-      border-bottom: 0;
     }
     #gateOverlay {
       display: none;
@@ -4024,7 +4862,7 @@
   </style>
   <link rel="stylesheet" href="/app-ui/共听app/pwa/colisten.css?v=7" />
   <link rel="stylesheet" href="/app-ui/日历app/pwa/cal.css?v=datey1" />
-  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx186" />
+  <link rel="stylesheet" href="/app-ui/聊天app/pwa/chat.css?v=wx189" />
   <link rel="stylesheet" href="/app-ui/共看app/pwa/cowatch.css" />
   <link rel="stylesheet" href="/app-ui/额度app/pwa/budget.css?v=b5" />
   <link rel="stylesheet" href="/app-ui/备忘录app/pwa/memo.css?v=m10" />
@@ -4049,7 +4887,7 @@
       <div class="gate-foot" aria-hidden="true"></div>
     </div>
   </div>
-  <header id="phoneStatus" class="is-off" aria-hidden="true">
+  <header id="phoneStatus" class="is-off" aria-hidden="true" title="下拉查看通知">
     <div class="phone-status-time" id="phoneStatusTime">--:--</div>
     <div class="phone-status-now" id="phoneStatusNow" hidden>
       <span class="phone-status-eq" id="phoneStatusEq" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -4069,10 +4907,55 @@
       </span>
     </div>
   </header>
-  <button type="button" id="homeFloat" class="is-off" aria-label="家机" data-state="ok" title="家机">
-    <span class="hf-orb" aria-hidden="true">机</span>
-    <span class="hf-tip" id="homeFloatTip" hidden>在</span>
-  </button>
+  <div id="phoneShade" class="is-off" aria-hidden="true">
+    <div class="phone-shade-sheet" id="phoneShadeSheet" role="dialog" aria-label="通知中心">
+      <header class="phone-shade-head">
+        <div class="phone-shade-hero">
+          <div class="phone-shade-clock" id="phoneShadeClock">--:--</div>
+          <div class="phone-shade-hero-side">
+            <div class="phone-shade-date" id="phoneShadeDate"></div>
+            <div class="phone-shade-facts-line">
+              <span id="phoneShadeWeather">天气 —</span><span class="sep">·</span><span id="phoneShadeLoc">位置 —</span>
+            </div>
+          </div>
+        </div>
+      </header>
+      <div class="phone-shade-body">
+        <div class="phone-shade-list" id="phoneShadeList"></div>
+        <p class="phone-shade-empty" id="phoneShadeEmpty" hidden>没有通知</p>
+      </div>
+      <div class="phone-shade-foot" id="phoneShadeFoot">
+        <button type="button" class="phone-shade-clear" id="phoneShadeClear" title="清空未读" aria-label="清空未读">
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 7h16" />
+            <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+            <path d="M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12" />
+            <path d="M10 11v6M14 11v6" />
+          </svg>
+        </button>
+        <div class="phone-shade-grab-hit" id="phoneShadeGrabHit">
+          <div class="phone-shade-grab" id="phoneShadeGrab" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- S7.1 家机悬浮 · 暂搁占位（不展示、不绑交互） -->
+  <div id="homeFloat" class="is-off" hidden aria-hidden="true" data-stub="1" title="悬浮窗占位（未启用）"></div>
+  <div id="phonePushToast" hidden role="status" aria-live="polite"></div>
+  <div id="phoneAlert" hidden role="dialog" aria-label="提醒">
+    <button type="button" class="phone-alert-main" id="phoneAlertMain">
+      <div class="phone-alert-av av-frame-full" id="phoneAlertAvWrap"><img id="phoneAlertAv" alt="" /></div>
+      <div class="phone-alert-body">
+        <div class="phone-alert-kind" id="phoneAlertKind">提醒</div>
+        <div class="phone-alert-title" id="phoneAlertTitle"></div>
+        <div class="phone-alert-txt" id="phoneAlertTxt"></div>
+      </div>
+    </button>
+    <div class="phone-alert-acts" id="phoneAlertActs" hidden>
+      <button type="button" class="phone-alert-decline" id="phoneAlertDecline">暂不</button>
+      <button type="button" class="phone-alert-accept" id="phoneAlertAccept">接听</button>
+    </div>
+  </div>
 
   <!-- 查手机 P1：申请 / 输密码 / 真界面翻看 chrome / 查阅记录 -->
   <div id="phonePeekAsk" class="phone-peek-ask" hidden>
@@ -4183,18 +5066,16 @@
         <div class="desk-item desk-peer" data-desk-id="wid-peer" data-desk-page="0" title="头像">
           <div class="home-avatars" id="homeAvatars">
             <button type="button" class="home-av" id="avYou" aria-label="你">
-              <div class="face">
+              <div class="face av-frame-full">
                 <img src="/assets/cafe/avatar-you.png" alt="" />
-                <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
               </div>
               <div class="lab">你</div>
             </button>
-            <button type="button" class="home-av" id="avBot" aria-label="家机">
-              <div class="face">
+            <button type="button" class="home-av" id="avBot" aria-label="沈言之">
+              <div class="face av-frame-full">
                 <img src="/assets/cafe/avatar-bot.png" alt="" />
-                <img class="deco" src="/assets/cafe/deco-shake.png" alt="" />
               </div>
-              <div class="lab">家机</div>
+              <div class="lab">沈言之</div>
             </button>
           </div>
           <button type="button" class="home-capsule" id="btnHomeCapsule" hidden>进行中</button>
@@ -4227,7 +5108,7 @@
         </button>
         <button type="button" class="desk-item desk-wid home-wid home-wid-sticky" id="homeWidSticky" data-desk-id="wid-sticky" data-desk-page="0" title="便笺">
           <div class="stk-title">便笺</div>
-          <div class="stk-body is-empty" id="homeStkBody">今日还没有家机留笺</div>
+          <div class="stk-body is-empty" id="homeStkBody">今日还没有留笺</div>
           <div class="stk-sub" id="homeStkSub">点开日历看全部</div>
         </button>
         <button type="button" class="desk-item desk-app home-app" data-desk-id="app-coread" data-desk-page="0" data-go="coread"><span class="ico-wrap"><img src="/assets/cafe/home-hy/hy-01.png?v=hy8" alt="" /></span><span class="lab">共读</span></button>
@@ -4403,8 +5284,8 @@
               <input id="inLlmKey" type="password" autocomplete="off" placeholder="粘贴 Key" />
             </div>
             <div class="field">
-              <label for="inLlmModel">LLM Model<small>如 flash 级模型名</small></label>
-              <input id="inLlmModel" type="text" autocomplete="off" placeholder="model id" />
+              <label for="inLlmModel">LLM Model<small>填 deepseek-flash = V4.1 Flash（含识图）</small></label>
+              <input id="inLlmModel" type="text" autocomplete="off" placeholder="deepseek-flash" />
               <label for="inEmbedModel">Embedding Model<small>记忆向量，空=只用关键词；硅基可填 BAAI/bge-m3</small></label>
               <input id="inEmbedModel" type="text" autocomplete="off" placeholder="可选" />
               <label for="inFishKey">Fish Audio Key<small>通话朗读 · 家机男声</small></label>
@@ -4791,9 +5672,6 @@
       <div id="cabinTitle">书架</div>
     </div>
     <div class="cabin-frame">
-      <div class="frame-washi" aria-hidden="true"></div>
-      <img class="frame-corner tl" src="/assets/cafe/bow-corner-tl.png?v=4" alt="" />
-      <img class="frame-corner br" src="/assets/cafe/deco-cupcake-mint.png" alt="" />
       <div class="cabin-body">
         <div class="tab-panel active" id="tab-shelf" data-title="书架">
           <div class="shelf-bar">
@@ -4830,7 +5708,7 @@
             <button type="button" class="stat-export" id="btnRecordsExport">导出</button>
           </div>
           <div class="stat-grid" id="recordsStats">
-            <div class="stat-card"><div class="lab">共读场次</div><div class="num" id="statSessions">0</div></div>
+            <div class="stat-card"><div class="lab">活跃天数</div><div class="num" id="statSessions">0</div></div>
             <div class="stat-card"><div class="lab">共读时长</div><div class="num" id="statDuration">0分</div></div>
             <div class="stat-card"><div class="lab">微信阅读</div><div class="num" id="statWeread">0分</div></div>
             <div class="stat-card"><div class="lab">已跟批</div><div class="num" id="statFollows">0</div></div>
@@ -4846,34 +5724,13 @@
 
         <div class="tab-panel" id="tab-settings" data-title="设定">
           <div class="r-card settings">
-            <div class="row tap" id="rowLore" role="button" tabindex="0">
-              <div>剧情摘要<small>已改到共读「本刷摘要」；此处仅旧数据</small></div>
-              <span class="val" id="loreVal">空</span>
-              <span class="chev">›</span>
-            </div>
-            <div class="conn-panel" id="lorePanel">
-              <div class="hint">跟批注入<strong>当前书·当前刷</strong>摘要。请到共读 ··· →「本刷摘要」生成/润色/保存。下面是旧版全局栏（不再注入），可清空。</div>
-              <div class="field">
-                <label for="inLoreSummary">旧版全局摘要<small>不再注入跟批</small></label>
-                <textarea id="inLoreSummary" rows="6" placeholder="可清空"></textarea>
-              </div>
-              <div class="field" style="margin-top:8px">
-                <label for="loreFile">从文件导入<small>.txt / .md / .docx</small></label>
-                <input id="loreFile" type="file" accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-              </div>
-              <div class="save-row">
-                <button type="button" class="primary" id="btnSaveLore">保存</button>
-                <button type="button" class="ghost" id="btnCloseLore">关闭</button>
-                <span class="save-msg" id="loreMsg"></span>
-              </div>
-            </div>
             <div class="row tap" id="rowFollowDefaults" role="button" tabindex="0">
               <div>跟批默认<small>新开场用；该书另有默认时优先书</small></div>
-              <span class="val" id="followDefaultsVal">沉浸 · 不限</span>
+              <span class="val" id="followDefaultsVal">全部跟批 · 不限</span>
               <span class="chev">›</span>
             </div>
             <div class="conn-panel" id="followDefaultsPanel">
-              <div class="hint">只影响之后新开的共读；本场仍可在 ··· 里改</div>
+              <div class="hint">只影响之后新开的共读</div>
               <div class="field">
                 <label for="selDefaultMode">默认跟批方式</label>
                 <select id="selDefaultMode" style="border:1px solid rgba(200,180,160,.7);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink)">
@@ -4891,21 +5748,77 @@
                   <option value="10">约 10 块</option>
                 </select>
               </div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px">
+                <input id="inPersonaCardFollowCabin" type="checkbox" style="width:auto" />
+                <label for="inPersonaCardFollowCabin" style="font-weight:500;margin:0">跟批带上小屋人设</label>
+              </div>
               <div class="save-row">
                 <button type="button" class="primary" id="btnSaveFollowDefaults">保存</button>
                 <button type="button" class="ghost" id="btnCloseFollowDefaults">关闭</button>
                 <span class="save-msg" id="followDefaultsMsg"></span>
               </div>
             </div>
-            <div class="row tap" id="rowBackupJump" role="button" tabindex="0">
-              <div>备份<small>统一备份在桌面「设置」</small></div>
-              <span class="val">同套</span>
+            <div class="row tap" id="rowCoreadPrefs" role="button" tabindex="0">
+              <div>共读偏好<small>滤镜 · 时钟 · 离开暂停计时</small></div>
+              <span class="val" id="coreadPrefsVal">都看</span>
               <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="coreadPrefsPanel">
+              <div class="field">
+                <label for="selTimelineMsgFilter">时间线默认</label>
+                <select id="selTimelineMsgFilter" style="border:1px solid rgba(200,180,160,.7);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;color:var(--ink)">
+                  <option value="both">划线与批注都看</option>
+                  <option value="marks">只看划线</option>
+                  <option value="follows">只看批注</option>
+                </select>
+              </div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px">
+                <input id="inShowClockCabin" type="checkbox" style="width:auto" checked />
+                <label for="inShowClockCabin" style="font-weight:500;margin:0">顶栏显示时钟</label>
+              </div>
+              <div class="field" style="flex-direction:row;align-items:center;gap:8px">
+                <input id="inAutoPauseTimer" type="checkbox" style="width:auto" checked />
+                <label for="inAutoPauseTimer" style="font-weight:500;margin:0">离开界面自动暂停计时<small>跟批不停</small></label>
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSaveCoreadPrefs">保存</button>
+                <button type="button" class="ghost" id="btnCloseCoreadPrefs">关闭</button>
+                <span class="save-msg" id="coreadPrefsMsg"></span>
+              </div>
+            </div>
+            <div class="row tap" id="rowBackupJump" role="button" tabindex="0">
+              <div>备份<small>导出本机数据（不含密钥）</small></div>
+              <span class="val">导出</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="cabinBackupPanel">
+              <div class="hint">导出 Ariadne 统一备份。恢复请用桌面「设置 · 备份」（需选文件）。</div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnCabinBackupJson">导出 JSON</button>
+                <button type="button" class="ghost" id="btnCabinBackupZip">导出 ZIP</button>
+                <button type="button" class="ghost" id="btnCloseCabinBackup">关闭</button>
+              </div>
+            </div>
+            <div class="row tap" id="rowLore" role="button" tabindex="0">
+              <div>旧数据清理<small>旧版全局剧情摘要（不注入跟批）</small></div>
+              <span class="val" id="loreVal">空</span>
+              <span class="chev">›</span>
+            </div>
+            <div class="conn-panel" id="lorePanel">
+              <div class="hint">旧版全局剧情栏（已不注入跟批），可清空。</div>
+              <div class="field">
+                <label for="inLoreSummary">旧版全局摘要</label>
+                <textarea id="inLoreSummary" rows="4" placeholder="可清空"></textarea>
+              </div>
+              <div class="save-row">
+                <button type="button" class="primary" id="btnSaveLore">保存</button>
+                <button type="button" class="ghost" id="btnCloseLore">关闭</button>
+                <span class="save-msg" id="loreMsg"></span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      <div class="frame-washi bot" aria-hidden="true"></div>
     </div>
     <div class="tabs-dock">
       <div class="tabs" role="tablist">
@@ -4919,13 +5832,18 @@
 
   <div class="view" id="view-coread">
     <div class="cr-top">
-      <div class="title">《三体》·一刷 · 62%</div>
-      <div class="clock-slot" id="crClock"></div>
+      <div class="title">《三体》 · 62%</div>
+      <div class="clock-slot" id="crClock" hidden></div>
       <button type="button" class="chap" id="btnChapters" hidden>目录</button>
-      <button type="button" class="more" id="btnMore" aria-label="更多">···</button>
+      <div class="cr-read-acts" id="crReadActs">
+        <button type="button" class="cr-read-btn" id="btnStartRead">开始阅读</button>
+        <button type="button" class="cr-read-btn" id="btnPauseRead" hidden>暂停</button>
+        <button type="button" class="cr-read-btn danger" id="btnEndRead" hidden>结束阅读</button>
+      </div>
+      <button type="button" class="more" id="btnMore" hidden aria-hidden="true">···</button>
     </div>
     <div class="cr-washi" aria-hidden="true"></div>
-    <div class="cr-filter" id="crFilter" title="本场状态（时间线范围请到 ···）"><img src="/assets/cafe/sticker-bean.png" alt="" /><span id="crFilterText">只看本场 · 薄荷巧克力皮</span><span class="cr-presence" id="crPresence" hidden></span></div>
+    <div class="cr-filter" id="crFilter" title="点按切换：都看 / 只看划线 / 只看批注"><img src="/assets/cafe/sticker-bean.png" alt="" /><span id="crFilterText">都看 · 未开始</span><span class="cr-presence" id="crPresence" hidden></span></div>
     <div class="cr-offline" id="crOffline" role="status">现在离线，划线稍后再同步</div>
     <div class="cr-body-pane" id="crBodyPane" aria-label="本书正文">
       <div class="cr-body-text" id="crBodyText"></div>
@@ -4978,21 +5896,7 @@
     </div>
   </div>
 
-  <div class="sheet" id="passLoreSheet">
-    <div class="sheet-panel pass-lore-panel">
-      <div class="sum-head" id="passLoreTitle">本刷摘要</div>
-      <div class="s" style="padding:0 20px 8px" id="passLoreSub">AI 生成草稿 → 你润色 → 保存后跟批才带上</div>
-      <div style="padding:0 20px;flex:1;display:flex;flex-direction:column;min-height:0">
-        <textarea id="passLoreText" placeholder="本刷还没有摘要。可点「生成草稿」。"></textarea>
-        <div class="pass-lore-msg" id="passLoreMsg"></div>
-        <div class="pass-lore-actions">
-          <button type="button" id="passLoreGenerate">生成草稿</button>
-          <button type="button" class="primary" id="passLoreSave">保存</button>
-        </div>
-      </div>
-      <button type="button" class="cancel" id="passLoreClose">关闭</button>
-    </div>
-  </div>
+  <!-- 本刷摘要已下线：不再提供生成/注入入口 -->
 
   <div class="sheet" id="ctxSheet">
     <div class="sheet-panel">
@@ -5016,20 +5920,12 @@
       <div class="sum-head">本场</div>
       <div class="sheet-card">
       <button type="button" id="sheetPause">暂停跟批</button>
-      <label class="sheet-switch" for="sheetLoreInject">
-        <span class="sheet-switch-text">
-          <span class="t">跟批带上本刷摘要</span>
-          <small>关掉则本场多贴原文，少灌背景</small>
-        </span>
-        <input type="checkbox" id="sheetLoreInject" checked />
-        <span class="sheet-switch-ui" aria-hidden="true"></span>
-      </label>
       <button type="button" id="sheetBudget">跟批额度</button>
-      <button type="button" id="sheetPassLore">本刷摘要</button>
-      <button type="button" id="sheetTimeline">时间线范围</button>
       <button type="button" id="sheetImmerse" hidden>沉浸共读</button>
-      <button type="button" class="danger" id="sheetEnd">结束本场</button>
+      <button type="button" class="danger" id="sheetEnd">结束阅读</button>
       <button type="button" class="cancel" id="sheetCancel">取消</button>
+      <input type="checkbox" id="sheetLoreInject" checked hidden />
+      <button type="button" id="sheetTimeline" hidden>时间线范围</button>
       </div>
     </div>
   </div>
@@ -5230,6 +6126,13 @@
     </div>
   </div>
 
+  <div class="sheet" id="shelfBookSheet">
+    <div class="shelf-book-panel" role="dialog" aria-modal="true" aria-labelledby="shelfBookTitle">
+      <button type="button" class="shelf-book-x" id="btnShelfBookClose" aria-label="关闭">×</button>
+      <div id="shelfBookBody"></div>
+    </div>
+  </div>
+
   <div class="sheet dialog-sheet" id="bodyViewSheet">
     <div class="sheet-panel">
       <div class="sum-head" id="bodyViewTitle">本地正文</div>
@@ -5250,17 +6153,9 @@
 
   <div class="sheet" id="summarySheet">
     <div class="sheet-panel summary-panel">
-      <div class="sum-head">本场摘要</div>
+      <div class="sum-head">结束阅读</div>
       <div class="sheet-card">
       <div id="sumBody"></div>
-      <label class="sheet-switch sum-lore-opt" for="sumWriteLore">
-        <span class="sheet-switch-text">
-          <span class="t">结束时写入本刷摘要</span>
-          <small>当前书 · 当前刷</small>
-        </span>
-        <input type="checkbox" id="sumWriteLore" />
-        <span class="sheet-switch-ui" aria-hidden="true"></span>
-      </label>
       <div class="sum-actions">
         <button type="button" class="cancel" id="sumCancel">继续共读</button>
         <button type="button" id="sumConfirm">确认结束</button>
@@ -5269,10 +6164,10 @@
     </div>
   </div>
 
-  <script src="/assets-colisten/cove-player.js"></script>
-  <script src="/assets-colisten/colisten.js?v=8"></script>
+  <script src="/assets-colisten/cove-player.js?v=2"></script>
+  <script src="/assets-colisten/colisten.js?v=10"></script>
   <script src="/app-ui/日历app/pwa/cal.js?v=datey1"></script>
-  <script src="/app-ui/聊天app/pwa/chat.js?v=wx196"></script>
+  <script src="/app-ui/聊天app/pwa/chat.js?v=wx203"></script>
   <script src="/app-ui/共看app/pwa/cowatch.js"></script>
   <script src="/app-ui/额度app/pwa/budget.js?v=b5"></script>
   <script src="/app-ui/资产app/pwa/wallet.js?v=w7"></script>
@@ -5496,6 +6391,38 @@
           "/assets/cafe/avatar-bot.png"
         ),
       };
+      paintHomePeerAvatars();
+    }
+
+    /** 桌面双头像：名字/脸跟设定走（勿写死「你」「家机」） */
+    function paintHomePeerAvatars() {
+      const dlg = hutDialogue || {};
+      const youName = String(dlg.name_user || "你").trim() || "你";
+      const botName = String(dlg.name_bot || "沈言之").trim() || "沈言之";
+      const you = document.getElementById("avYou");
+      const bot = document.getElementById("avBot");
+      if (you) {
+        const lab = you.querySelector(".lab");
+        const img = you.querySelector(".face > img:first-child");
+        if (lab) lab.textContent = youName;
+        you.setAttribute("aria-label", youName);
+        you.title = youName;
+        if (img) {
+          img.src = dlg.avatar_user || "/assets/cafe/avatar-you.png";
+          img.alt = youName;
+        }
+      }
+      if (bot) {
+        const lab = bot.querySelector(".lab");
+        const img = bot.querySelector(".face > img:first-child");
+        if (lab) lab.textContent = botName;
+        bot.setAttribute("aria-label", botName);
+        bot.title = botName;
+        if (img) {
+          img.src = dlg.avatar_bot || "/assets/cafe/avatar-bot.png";
+          img.alt = botName;
+        }
+      }
     }
 
     function applySessionDialogue(open) {
@@ -5518,42 +6445,62 @@
       );
     }
 
+    async function uploadSettingsAvatar(file) {
+      if (!file) return null;
+      const res = await fetch("/api/v1/chat/media", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": file.type || "application/octet-stream",
+        },
+        body: file,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "头像上传失败");
+      return data.url || null;
+    }
+
     function paintAvatarPick(el, selected, onPick) {
       if (!el) return;
-      const list = AVATAR_PRESETS.slice();
-      /* 自定义（MCP/上传）头像也要出现在选盘，避免误点预设盖掉 */
-      if (
-        selected &&
-        !list.some((a) => a.src === selected) &&
-        String(selected).trim()
-      ) {
-        list.unshift({ src: selected, label: "当前" });
-      }
-      el.innerHTML = list
-        .map((a) => {
-          const on = a.src === selected ? " on" : "";
-          return (
-            '<button type="button" class="' +
-            on.trim() +
-            '" data-src="' +
-            escapeAttr(a.src) +
-            '" title="' +
-            escapeAttr(a.label) +
-            '"><img src="' +
-            escapeAttr(a.src) +
-            '" alt="' +
-            escapeAttr(a.label) +
-            '" /></button>'
-          );
-        })
-        .join("");
-      el.querySelectorAll("button").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const src = btn.getAttribute("data-src");
-          onPick(src);
-          paintAvatarPick(el, src, onPick);
-        });
+      const src =
+        String(selected || "").trim() ||
+        (AVATAR_PRESETS[0] && AVATAR_PRESETS[0].src) ||
+        "/assets/cafe/avatar-you.png";
+      el.classList.add("avatar-pick-single");
+      el.replaceChildren();
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "on";
+      btn.title = "点击上传新头像";
+      btn.setAttribute("aria-label", "点击上传新头像");
+      const img = document.createElement("img");
+      img.src = src;
+      img.alt = "当前头像";
+      btn.appendChild(img);
+      const file = document.createElement("input");
+      file.type = "file";
+      file.accept = "image/*";
+      file.hidden = true;
+      const hint = document.createElement("span");
+      hint.className = "avatar-pick-hint";
+      hint.textContent = "点击上传";
+      btn.addEventListener("click", () => file.click());
+      file.addEventListener("change", async () => {
+        const f = file.files && file.files[0];
+        file.value = "";
+        if (!f) return;
+        try {
+          hint.textContent = "上传中…";
+          const url = await uploadSettingsAvatar(f);
+          if (!url) throw new Error("无地址");
+          img.src = url;
+          if (typeof onPick === "function") onPick(url);
+          hint.textContent = "已更新 · 可再点换";
+        } catch (e) {
+          hint.textContent = (e && e.message) || "上传失败";
+        }
       });
+      el.append(btn, file, hint);
     }
 
     let hutAvatarUser = "/assets/cafe/avatar-you.png";
@@ -5633,6 +6580,15 @@
       const s = String(id || "").trim();
       if (!s) return "Deep Seek";
       const lower = s.toLowerCase();
+      // API id deepseek-flash → DeepSeek-V4.1-Flash（原生多模态识图）
+      if (
+        lower === "deepseek-flash" ||
+        lower.includes("v4.1-flash") ||
+        lower.includes("v4-flash") ||
+        lower.includes("flash-vision")
+      ) {
+        return "V4.1 Flash·识图";
+      }
       if (lower.includes("deepseek") || lower.includes("flash") || lower.includes("chat") || lower.includes("reasoner")) {
         return "Deep Seek";
       }
@@ -5684,17 +6640,19 @@
         legacy.title = tip;
       }
       const floatEl = document.getElementById("homeFloat");
-      const tipEl = document.getElementById("homeFloatTip");
+      /* S7.1 悬浮暂搁：只留 DOM 占位，不展示 */
       if (floatEl) {
-        floatEl.dataset.state = ok ? "ok" : "bad";
-        floatEl.title = "家机 · " + tip;
+        floatEl.classList.add("is-off");
+        floatEl.hidden = true;
+        floatEl.setAttribute("aria-hidden", "true");
+        floatEl.title = "悬浮窗占位（未启用）· " + tip;
       }
-      if (tipEl) tipEl.textContent = label;
     }
 
     function bindHomeFloat() {
       const el = document.getElementById("homeFloat");
-      if (!el || el.dataset.bound === "1") return;
+      if (!el || el.dataset.stub === "1") return;
+      if (el.dataset.bound === "1") return;
       el.dataset.bound = "1";
       const POS_KEY = "ariadne.homeFloat.pos";
       const SIZE = 52;
@@ -5941,6 +6899,9 @@
         hutNickUser = String(s.nick_user || "").trim().slice(0, 32);
         paintHutAvatarPicks();
         applyHutDialogue(s);
+        if (window.ChatApp && typeof ChatApp.syncBotDisplayName === "function") {
+          ChatApp.syncBotDisplayName(hutDialogue.name_bot);
+        }
         updatePersonaVal(hutCard);
         const mode = s.default_follow_mode || "immersive";
         const bud = Number(s.default_budget_rmb) || 0;
@@ -5955,6 +6916,20 @@
         showClock = s.show_clock !== false;
         const clockCb = document.getElementById("inShowClock");
         if (clockCb) clockCb.checked = showClock;
+        const clockCabin = document.getElementById("inShowClockCabin");
+        if (clockCabin) clockCabin.checked = showClock;
+        timelineMsgFilter =
+          s.timeline_msg_filter === "marks" || s.timeline_msg_filter === "follows"
+            ? s.timeline_msg_filter
+            : "both";
+        autoPauseTimer = s.auto_pause_timer !== false;
+        const filterSel = document.getElementById("selTimelineMsgFilter");
+        if (filterSel) filterSel.value = timelineMsgFilter;
+        const autoPauseCb = document.getElementById("inAutoPauseTimer");
+        if (autoPauseCb) autoPauseCb.checked = autoPauseTimer;
+        const personaFollowCabin = document.getElementById("inPersonaCardFollowCabin");
+        if (personaFollowCabin) personaFollowCabin.checked = !!s.persona_card_in_follow;
+        updateCoreadPrefsVal();
         applyAnnivs(s.annivs || [], s.pin_anniv_id || "");
         updateHomeMeetSub();
         applyAppRegistry(s.app_hidden || []);
@@ -6364,27 +7339,746 @@
       } catch (_) {}
     }
 
-    function shellToastLite(msg) {
-      const el = document.getElementById("chatShellToast");
-      if (el && typeof window.ChatApp === "object") {
-        /* 聊天页 toast 优先 */
+    function phonePushToast(msg) {
+      const text = String(msg || "").trim();
+      if (!text) return;
+      const el = document.getElementById("phonePushToast");
+      if (!el) {
+        try {
+          console.info("[push]", text);
+        } catch (_) {}
+        return;
       }
+      el.textContent = text.slice(0, 80);
+      el.hidden = false;
+      clearTimeout(window.__ariadnePhonePushTimer);
+      window.__ariadnePhonePushTimer = setTimeout(() => {
+        el.hidden = true;
+      }, 3200);
+    }
+    window.phonePushToast = phonePushToast;
+
+    let phoneAlertTimer = null;
+    let phoneAlertOnOpen = null;
+    let phoneAlertOnAccept = null;
+    let phoneAlertOnDecline = null;
+
+    function phoneAlertHide() {
+      const el = document.getElementById("phoneAlert");
+      if (el) el.hidden = true;
+      if (phoneAlertTimer) {
+        clearTimeout(phoneAlertTimer);
+        phoneAlertTimer = null;
+      }
+      phoneAlertOnOpen = null;
+      phoneAlertOnAccept = null;
+      phoneAlertOnDecline = null;
+    }
+
+    function phoneAlertShow(opts) {
+      const o = opts || {};
+      const el = document.getElementById("phoneAlert");
+      const kindEl = document.getElementById("phoneAlertKind");
+      const titleEl = document.getElementById("phoneAlertTitle");
+      const txtEl = document.getElementById("phoneAlertTxt");
+      const img = document.getElementById("phoneAlertAv");
+      const acts = document.getElementById("phoneAlertActs");
+      if (!el) {
+        phonePushToast(o.title || o.body || "提醒");
+        return;
+      }
+      if (phoneAlertTimer) clearTimeout(phoneAlertTimer);
+      phoneAlertOnOpen = typeof o.onOpen === "function" ? o.onOpen : null;
+      phoneAlertOnAccept = typeof o.onAccept === "function" ? o.onAccept : null;
+      phoneAlertOnDecline = typeof o.onDecline === "function" ? o.onDecline : null;
+      if (kindEl) kindEl.textContent = o.kind || "提醒";
+      if (titleEl) titleEl.textContent = o.title || "";
+      if (txtEl) txtEl.textContent = o.body || "";
+      const av = String(o.avatar || "").trim();
+      if (img) {
+        if (av) img.src = av;
+        else img.removeAttribute("src");
+      }
+      if (acts) acts.hidden = !(phoneAlertOnAccept || phoneAlertOnDecline);
+      el.hidden = false;
+      const ms = Number(o.ttlMs);
+      if (!(phoneAlertOnAccept || phoneAlertOnDecline)) {
+        phoneAlertTimer = setTimeout(
+          () => phoneAlertHide(),
+          Number.isFinite(ms) && ms > 0 ? ms : 5200
+        );
+      }
+    }
+
+    function phoneCallAlert(opts) {
+      const o = opts || {};
+      phoneAlertShow({
+        kind: o.media === "video" ? "视频通话" : "语音通话",
+        title: o.title || "家机",
+        body: o.body || "邀请你通话",
+        avatar: o.avatar || "",
+        onAccept: o.onAccept,
+        onDecline: o.onDecline,
+        ttlMs: 0,
+      });
+    }
+
+    window.phoneAlertShow = phoneAlertShow;
+    window.phoneAlertHide = phoneAlertHide;
+    window.phoneCallAlert = phoneCallAlert;
+
+    (function bindPhoneAlert() {
+      const main = document.getElementById("phoneAlertMain");
+      const acc = document.getElementById("phoneAlertAccept");
+      const dec = document.getElementById("phoneAlertDecline");
+      if (main) {
+        main.addEventListener("click", () => {
+          const fn = phoneAlertOnOpen;
+          if (phoneAlertOnAccept || phoneAlertOnDecline) return;
+          phoneAlertHide();
+          if (typeof fn === "function") fn();
+        });
+      }
+      if (acc) {
+        acc.addEventListener("click", () => {
+          const fn = phoneAlertOnAccept;
+          phoneAlertHide();
+          if (typeof fn === "function") fn();
+        });
+      }
+      if (dec) {
+        dec.addEventListener("click", () => {
+          const fn = phoneAlertOnDecline;
+          phoneAlertHide();
+          if (typeof fn === "function") fn();
+        });
+      }
+    })();
+
+    function shellToastLite(msg) {
+      const chatOn =
+        document.getElementById("view-chat") &&
+        document.getElementById("view-chat").classList.contains("active");
+      if (chatOn) {
+        try {
+          const t = document.getElementById("chatShellToast");
+          if (t) {
+            t.textContent = msg;
+            t.hidden = false;
+            clearTimeout(window.__ariadneShellToastTimer);
+            window.__ariadneShellToastTimer = setTimeout(() => {
+              t.hidden = true;
+            }, 2200);
+            return;
+          }
+        } catch (_) {}
+      }
+      phonePushToast(msg);
+    }
+    window.shellToastLite = shellToastLite;
+    window.shellToast = shellToastLite;
+
+    /* —— S8.3 通知中心：整屏 · 顶栏点按/下拉 —— */
+    let phoneShadeOpen = false;
+
+    function closePhoneShade() {
+      const shade = document.getElementById("phoneShade");
+      const sheet = document.getElementById("phoneShadeSheet");
+      if (!shade) return;
+      phoneShadeOpen = false;
+      if (sheet) {
+        sheet.style.transition = "";
+        sheet.style.transform = "";
+      }
+      shade.classList.remove("is-open");
+      shade.classList.add("is-off");
+      shade.setAttribute("aria-hidden", "true");
+    }
+
+    /** S8.3′：各 App 推送落本地历史（活状态消失后仍能在下拉里看见） */
+    const SHADE_HIST_KEY = "ariadne.phoneShade.history";
+    const SHADE_HIST_MAX = 24;
+    const shadeHistPushed = Object.create(null);
+
+    function readShadeHistory() {
       try {
-        const t = document.getElementById("chatShellToast");
-        if (t) {
-          t.textContent = msg;
-          t.hidden = false;
-          clearTimeout(window.__ariadneShellToastTimer);
-          window.__ariadneShellToastTimer = setTimeout(() => {
-            t.hidden = true;
-          }, 2200);
-          return;
-        }
-      } catch (_) {}
+        const raw = JSON.parse(localStorage.getItem(SHADE_HIST_KEY) || "[]");
+        return Array.isArray(raw) ? raw.filter((r) => r && r.kind && r.title) : [];
+      } catch (_) {
+        return [];
+      }
+    }
+
+    function writeShadeHistory(rows) {
       try {
-        console.info("[monitor_alert]", msg);
+        localStorage.setItem(
+          SHADE_HIST_KEY,
+          JSON.stringify((rows || []).slice(0, SHADE_HIST_MAX))
+        );
       } catch (_) {}
     }
+
+    function clearShadeHistory() {
+      writeShadeHistory([]);
+      for (const k of Object.keys(shadeHistPushed)) delete shadeHistPushed[k];
+    }
+
+    function pushShadeHistory(entry) {
+      const kind = String((entry && entry.kind) || "").trim();
+      const title = String((entry && entry.title) || "").trim().slice(0, 80);
+      const go = String((entry && entry.go) || "").trim();
+      if (!kind || !title) return;
+      const dedupeKey = String(
+        (entry && entry.dedupeKey) || kind + "|" + go + "|" + title
+      ).slice(0, 140);
+      if (entry && entry.onceKey) {
+        if (shadeHistPushed[entry.onceKey]) return;
+        shadeHistPushed[entry.onceKey] = true;
+      }
+      const rows = readShadeHistory().filter(
+        (r) => r && r.dedupeKey !== dedupeKey
+      );
+      rows.unshift({
+        id: "sh" + Date.now().toString(36),
+        kind,
+        title,
+        go,
+        ts: Date.now(),
+        avatar: String((entry && entry.avatar) || "").trim(),
+        frame: !!(entry && entry.frame),
+        dedupeKey,
+      });
+      writeShadeHistory(rows);
+      if (phoneShadeOpen) paintPhoneShadeList();
+    }
+
+    function shadeHm(d) {
+      const x = d instanceof Date ? d : new Date();
+      const pad = (n) => (n < 10 ? "0" + n : String(n));
+      return pad(x.getHours()) + ":" + pad(x.getMinutes());
+    }
+
+    function shadeYmd(d) {
+      const x = d instanceof Date ? d : new Date();
+      const m = x.getMonth() + 1;
+      const day = x.getDate();
+      const wk = ["日", "一", "二", "三", "四", "五", "六"][x.getDay()];
+      return m + "月" + day + "日 星期" + wk;
+    }
+
+    function shadeBotProfile() {
+      const dlg = hutDialogue || {};
+      return {
+        name: String(dlg.name_bot || "沈言之").trim() || "沈言之",
+        avatar:
+          String(dlg.avatar_bot || "").trim() || "/assets/cafe/avatar-bot.png",
+      };
+    }
+
+    function shadeRow(kind, title, go, opts) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "phone-shade-row";
+      btn.dataset.go = go || "";
+      if (opts && opts.avatar) {
+        const av = document.createElement("div");
+        av.className =
+          "phone-shade-row-av" + (opts.frame ? " av-frame-full" : "");
+        const img = document.createElement("img");
+        img.src = opts.avatar;
+        img.alt = "";
+        av.appendChild(img);
+        btn.appendChild(av);
+      }
+      const body = document.createElement("div");
+      body.className = "phone-shade-row-body";
+      const k = document.createElement("span");
+      k.className = "k";
+      k.textContent = kind;
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = title;
+      body.append(k, t);
+      btn.appendChild(body);
+      btn.addEventListener("click", () => {
+        closePhoneShade();
+        const dest = btn.dataset.go;
+        if (dest) routeHomeApp(dest);
+      });
+      return btn;
+    }
+
+    const SHADE_MODE_ICON = {
+      seq: '<path d="M5 5l7 7-7 7"/><path d="M12 5l7 7-7 7"/>',
+      loop: '<path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+      shuffle:
+        '<path d="M16 3h5v5"/><path d="M4 20 21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/>',
+    };
+    const SHADE_MODE_LAB = {
+      seq: "顺序播放",
+      loop: "单曲循环",
+      shuffle: "随机播放",
+    };
+
+    function shadeListenRow(titleText) {
+      const snap =
+        window.ColistenApp && typeof ColistenApp.getShadePlayer === "function"
+          ? ColistenApp.getShadePlayer()
+          : null;
+      const title =
+        (snap && snap.title) ||
+        String(titleText || "")
+          .replace(/^正在听\s*·\s*/, "")
+          .replace(/^共听(?:中)?\s*·\s*/, "") ||
+        "共听中";
+      const cover = (snap && snap.cover) || "";
+      const mode = (snap && snap.mode) || "seq";
+      const playing = !!(snap && snap.playing);
+      const row = document.createElement("div");
+      row.className = "phone-shade-row is-listen";
+      const coverEl = document.createElement("div");
+      coverEl.className = "phone-shade-cover";
+      if (cover && /^https?:\/\//i.test(cover)) {
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = cover;
+        coverEl.appendChild(img);
+      } else {
+        const ph = document.createElement("span");
+        ph.className = "ph";
+        ph.textContent = "♪";
+        coverEl.appendChild(ph);
+      }
+      const mid = document.createElement("div");
+      mid.className = "phone-shade-listen-mid";
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.className = "phone-shade-row-body";
+      openBtn.style.cssText =
+        "border:0;background:transparent;padding:0;text-align:left;color:inherit;font:inherit;cursor:pointer;width:100%";
+      const k = document.createElement("span");
+      k.className = "k";
+      k.textContent = "共听";
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = "正在听 · " + title;
+      openBtn.append(k, t);
+      openBtn.addEventListener("click", () => {
+        closePhoneShade();
+        routeHomeApp("colisten");
+      });
+      const acts = document.createElement("div");
+      acts.className = "phone-shade-listen-acts";
+      const runControl = (action) => {
+        try {
+          if (!(window.ColistenApp && ColistenApp.control)) return;
+          const ret = ColistenApp.control(action);
+          if (ret && typeof ret.then === "function") {
+            ret.finally(() => paintPhoneShadeList());
+          } else {
+            paintPhoneShadeList();
+          }
+        } catch (_) {}
+      };
+      const mkStroke = (titleLab, svgInner, fn) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.title = titleLab;
+        b.setAttribute("aria-label", titleLab);
+        b.innerHTML =
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          svgInner +
+          "</svg>";
+        b.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          fn();
+        });
+        return b;
+      };
+      const modeBtn = mkStroke(
+        SHADE_MODE_LAB[mode] || SHADE_MODE_LAB.seq,
+        SHADE_MODE_ICON[mode] || SHADE_MODE_ICON.seq,
+        () => {
+          try {
+            if (window.ColistenApp && ColistenApp.cyclePlayMode) {
+              ColistenApp.cyclePlayMode();
+            }
+          } catch (_) {}
+          paintPhoneShadeList();
+        }
+      );
+      const prevBtn = document.createElement("button");
+      prevBtn.type = "button";
+      prevBtn.title = "上一首";
+      prevBtn.setAttribute("aria-label", "上一首");
+      prevBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="4.3" y="4.5" width="2.2" height="15" rx="0.6"/><path d="M19 19.5v-15L8 12l11 7.5z"/></svg>';
+      prevBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        runControl("prev");
+      });
+      const playBtn = document.createElement("button");
+      playBtn.type = "button";
+      playBtn.className = "is-play";
+      playBtn.title = playing ? "暂停" : "播放";
+      playBtn.setAttribute("aria-label", playing ? "暂停" : "播放");
+      playBtn.innerHTML = playing
+        ? '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h3v14H7V5zm7 0h3v14h-3V5z"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7L8 5z"/></svg>';
+      playBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        runControl(playing ? "pause" : "play");
+      });
+      const nextBtn = document.createElement("button");
+      nextBtn.type = "button";
+      nextBtn.title = "下一首";
+      nextBtn.setAttribute("aria-label", "下一首");
+      nextBtn.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 4.5v15l11-7.5L5 4.5z"/><rect x="17.5" y="4.5" width="2.2" height="15" rx="0.6"/></svg>';
+      nextBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        runControl("next");
+      });
+      acts.append(modeBtn, prevBtn, playBtn, nextBtn);
+      mid.append(openBtn, acts);
+      row.append(coverEl, mid);
+      return row;
+    }
+
+    function paintPhoneShadeHead() {
+      const now = new Date();
+      const clockEl = document.getElementById("phoneShadeClock");
+      const dateEl = document.getElementById("phoneShadeDate");
+      if (clockEl) clockEl.textContent = shadeHm(now);
+      if (dateEl) dateEl.textContent = shadeYmd(now);
+    }
+
+    async function paintPhoneShadeWeatherLoc() {
+      const wEl = document.getElementById("phoneShadeWeather");
+      const lEl = document.getElementById("phoneShadeLoc");
+      if (wEl) wEl.textContent = "天气 —";
+      if (lEl) lEl.textContent = "位置 —";
+      try {
+        const res = await fetch("/api/v1/chat/weather", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (data && data.ok) {
+          const bits = [];
+          if (data.weather) bits.push(String(data.weather));
+          if (data.temperature_c != null && data.temperature_c !== "") {
+            bits.push(Math.round(Number(data.temperature_c)) + "°C");
+          }
+          if (wEl) wEl.textContent = bits.length ? bits.join(" ") : "天气 —";
+          if (lEl) {
+            lEl.textContent = String(data.place || "").trim() || "位置 —";
+          }
+          return;
+        }
+        if (wEl) {
+          const msg = String((data && data.message) || "").trim();
+          wEl.textContent = msg
+            ? msg.replace(/^天气[·\s]*/, "").slice(0, 28) || "暂不可用"
+            : "暂不可用";
+        }
+      } catch (_) {
+        if (wEl) wEl.textContent = "暂不可用";
+      }
+      try {
+        const res = await fetch("/api/v1/chat/geo", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const geo = await res.json().catch(() => ({}));
+        if (lEl) {
+          const lab = String((geo && (geo.label || geo.city)) || "").trim();
+          lEl.textContent = lab || "未定位";
+        }
+      } catch (_) {
+        if (lEl) lEl.textContent = "未定位";
+      }
+    }
+
+    function paintPhoneShadeList() {
+      const list = document.getElementById("phoneShadeList");
+      const empty = document.getElementById("phoneShadeEmpty");
+      if (!list) return;
+      list.replaceChildren();
+      const rows = [];
+      const liveKeys = Object.create(null);
+      const bot = shadeBotProfile();
+      const unread = Math.max(0, Math.floor(Number(lastPaintedChatUnread) || 0));
+      if (unread > 0 && !chatListMuted()) {
+        const title =
+          unread === 1
+            ? bot.name + "有 1 条未读短讯"
+            : bot.name + "有 " + unread + " 条未读短讯";
+        liveKeys["聊天|chat"] = true;
+        rows.push(
+          shadeRow("聊天", title, "chat", {
+            avatar: bot.avatar,
+            frame: true,
+          })
+        );
+      }
+      const nowEl = document.getElementById("phoneStatusNowText");
+      const nowTitle = nowEl ? String(nowEl.textContent || "").trim() : "";
+      const nowBox = document.getElementById("phoneStatusNow");
+      if (nowTitle && nowBox && !nowBox.hidden) {
+        liveKeys["共听|colisten"] = true;
+        rows.push(shadeListenRow(nowTitle));
+      }
+      if (lastCalRemindHit && lastCalRemindHit.ev) {
+        liveKeys["日历|cal"] = true;
+        rows.push(shadeRow("日历", calRemindLabel(lastCalRemindHit), "cal"));
+      }
+      const cap = document.getElementById("btnHomeCapsule");
+      if (cap && !cap.hidden) {
+        const go = String(cap.dataset.go || "").trim();
+        const label = String(cap.textContent || "").trim();
+        if (go === "cowatch" && label) {
+          liveKeys["共看|cowatch"] = true;
+          rows.push(shadeRow("共看", label, "cowatch"));
+        } else if (go === "colisten" && label && !nowTitle) {
+          liveKeys["共听|colisten"] = true;
+          rows.push(shadeListenRow(label));
+        }
+      }
+      const hist = readShadeHistory();
+      for (const h of hist) {
+        const lk = String(h.kind || "") + "|" + String(h.go || "");
+        if (liveKeys[lk]) continue;
+        rows.push(
+          shadeRow(h.kind, h.title, h.go || "", {
+            avatar: h.avatar || "",
+            frame: !!h.frame,
+          })
+        );
+      }
+      rows.forEach((r) => list.appendChild(r));
+      if (empty) empty.hidden = rows.length > 0;
+    }
+
+    async function clearPhoneShadeMessages() {
+      try {
+        await fetch("/api/v1/chat/read", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ peer: "daily" }),
+        });
+      } catch (_) {}
+      try {
+        localStorage.setItem("ariadne.chat.unread.mark", "[]");
+      } catch (_) {}
+      clearShadeHistory();
+      lastPaintedChatUnread = 0;
+      paintChatUnread(0, { silent: true });
+      try {
+        if (window.ChatApp && typeof ChatApp.refreshUnreadUi === "function") {
+          ChatApp.refreshUnreadUi();
+        }
+      } catch (_) {}
+      paintPhoneShadeList();
+      phonePushToast("已清空通知");
+    }
+
+    async function openPhoneShade() {
+      const status = document.getElementById("phoneStatus");
+      const shade = document.getElementById("phoneShade");
+      if (!shade || !status || status.classList.contains("is-off")) return;
+      paintPhoneShadeHead();
+      paintPhoneShadeWeatherLoc();
+      try {
+        if (typeof refreshChatUnread === "function") await refreshChatUnread();
+      } catch (_) {}
+      try {
+        if (typeof refreshCalRemind === "function") await refreshCalRemind();
+      } catch (_) {}
+      try {
+        if (typeof refreshListenPresence === "function") {
+          await refreshListenPresence();
+        }
+      } catch (_) {}
+      paintPhoneShadeList();
+      phoneShadeOpen = true;
+      shade.classList.remove("is-off");
+      shade.setAttribute("aria-hidden", "false");
+      requestAnimationFrame(() => {
+        shade.classList.add("is-open");
+      });
+    }
+
+    function togglePhoneShade() {
+      if (phoneShadeOpen) closePhoneShade();
+      else openPhoneShade();
+    }
+
+    (function bindPhoneShadeGestures() {
+      const status = document.getElementById("phoneStatus");
+      const grabHit = document.getElementById("phoneShadeGrabHit");
+      const btnClear = document.getElementById("phoneShadeClear");
+      if (!status) return;
+      let startY = 0;
+      let startX = 0;
+      let tracking = false;
+      let pulled = false;
+      status.addEventListener(
+        "pointerdown",
+        (ev) => {
+          if (status.classList.contains("is-off")) return;
+          if (ev.button != null && ev.button !== 0) return;
+          tracking = true;
+          pulled = false;
+          startY = ev.clientY;
+          startX = ev.clientX;
+          try {
+            status.setPointerCapture(ev.pointerId);
+          } catch (_) {}
+        },
+        { passive: true }
+      );
+      status.addEventListener(
+        "pointermove",
+        (ev) => {
+          if (!tracking) return;
+          const dy = ev.clientY - startY;
+          const dx = Math.abs(ev.clientX - startX);
+          if (dy > 36 && dy > dx * 1.2) {
+            pulled = true;
+            tracking = false;
+            openPhoneShade();
+          }
+        },
+        { passive: true }
+      );
+      function endPull(ev) {
+        if (!tracking) return;
+        tracking = false;
+        const dy = ev.clientY - startY;
+        const dx = Math.abs(ev.clientX - startX);
+        if (!pulled && Math.abs(dy) < 12 && dx < 12) {
+          togglePhoneShade();
+        }
+      }
+      status.addEventListener("pointerup", endPull);
+      status.addEventListener("pointercancel", () => {
+        tracking = false;
+      });
+      if (btnClear) {
+        btnClear.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          clearPhoneShadeMessages();
+        });
+      }
+      /* 底栏抓手：上拉跟手关闭（pointer + touch，安卓 WebView 双保险） */
+      (function bindShadeDismiss() {
+        const sheet = document.getElementById("phoneShadeSheet");
+        const foot = document.getElementById("phoneShadeFoot");
+        const zone = grabHit || foot;
+        if (!zone) return;
+        let sy = 0;
+        let sx = 0;
+        let active = false;
+        let dragged = false;
+
+        function isClearTarget(t) {
+          return !!(t && t.closest && t.closest("#phoneShadeClear"));
+        }
+        function yOf(ev) {
+          if (ev.touches && ev.touches[0]) return ev.touches[0].clientY;
+          if (ev.changedTouches && ev.changedTouches[0]) {
+            return ev.changedTouches[0].clientY;
+          }
+          return ev.clientY;
+        }
+        function xOf(ev) {
+          if (ev.touches && ev.touches[0]) return ev.touches[0].clientX;
+          if (ev.changedTouches && ev.changedTouches[0]) {
+            return ev.changedTouches[0].clientX;
+          }
+          return ev.clientX;
+        }
+        function start(ev) {
+          if (isClearTarget(ev.target)) return;
+          if (ev.type === "pointerdown" && ev.button != null && ev.button !== 0) {
+            return;
+          }
+          active = true;
+          dragged = false;
+          sy = yOf(ev);
+          sx = xOf(ev);
+          if (sheet) {
+            sheet.style.transition = "none";
+          }
+          if (ev.type === "pointerdown") {
+            try {
+              zone.setPointerCapture(ev.pointerId);
+            } catch (_) {}
+          }
+        }
+        function move(ev) {
+          if (!active) return;
+          const cy = yOf(ev);
+          const cx = xOf(ev);
+          const dy = cy - sy;
+          const dx = Math.abs(cx - sx);
+          /* 上滑：跟手把面板往上抬 */
+          if (dy < 0) {
+            dragged = true;
+            if (sheet) sheet.style.transform = "translateY(" + dy + "px)";
+          }
+          if (dy < -28 && Math.abs(dy) > dx * 0.7) {
+            active = false;
+            if (sheet) {
+              sheet.style.transition = "";
+              sheet.style.transform = "";
+            }
+            closePhoneShade();
+          }
+        }
+        function end(ev) {
+          if (!active) return;
+          active = false;
+          const cy = yOf(ev);
+          const cx = xOf(ev);
+          const dy = cy - sy;
+          const dx = Math.abs(cx - sx);
+          if (sheet) {
+            sheet.style.transition = "";
+            sheet.style.transform = "";
+          }
+          if (dy < -24) {
+            closePhoneShade();
+            return;
+          }
+          if (!dragged && Math.abs(dy) < 12 && dx < 12) {
+            closePhoneShade();
+          }
+        }
+        zone.addEventListener("pointerdown", start, { passive: true });
+        zone.addEventListener("pointermove", move, { passive: true });
+        zone.addEventListener("pointerup", end);
+        zone.addEventListener("pointercancel", () => {
+          active = false;
+          if (sheet) {
+            sheet.style.transition = "";
+            sheet.style.transform = "";
+          }
+        });
+        zone.addEventListener("touchstart", start, { passive: true });
+        zone.addEventListener("touchmove", move, { passive: true });
+        zone.addEventListener("touchend", end);
+        zone.addEventListener("touchcancel", () => {
+          active = false;
+          if (sheet) {
+            sheet.style.transition = "";
+            sheet.style.transform = "";
+          }
+        });
+      })();
+    })();
 
     function onShellWsMessage(msg) {
       if (!msg || !msg.type) return;
@@ -7133,9 +8827,11 @@
       const sub = document.getElementById("homeStkSub");
       if (!body) return;
       try {
+        const botNm =
+          (hutDialogue && hutDialogue.name_bot) || "沈言之";
         if (!window.CalApp || !CalApp.fetchNotes) {
           body.className = "stk-body is-empty";
-          body.textContent = "今日还没有家机留笺";
+          body.textContent = "今日还没有" + botNm + "留笺";
           if (sub) sub.textContent = "点开日历看全部";
           return;
         }
@@ -7146,7 +8842,7 @@
         );
         if (!bot.length) {
           body.className = "stk-body is-empty";
-          body.textContent = "今日还没有家机留笺";
+          body.textContent = "今日还没有" + botNm + "留笺";
           if (sub) sub.textContent = "点开日历看全部";
           return;
         }
@@ -7157,7 +8853,7 @@
           sub.textContent =
             bot.length > 1
               ? "另有 " + (bot.length - 1) + " 条 · 点开日历"
-              : "家机 · 今日";
+              : botNm + " · 今日";
         }
       } catch (_) {
         body.className = "stk-body is-empty";
@@ -7416,6 +9112,8 @@
       collapsePersona();
       collapseWorld();
       collapseFollowDefaults();
+      collapseCoreadPrefs();
+      collapseCabinBackup();
       document.getElementById("lorePanel").classList.add("open");
       document.getElementById("rowLore").classList.add("open");
     }
@@ -7428,8 +9126,101 @@
       collapsePersona();
       collapseWorld();
       collapseLore();
+      collapseCoreadPrefs();
+      collapseCabinBackup();
       document.getElementById("followDefaultsPanel").classList.add("open");
       document.getElementById("rowFollowDefaults").classList.add("open");
+    }
+
+    function collapseCoreadPrefs() {
+      const p = document.getElementById("coreadPrefsPanel");
+      const r = document.getElementById("rowCoreadPrefs");
+      if (p) p.classList.remove("open");
+      if (r) r.classList.remove("open");
+    }
+
+    function expandCoreadPrefs() {
+      const msg = document.getElementById("coreadPrefsMsg");
+      if (msg) {
+        msg.textContent = "";
+        msg.className = "save-msg";
+      }
+      loadSettings();
+      collapseLore();
+      collapseFollowDefaults();
+      collapseCabinBackup();
+      document.getElementById("coreadPrefsPanel").classList.add("open");
+      document.getElementById("rowCoreadPrefs").classList.add("open");
+    }
+
+    function toggleCoreadPrefs() {
+      const p = document.getElementById("coreadPrefsPanel");
+      if (p && p.classList.contains("open")) collapseCoreadPrefs();
+      else expandCoreadPrefs();
+    }
+
+    async function saveCoreadPrefs() {
+      const msg = document.getElementById("coreadPrefsMsg");
+      if (msg) {
+        msg.textContent = "保存中…";
+        msg.className = "save-msg";
+      }
+      const timeline_msg_filter = document.getElementById("selTimelineMsgFilter").value || "both";
+      const show_clock = !!document.getElementById("inShowClockCabin").checked;
+      const auto_pause_timer = !!document.getElementById("inAutoPauseTimer").checked;
+      try {
+        const res = await fetch("/api/v1/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ timeline_msg_filter, show_clock, auto_pause_timer }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "http");
+        timelineMsgFilter =
+          data.timeline_msg_filter === "marks" || data.timeline_msg_filter === "follows"
+            ? data.timeline_msg_filter
+            : timeline_msg_filter === "marks" || timeline_msg_filter === "follows"
+              ? timeline_msg_filter
+              : "both";
+        showClock = data.show_clock !== false;
+        autoPauseTimer = data.auto_pause_timer !== false;
+        const clockCb = document.getElementById("inShowClock");
+        if (clockCb) clockCb.checked = showClock;
+        updateCoreadClock();
+        updateCoreadPrefsVal();
+        if (typeof applyTimelineMsgFilter === "function") applyTimelineMsgFilter();
+        if (msg) {
+          msg.textContent = "已保存";
+          msg.className = "save-msg ok";
+        }
+        collapseCoreadPrefs();
+      } catch (_) {
+        if (msg) {
+          msg.textContent = "保存失败";
+          msg.className = "save-msg bad";
+        }
+      }
+    }
+
+    function collapseCabinBackup() {
+      const p = document.getElementById("cabinBackupPanel");
+      const r = document.getElementById("rowBackupJump");
+      if (p) p.classList.remove("open");
+      if (r) r.classList.remove("open");
+    }
+
+    function expandCabinBackup() {
+      collapseLore();
+      collapseFollowDefaults();
+      collapseCoreadPrefs();
+      document.getElementById("cabinBackupPanel").classList.add("open");
+      document.getElementById("rowBackupJump").classList.add("open");
+    }
+
+    function toggleCabinBackup() {
+      const p = document.getElementById("cabinBackupPanel");
+      if (p && p.classList.contains("open")) collapseCabinBackup();
+      else expandCabinBackup();
     }
 
     function togglePersona() {
@@ -7599,15 +9390,21 @@
       msg.className = "save-msg";
       const default_follow_mode = document.getElementById("selDefaultMode").value;
       const default_budget_rmb = Number(document.getElementById("selDefaultBudget").value) || 0;
+      const personaCb = document.getElementById("inPersonaCardFollowCabin");
+      const persona_card_in_follow = personaCb ? !!personaCb.checked : undefined;
       try {
+        const body = {
+          default_follow_mode,
+          default_follow_tone: "",
+          default_budget_rmb,
+        };
+        if (persona_card_in_follow !== undefined) {
+          body.persona_card_in_follow = persona_card_in_follow;
+        }
         const res = await fetch("/api/v1/settings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            default_follow_mode,
-            default_follow_tone: "",
-            default_budget_rmb,
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "http");
@@ -7615,6 +9412,9 @@
           data.default_follow_mode || default_follow_mode,
           data.default_budget_rmb != null ? data.default_budget_rmb : default_budget_rmb
         );
+        if (persona_card_in_follow !== undefined) {
+          hutDialogue.persona_card_in_follow = !!data.persona_card_in_follow;
+        }
         msg.textContent = "已保存";
         msg.className = "save-msg ok";
         collapseFollowDefaults();
@@ -7851,12 +9651,8 @@
 
     function wereadMetaLine(b) {
       if (b.source !== "weread" && !b.weread_id) return "";
-      const parts = [];
-      if (b.weread_progress != null) parts.push("进度 " + b.weread_progress + "%");
-      const dur = formatDuration(b.weread_read_seconds);
-      if (dur) parts.push("累计 " + dur);
-      if (!parts.length) return "微信读书 · 时长未取到";
-      return "微信读书 · " + parts.join(" · ");
+      if (b.weread_progress != null) return "微信读书 · 进度 " + b.weread_progress + "%";
+      return "";
     }
 
     function cabinMetaLine(b) {
@@ -7867,8 +9663,45 @@
       return s;
     }
 
+    let coreadBookId = null;
+    /** idle=未开始 · reading=计时中 · paused=暂停计时(仍跟批) */
+    let readingPhase = "idle";
+    let timelineMsgFilter = "both";
+    let autoPauseTimer = true;
+
     function activeBook() {
+      if (coreadBookId) {
+        const hit = booksCache.find((b) => b.id === coreadBookId);
+        if (hit) return hit;
+      }
       return booksCache.find((b) => b.in_progress) || null;
+    }
+
+    function readingAllowsFollow() {
+      return readingPhase === "reading" || readingPhase === "paused";
+    }
+
+    function updateReadActButtons() {
+      const start = document.getElementById("btnStartRead");
+      const pause = document.getElementById("btnPauseRead");
+      const end = document.getElementById("btnEndRead");
+      if (!start || !pause || !end) return;
+      if (readingPhase === "idle") {
+        start.hidden = false;
+        start.textContent = "开始阅读";
+        pause.hidden = true;
+        end.hidden = true;
+      } else if (readingPhase === "reading") {
+        start.hidden = true;
+        pause.hidden = false;
+        pause.textContent = "暂停";
+        end.hidden = false;
+      } else {
+        start.hidden = false;
+        start.textContent = "继续";
+        pause.hidden = true;
+        end.hidden = false;
+      }
     }
 
     function bookHasBody(book) {
@@ -8560,9 +10393,12 @@
       }
     }
 
+    let lastCalRemindHit = null;
+
     function paintHomeCalRemind(hit) {
       const el = document.getElementById("homeCalRemind");
       if (!el) return;
+      lastCalRemindHit = hit || null;
       if (!hit) {
         el.hidden = true;
         el.textContent = "";
@@ -8575,6 +10411,22 @@
       el.hidden = false;
       maybeNotifyCalRemind(hit);
       paintHomeNotifGuide(hit);
+      try {
+        const ev = hit.ev || {};
+        const once =
+          String(ev.id || "") +
+          "@" +
+          String(ev.date || "") +
+          "T" +
+          String(ev.time || "");
+        pushShadeHistory({
+          kind: "日历",
+          title: calRemindLabel(hit),
+          go: "cal",
+          dedupeKey: "日历|cal|" + once,
+          onceKey: "cal:" + once,
+        });
+      } catch (_) {}
     }
 
     async function refreshCalRemind() {
@@ -8682,6 +10534,14 @@
       const pctEl = document.getElementById(pctId);
       const fill = document.getElementById(fillId);
       if (!wrap || !pctEl || !fill) return;
+      if (level == null || !Number.isFinite(Number(level))) {
+        pctEl.textContent = charging ? "AC" : "—";
+        fill.style.width = charging ? "100%" : "0%";
+        wrap.classList.toggle("low", false);
+        wrap.classList.toggle("charge", !!charging);
+        wrap.title = charging ? "插电供电" : "电量不可用";
+        return;
+      }
       const pct = Math.max(0, Math.min(100, Math.round(Number(level) * 100)));
       pctEl.textContent = pct + "%";
       fill.style.width = pct + "%";
@@ -8696,8 +10556,9 @@
     }
 
     let lockBattBound = false;
-    let lastBattLevel = 0.78;
+    let lastBattLevel = null;
     let lastBattCharging = false;
+    let battPollTimer = 0;
     let phonePresenceTimer = 0;
 
     let phonePeekPendingId = "";
@@ -8755,7 +10616,7 @@
         (typeof hutDialogue !== "undefined" &&
           hutDialogue &&
           hutDialogue.name_bot) ||
-        "家机"
+        "沈言之"
       );
     }
     function peekBotAvatar() {
@@ -9897,24 +11758,100 @@
         .catch(() => {});
     }
 
+    function applyBatteryReading(level, charging) {
+      lastBattLevel = level == null || !Number.isFinite(Number(level)) ? null : Number(level);
+      lastBattCharging = !!charging;
+      paintLockBattery(lastBattLevel, lastBattCharging);
+      try {
+        reportPhonePresence();
+      } catch (_) {}
+    }
+
+    function readAriadneShellBattery() {
+      try {
+        if (!window.AriadneShell || typeof AriadneShell.getBattery !== "function") {
+          return null;
+        }
+        const raw = AriadneShell.getBattery();
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!data || data.ok === false) return null;
+        return {
+          level: data.level == null ? null : Number(data.level),
+          charging: !!data.charging,
+        };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function isMobileUa() {
+      try {
+        return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function fetchHostBattery() {
+      try {
+        const res = await fetch("/api/v1/device/battery", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!data || data.ok === false) return null;
+        return {
+          level: data.level == null ? null : Number(data.level),
+          charging: !!data.charging,
+        };
+      } catch (_) {
+        return null;
+      }
+    }
+
+    async function syncBatteryOnce() {
+      const shell = readAriadneShellBattery();
+      if (shell) {
+        applyBatteryReading(shell.level, shell.charging);
+        return;
+      }
+      try {
+        if (navigator.getBattery) {
+          const batt = await navigator.getBattery();
+          applyBatteryReading(batt.level, batt.charging);
+          return;
+        }
+      } catch (_) {}
+      /* 手机浏览器读不到本机电量；桌面可回落网关主机电池 */
+      if (!isMobileUa()) {
+        const host = await fetchHostBattery();
+        if (host) {
+          applyBatteryReading(host.level, host.charging);
+          return;
+        }
+      }
+      applyBatteryReading(null, false);
+    }
+
     async function bindLockBattery() {
       updateLockNetStatus();
       if (lockBattBound) return;
       lockBattBound = true;
-      paintLockBattery(0.78, false); // 读不到电量时的占位
+      paintLockBattery(null, false);
+      await syncBatteryOnce();
       try {
-        if (!navigator.getBattery) return;
-        const batt = await navigator.getBattery();
-        const sync = () => {
-          lastBattLevel = batt.level;
-          lastBattCharging = !!batt.charging;
-          paintLockBattery(batt.level, batt.charging);
-          reportPhonePresence();
-        };
-        sync();
-        batt.addEventListener("levelchange", sync);
-        batt.addEventListener("chargingchange", sync);
-      } catch (_) { /* 浏览器不给电量就用占位 */ }
+        if (navigator.getBattery) {
+          const batt = await navigator.getBattery();
+          const sync = () => applyBatteryReading(batt.level, batt.charging);
+          batt.addEventListener("levelchange", sync);
+          batt.addEventListener("chargingchange", sync);
+        }
+      } catch (_) {}
+      if (!battPollTimer) {
+        battPollTimer = setInterval(() => {
+          syncBatteryOnce();
+        }, 60000);
+      }
     }
 
     function updateStandbyContinue() {
@@ -9932,6 +11869,160 @@
       return hay.includes(q);
     }
 
+    function bookCoverInner(b) {
+      if (b && b.cover) {
+        return '<img src="' + escapeAttr(b.cover) + '" alt="" />';
+      }
+      // 无封面：书名纯文字封面
+      const title = String((b && b.title) || "未命名").trim() || "未命名";
+      const short = title.length > 28 ? title.slice(0, 28) + "…" : title;
+      return (
+        '<div class="cover-text"><span>' + escapeHtml(short) + "</span></div>"
+      );
+    }
+
+    function enrichBookCover(b) {
+      if (!b) return b;
+      if (b.cover) return b;
+      const shelf = (booksCache || []).find((x) => x && x.id === b.id);
+      if (shelf && shelf.cover) return Object.assign({}, b, { cover: shelf.cover });
+      return b;
+    }
+
+    /** 弹窗卡片：原列表卡里的刷次按钮 + 进度文案 */
+    function bookShelfDetailHtml(b) {
+      const passes = Array.isArray(b.passes) ? b.passes : [];
+      const multiPass = passes.length > 1;
+      const passPills = multiPass
+        ? passes
+            .map((p) => {
+              const on = Number(p) === Number(b.active_pass);
+              return (
+                '<button type="button" class="pill-tag' +
+                (on ? " a" : "") +
+                '" data-set-pass="' +
+                escapeAttr(String(p)) +
+                '" data-book-id="' +
+                escapeAttr(b.id) +
+                '">' +
+                passLabel(p) +
+                "</button>"
+              );
+            })
+            .join("")
+        : "";
+      const enterBtn =
+        '<button type="button" class="pill-tag a" data-action="coread" data-book-id="' +
+        escapeAttr(b.id) +
+        '">进入共读</button>';
+      const bodyBtn = b.has_body
+        ? '<button type="button" class="pill-tag" data-view-body="' +
+          escapeAttr(b.id) +
+          '">有正文' +
+          (b.body_chars ? " · " + Number(b.body_chars) + "字" : "") +
+          "</button>"
+        : '<button type="button" class="pill-tag" data-import-body="' +
+          escapeAttr(b.id) +
+          '">导入正文</button>';
+      const nextPass =
+        '<button type="button" class="pill-tag c" data-next-pass="' +
+        escapeAttr(b.id) +
+        '">+ 下一刷</button>';
+      const localManage =
+        b.source === "local"
+          ? '<button type="button" class="pill-tag" data-rename-local="' +
+            escapeAttr(b.id) +
+            '">改名</button>' +
+            '<button type="button" class="pill-tag" data-delete-local="' +
+            escapeAttr(b.id) +
+            '">删除</button>'
+          : "";
+      const progressBit =
+        "小屋进度 " +
+        (b.progress || 0) +
+        "%" +
+        (b.weread_progress != null ? " · 微信 " + b.weread_progress + "%" : "");
+      return (
+        '<div class="book-row" data-book-id="' +
+        escapeAttr(b.id) +
+        '">' +
+        '<div class="thumb" data-action="coread" data-book-id="' +
+        escapeAttr(b.id) +
+        '" role="button" tabindex="0" style="cursor:pointer">' +
+        bookCoverInner(b) +
+        "</div>" +
+        '<div class="book-main">' +
+        '<div class="t" id="shelfBookTitle" data-action="coread" data-book-id="' +
+        escapeAttr(b.id) +
+        '" role="button" tabindex="0" style="cursor:pointer">' +
+        escapeHtml(b.title) +
+        (b.author ? " · " + escapeHtml(b.author) : "") +
+        "</div>" +
+        '<div class="pill-row">' +
+        enterBtn +
+        bodyBtn +
+        (multiPass ? passPills : "") +
+        "</div>" +
+        '<button type="button" class="shelf-more" data-shelf-more>更多</button>' +
+        '<div class="shelf-more-body" hidden>' +
+        nextPass +
+        localManage +
+        "</div>" +
+        '<div class="meta">' +
+        escapeHtml(progressBit) +
+        "</div>" +
+        "</div></div>"
+      );
+    }
+
+    function closeShelfBookSheet() {
+      const sheet = document.getElementById("shelfBookSheet");
+      if (sheet) sheet.classList.remove("open");
+    }
+
+    function openShelfBookSheet(bookId) {
+      const b = booksCache.find((x) => x && x.id === bookId);
+      const body = document.getElementById("shelfBookBody");
+      const sheet = document.getElementById("shelfBookSheet");
+      if (!b || !body || !sheet) return;
+      body.innerHTML = bookShelfDetailHtml(b);
+      sheet.classList.add("open");
+    }
+
+    function refreshShelfBookSheetIfOpen() {
+      const sheet = document.getElementById("shelfBookSheet");
+      const body = document.getElementById("shelfBookBody");
+      if (!sheet || !body || !sheet.classList.contains("open")) return;
+      const row = body.querySelector("[data-book-id]");
+      const bid = row && row.getAttribute("data-book-id");
+      if (!bid) return;
+      const b = booksCache.find((x) => x && x.id === bid);
+      if (!b) {
+        closeShelfBookSheet();
+        return;
+      }
+      body.innerHTML = bookShelfDetailHtml(b);
+    }
+
+    function sizeShelfGrid() {
+      const body = document.querySelector("#view-cabin .cabin-body");
+      const bar = document.querySelector("#tab-shelf .shelf-bar");
+      const grid = document.querySelector("#view-cabin .shelf-grid");
+      if (!body || !grid) return;
+      const gap = 10;
+      const cs = getComputedStyle(body);
+      const padY =
+        (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+      // 可视区扣掉搜索栏；上下左右 padding + 行间距同 gap → 一屏约三行
+      const avail = Math.max(
+        120,
+        body.clientHeight - padY - (bar ? bar.offsetHeight : 0)
+      );
+      const row = Math.floor((avail - gap * 4) / 3);
+      grid.style.setProperty("--shelf-gap", gap + "px");
+      grid.style.setProperty("--shelf-row", Math.max(96, row) + "px");
+    }
+
     function renderShelf(books) {
       const root = document.getElementById("shelfRoot");
       if (!books.length) {
@@ -9940,70 +12031,35 @@
       }
       const q = shelfQuery();
       const list = q ? books.filter((b) => bookMatchesShelfQ(b, q)) : books;
-      const parts = [];
       if (!list.length) {
-        parts.push(
-          '<div class="r-card"><div class="t">没有匹配的书</div><div class="s">换个词，或清空搜索</div></div>'
-        );
-        root.innerHTML = parts.join("");
+        root.innerHTML =
+          '<div class="r-card"><div class="t">没有匹配的书</div><div class="s">换个词，或清空搜索</div></div>';
         return;
       }
+      const parts = ['<div class="shelf-grid">'];
       for (const b of list) {
-        const pills = (b.passes || [])
-          .map((p) => {
-            const on = Number(p) === Number(b.active_pass);
-            return (
-              '<button type="button" class="pill-tag' + (on ? " a" : "") +
-              '" data-set-pass="' + escapeAttr(String(p)) +
-              '" data-book-id="' + escapeAttr(b.id) + '">' +
-              passLabel(p) + "</button>"
-            );
-          })
-          .join("");
-        const next =
-          '<button type="button" class="pill-tag c" data-next-pass="' +
-          escapeAttr(b.id) + '">+ 下一刷</button>';
-        const bodyBtn = b.has_body
-          ? '<button type="button" class="pill-tag a" data-view-body="' +
-            escapeAttr(b.id) +
-            '">有正文' +
-            (b.body_chars ? " · " + Number(b.body_chars) + "字" : "") +
-            "</button>"
-          : '<button type="button" class="pill-tag" data-import-body="' +
-            escapeAttr(b.id) +
-            '">导入正文</button>';
-        const localManage =
-          b.source === "local"
-            ? '<button type="button" class="pill-tag" data-rename-local="' +
-              escapeAttr(b.id) +
-              '">改名</button>' +
-              '<button type="button" class="pill-tag" data-delete-local="' +
-              escapeAttr(b.id) +
-              '">删除</button>'
-            : "";
-        const empty = !b.passes || !b.passes.length
-          ? '<span class="pill-tag">未开刷</span>'
-          : pills + next;
-        const thumbInner = b.cover
-          ? '<img src="' + escapeAttr(b.cover) + '" alt="" />'
-          : '<img src="/assets/cafe/' +
-            (b.source === "local" ? "decor-croissant.png" : "decor-case.png") +
-            '" alt="" />';
-        const wr = wereadMetaLine(b);
         parts.push(
-          '<div class="r-card" data-action="coread" data-book-id="' + escapeAttr(b.id) + '" role="button" tabindex="0" style="cursor:pointer">' +
-            '<div class="book-row">' +
-            '<div class="thumb">' + thumbInner + "</div>" +
-            '<div style="flex:1;min-width:0">' +
-            '<div class="t">' + escapeHtml(b.title) + " · " + escapeHtml(b.author || "") + "</div>" +
-            '<div class="pill-row">' + empty + " " + bodyBtn + localManage + "</div>" +
-            '<div class="meta">' + sourceLabel(b.source) + " · " + escapeHtml(b.updated_at || "—") +
-            " · " + cabinMetaLine(b) + "</div>" +
-            (wr ? '<div class="meta">' + escapeHtml(wr) + "</div>" : "") +
-            "</div></div></div>"
+          '<button type="button" class="shelf-tile" data-open-book="' +
+            escapeAttr(b.id) +
+            '" title="' +
+            escapeAttr(b.title || "") +
+            '">' +
+            '<div class="cover">' +
+            bookCoverInner(b) +
+            "</div>" +
+            '<div class="nm">' +
+            escapeHtml(b.title || "未命名") +
+            "</div>" +
+            "</button>"
         );
       }
+      parts.push("</div>");
       root.innerHTML = parts.join("");
+      requestAnimationFrame(() => {
+        sizeShelfGrid();
+        requestAnimationFrame(sizeShelfGrid);
+      });
+      refreshShelfBookSheetIfOpen();
     }
 
     function escapeHtml(s) {
@@ -10309,10 +12365,35 @@
       if (!el) return;
       const book = activeBook();
       if (!book) return;
-      const pass = book.active_pass ? passLabel(book.active_pass) : "—";
-      const wr = book.weread_progress != null ? book.weread_progress : "—";
-      el.textContent =
-        "《" + book.title + "》·" + pass + " · 小屋" + (book.progress || 0) + "% · 读书" + wr + "%";
+      el.textContent = "《" + book.title + "》 · 小屋" + (book.progress || 0) + "%";
+    }
+
+    function timelineMsgFilterLabel() {
+      if (timelineMsgFilter === "marks") return "只看划线";
+      if (timelineMsgFilter === "follows") return "只看批注";
+      return "都看";
+    }
+
+    function cycleTimelineMsgFilter() {
+      timelineMsgFilter =
+        timelineMsgFilter === "both"
+          ? "marks"
+          : timelineMsgFilter === "marks"
+            ? "follows"
+            : "both";
+      applyTimelineMsgFilter();
+      updateFollowUi();
+      fetch("/api/v1/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timeline_msg_filter: timelineMsgFilter }),
+      }).catch(() => {});
+    }
+
+    function applyTimelineMsgFilter() {
+      if (highlightCache) {
+        renderHighlightStream(highlightCache, null, { scroll: "keep" });
+      }
     }
 
     function applyWereadProgress(progress) {
@@ -10332,6 +12413,9 @@
     function showView(name) {
       const from = shellViewName;
       shellViewName = name;
+      try {
+        if (typeof closePhoneShade === "function") closePhoneShade();
+      } catch (_) {}
       document.querySelectorAll(".view").forEach((el) => {
         el.classList.toggle("active", el.id === "view-" + name);
         el.style.removeProperty("display");
@@ -10344,13 +12428,11 @@
         const off = name === "standby";
         phoneStatus.classList.toggle("is-off", off);
         phoneStatus.setAttribute("aria-hidden", off ? "true" : "false");
+        /* S7.1 悬浮暂搁：占位永不亮 */
         if (homeFloat) {
-          const floatOff = off || name !== "home";
-          homeFloat.classList.toggle("is-off", floatOff);
-          if (floatOff) {
-            const tip = document.getElementById("homeFloatTip");
-            if (tip) tip.hidden = true;
-          }
+          homeFloat.classList.add("is-off");
+          homeFloat.hidden = true;
+          homeFloat.setAttribute("aria-hidden", "true");
         }
         if (!off) {
           body.classList.add(name === "home" ? "phone-status-home" : "phone-status-app");
@@ -10359,7 +12441,24 @@
       if (name === "home" && from === "standby") {
         pokeChatOnUnlock();
       }
+      if (name === "home") {
+        refreshChatUnread();
+        if (!homeUnreadPollTimer) {
+          homeUnreadPollTimer = setInterval(() => {
+            const hv = document.getElementById("view-home");
+            if (hv && hv.classList.contains("active")) refreshChatUnread();
+          }, 5000);
+        }
+      } else if (homeUnreadPollTimer && name !== "standby") {
+        clearInterval(homeUnreadPollTimer);
+        homeUnreadPollTimer = null;
+      }
       if (name !== "coread") {
+        if (from === "coread" && readingPhase === "reading" && autoPauseTimer) {
+          patchSessionTiming("pause");
+          readingPhase = "paused";
+          updateFollowUi();
+        }
         stopHighlightPoll();
         setPresence(null);
         immerseMode = false;
@@ -10437,7 +12536,11 @@
       if (name === "settings") {
         checkHealth();
       }
-      if (name === "shelf") loadBooks();
+      if (name !== "notes") notesViewBookId = null;
+      if (name === "shelf") {
+        loadBooks();
+        requestAnimationFrame(sizeShelfGrid);
+      }
       if (name === "records") loadRecords();
       if (name === "notes") loadNotes();
     }
@@ -10486,16 +12589,8 @@
       else openAppStub(lab || go || "App");
     }
 
-    const HOME_DECO_DEFAULT = "/assets/cafe/deco-shake.png";
-    const HOME_DECO_LISTEN = "/assets/colisten/deco-headphones.svg";
-
+    /** 桌面头像不再贴共听贴纸（进行中只走胶囊）；资料页装饰槽仍可高亮耳机 */
     function setHomeListenDeco(active) {
-      const src = active ? HOME_DECO_LISTEN : HOME_DECO_DEFAULT;
-      for (const id of ["avYou", "avBot"]) {
-        const face = document.getElementById(id);
-        const deco = face && face.querySelector("img.deco");
-        if (deco && deco.getAttribute("src") !== src) deco.src = src;
-      }
       const bar = document.getElementById("profileDecoBar");
       if (bar) {
         for (const span of bar.querySelectorAll("[data-deco]")) {
@@ -10739,10 +12834,30 @@
               homePresenceItems[i].titleId === x.titleId &&
               homePresenceItems[i].label === x.label
           );
+        function noteShadePresence(items) {
+          for (const item of items || []) {
+            if (!item || !item.go) continue;
+            const kind = item.go === "cowatch" ? "共看" : "共听";
+            const title = String(item.label || kind).trim();
+            if (!title) continue;
+            const once =
+              kind +
+              ":" +
+              String(item.titleId || item.trackTitle || title).slice(0, 48);
+            pushShadeHistory({
+              kind,
+              title,
+              go: item.go,
+              dedupeKey: kind + "|" + item.go + "|" + title,
+              onceKey: once,
+            });
+          }
+        }
         if (same && homePresenceItems.length) {
           if (titleNow && titleNow !== lastPresenceTrackTitle) {
             lastPresenceTrackTitle = titleNow;
             homePresenceItems = next;
+            noteShadePresence(next);
           }
           paintHomePresenceFrame();
           if (homePresenceItems.length > 1 && !homePresenceTimer) {
@@ -10754,6 +12869,7 @@
         homePresenceItems = next;
         homePresenceIdx = 0;
         startHomePresenceCycle();
+        noteShadePresence(next);
       } catch (_) {
         clearHomePresenceUi();
       }
@@ -10777,10 +12893,54 @@
       }
     }
 
-    function paintChatUnread(count) {
+    let lastPaintedChatUnread = -1;
+    let homeUnreadPollTimer = null;
+
+    function paintChatUnread(count, opts) {
       let n = Math.max(0, Math.floor(Number(count) || 0));
       if (chatMarkedUnread()) n = Math.max(n, 1);
       if (chatListMuted()) n = 0;
+      const silent = !!(opts && opts.silent);
+      const grew =
+        !silent &&
+        lastPaintedChatUnread >= 0 &&
+        n > lastPaintedChatUnread &&
+        !chatListMuted();
+      lastPaintedChatUnread = n;
+      if (grew) {
+        const home = document.getElementById("view-home");
+        const lock = document.getElementById("view-standby");
+        const onShell =
+          (home && home.classList.contains("active")) ||
+          (lock && lock.classList.contains("active"));
+        try {
+          const bot = shadeBotProfile();
+          if (onShell) {
+            phoneAlertShow({
+              kind: "聊天",
+              title: bot.name,
+              body:
+                n === 1 ? "发来 1 条新短讯" : "发来 " + n + " 条新短讯",
+              avatar: bot.avatar,
+              onOpen: () => routeHomeApp("chat"),
+            });
+          }
+          pushShadeHistory({
+            kind: "聊天",
+            title:
+              n === 1
+                ? bot.name + "有 1 条未读短讯"
+                : bot.name + "有 " + n + " 条未读短讯",
+            go: "chat",
+            avatar: bot.avatar,
+            frame: true,
+            dedupeKey: "聊天|chat|unread",
+            onceKey: "chat:unread:" + n + ":" + Math.floor(Date.now() / 60000),
+          });
+        } catch (_) {
+          if (onShell) phonePushToast("家机发来新短讯");
+        }
+      }
       document.querySelectorAll('.home-app[data-go="chat"] .ico-wrap').forEach((wrap) => {
         let dot = wrap.querySelector(".ico-badge");
         if (!dot) {
@@ -10816,7 +12976,7 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) return;
         if (data.poked) {
-          paintChatUnread(data.count);
+          paintChatUnread(data.count, { silent: true });
           if (window.ChatApp && typeof ChatApp.noteBotPing === "function") ChatApp.noteBotPing();
         }
         else refreshChatUnread();
@@ -11877,8 +14037,8 @@
             parts.push(renderChatBubble(b.c));
             continue;
           }
-          parts.push(renderHighlightHtml(b.h));
-          parts.push(renderFollowHtml(b.h));
+          if (timelineMsgFilter !== "follows") parts.push(renderHighlightHtml(b.h));
+          if (timelineMsgFilter !== "marks") parts.push(renderFollowHtml(b.h));
         }
       }
       stream.innerHTML = parts.join("");
@@ -12044,7 +14204,11 @@
       await loadOpenChats();
 
       const skipFollow =
-        doorLocked || followPaused || followMode === "silent" || budgetExhaustedLocal();
+        doorLocked ||
+        followPaused ||
+        followMode === "silent" ||
+        budgetExhaustedLocal() ||
+        !readingAllowsFollow();
       const needFollow =
         !skipFollow &&
         highlights.some((h) => {
@@ -12207,27 +14371,6 @@
       } else {
         lines.push("<div class=\"sum-line\">Token · —</div>");
       }
-      const sid = s.id ? String(s.id) : "";
-      lines.push(
-        '<div class="sum-export-wrap">' +
-          '<button type="button" class="export-btn" data-sum-export-open="' +
-          escapeAttr(sid) +
-          '">导出</button>' +
-          (sid
-            ? '<div class="sum-export-pick" hidden>' +
-              '<button type="button" class="export-btn" data-export="' +
-              escapeAttr(sid) +
-              '" data-format="md">Markdown · MD</button>' +
-              '<button type="button" class="export-btn" data-export="' +
-              escapeAttr(sid) +
-              '" data-format="doc">Word · .doc</button>' +
-              '<button type="button" class="export-btn" data-export="' +
-              escapeAttr(sid) +
-              '" data-format="json">JSON</button>' +
-              "</div>"
-            : "") +
-          "</div>"
-      );
       return lines.join("");
     }
 
@@ -12241,46 +14384,102 @@
       return t.length > n ? t.slice(0, n) + "…" : t;
     }
 
+    let notesViewBookId = null;
+
     function notesBackToList() {
+      notesViewBookId = null;
       if (notesSearchQ) runNotesSearch(notesSearchQ);
       else renderNotesList(notesBooksCache);
     }
 
+    function cabinSettingsPanelOpen() {
+      const ids = ["lorePanel", "followDefaultsPanel", "cabinBackupPanel", "coreadPrefsPanel"];
+      return ids.some((id) => {
+        const el = document.getElementById(id);
+        return el && el.classList.contains("open");
+      });
+    }
+
+    function collapseCabinSettingsPanels() {
+      if (typeof collapseLore === "function") collapseLore();
+      if (typeof collapseFollowDefaults === "function") collapseFollowDefaults();
+      if (typeof collapseCabinBackup === "function") collapseCabinBackup();
+      if (typeof collapseCoreadPrefs === "function") collapseCoreadPrefs();
+    }
+
+    function updateCoreadPrefsVal() {
+      const el = document.getElementById("coreadPrefsVal");
+      if (!el) return;
+      el.textContent =
+        timelineMsgFilter === "marks"
+          ? "只看划线"
+          : timelineMsgFilter === "follows"
+            ? "只看批注"
+            : "都看";
+    }
+
+    /** 小屋 ←：笔记详情 / 设定子面板先退一层，再回桌面 */
+    function handleCabinBack() {
+      if (notesViewBookId) {
+        notesBackToList();
+        return;
+      }
+      if (cabinSettingsPanelOpen()) {
+        collapseCabinSettingsPanels();
+        return;
+      }
+      showView("home");
+    }
+
+    function notesBookTileHtml(b, sub) {
+      const book = enrichBookCover(b);
+      return (
+        '<button type="button" class="notes-tile" data-notes-book="' +
+        escapeAttr(book.id) +
+        '">' +
+        '<div class="cover">' +
+        bookCoverInner(book) +
+        "</div>" +
+        '<div class="nm">' +
+        escapeHtml(book.title || "未命名") +
+        "</div>" +
+        '<div class="ns">' +
+        escapeHtml(sub) +
+        "</div>" +
+        "</button>"
+      );
+    }
+
+    function notesBookSubLine(b) {
+      if (!b.total) {
+        return b.weread_id ? "尚未同步划线" : "暂无划线";
+      }
+      return (
+        "划线 " +
+        (b.mark_count || 0) +
+        " · 想法 " +
+        (b.idea_count || 0)
+      );
+    }
+
     function renderNotesList(books) {
       const root = document.getElementById("notesRoot");
+      notesViewBookId = null;
       notesBooksCache = Array.isArray(books) ? books : [];
       if (!notesBooksCache.length) {
         root.innerHTML =
           '<div class="r-card"><div class="t">还没有书</div><div class="s">先在书架同步微信读书</div></div>';
         return;
       }
-      root.innerHTML = notesBooksCache
-        .map((b) => {
-          const empty = !b.total;
-          return (
-            '<div class="r-card tap" data-notes-book="' +
-            escapeAttr(b.id) +
-            '" role="button" tabindex="0">' +
-            '<div class="t">《' +
-            escapeHtml(b.title || "未命名") +
-            "》</div>" +
-            '<div class="s">' +
-            (empty
-              ? "暂无划线"
-              : "划线 " +
-                (b.mark_count || 0) +
-                " · 想法 " +
-                (b.idea_count || 0) +
-                " · 跟批 " +
-                (b.follow_count || 0)) +
-            "</div></div>"
-          );
-        })
-        .join("");
+      root.innerHTML =
+        '<div class="notes-grid">' +
+        notesBooksCache.map((b) => notesBookTileHtml(b, notesBookSubLine(b))).join("") +
+        "</div>";
     }
 
     function renderNotesSearch(data) {
       const root = document.getElementById("notesRoot");
+      notesViewBookId = null;
       const hits = (data && data.hits) || [];
       const books = (data && data.books) || [];
       notesBooksCache = books.length ? books : notesBooksCache;
@@ -12289,23 +14488,23 @@
           '<div class="r-card"><div class="t">无匹配</div><div class="s">试试别的词，或清空搜索</div></div>';
         return;
       }
-      const bookCards = books
-        .filter((b) => b.title_match)
-        .map(
-          (b) =>
-            '<div class="r-card tap" data-notes-book="' +
-            escapeAttr(b.id) +
-            '" role="button" tabindex="0">' +
-            '<div class="t">《' +
-            escapeHtml(b.title || "未命名") +
-            "》</div>" +
-            '<div class="s">书名命中 · 划线 ' +
-            (b.mark_count || 0) +
-            " · 想法 " +
-            (b.idea_count || 0) +
-            "</div></div>"
-        )
-        .join("");
+      const titleBooks = books.filter((b) => b.title_match);
+      const bookGrid = titleBooks.length
+        ? '<div class="notes-grid">' +
+          titleBooks
+            .map((b) =>
+              notesBookTileHtml(
+                b,
+                b.total
+                  ? "书名命中 · 划线 " + (b.mark_count || 0)
+                  : b.weread_id
+                    ? "书名命中 · 尚未同步划线"
+                    : "书名命中 · 暂无划线"
+              )
+            )
+            .join("") +
+          "</div>"
+        : "";
       const hitCards = hits
         .map((h) => {
           const main =
@@ -12341,8 +14540,33 @@
         " 条 · " +
         books.length +
         " 本书</div></div>" +
-        bookCards +
+        bookGrid +
         hitCards;
+    }
+
+    async function syncNotesBookHighlights(bookId) {
+      if (!bookId || browserOffline()) return false;
+      try {
+        const res = await fetch("/api/v1/highlights/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookId }),
+        });
+        return !!res.ok;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    /** 列表里「有微信 id、本地 0 条」最多补同步 3 本，避免打爆 */
+    async function softSyncEmptyWereadNotes(books) {
+      const need = (books || [])
+        .filter((b) => b && b.weread_id && !b.total)
+        .slice(0, 3);
+      for (const b of need) {
+        await syncNotesBookHighlights(b.id);
+      }
+      return need.length > 0;
     }
 
     async function runNotesSearch(q) {
@@ -12383,33 +14607,57 @@
       return order.map((title) => ({ title, items: map[title] }));
     }
 
-    function noteCardHtml(h) {
-      const main =
-        h.kind === "idea"
-          ? clipText(h.idea || h.text, 120)
-          : clipText(h.text, 120);
-      const idea =
-        h.kind !== "idea" && h.idea
-          ? '<div class="s">想法 · ' + escapeHtml(clipText(h.idea, 80)) + "</div>"
+    function noteMarkCardsHtml(h) {
+      const parts = [];
+      const isIdea = h.kind === "idea";
+      const markBody = isIdea
+        ? String(h.idea || h.text || "").trim()
+        : String(h.text || "").trim();
+      const ideaExtra =
+        !isIdea && h.idea && String(h.idea).trim()
+          ? String(h.idea).trim()
           : "";
-      const follow =
-        h.follow && h.follow.body
-          ? '<div class="s">跟批 · ' + escapeHtml(clipText(h.follow.body, 100)) + "</div>"
-          : h.follow_error
-            ? '<div class="s">跟批失败</div>'
-            : "";
-      return (
-        '<div class="r-card">' +
-        '<div class="t" style="font-weight:600;font-size:14px">' +
-        escapeHtml(main || "（空）") +
-        "</div>" +
-        idea +
-        follow +
-        "</div>"
-      );
+      if (markBody || ideaExtra) {
+        parts.push(
+          '<div class="note-hl-card mark">' +
+            '<div class="kind">' +
+            (isIdea ? "我的想法" : "我的划线") +
+            "</div>" +
+            '<div class="body">' +
+            escapeHtml(markBody || ideaExtra) +
+            "</div>" +
+            (ideaExtra && markBody
+              ? '<div class="body" style="margin-top:6px;opacity:.85">想法 · ' +
+                escapeHtml(ideaExtra) +
+                "</div>"
+              : "") +
+            (h.chapter_title
+              ? '<div class="meta">' + escapeHtml(h.chapter_title) + "</div>"
+              : "") +
+            "</div>"
+        );
+      }
+      if (h.follow && h.follow.body) {
+        parts.push(
+          '<div class="note-hl-card follow">' +
+            '<div class="kind">它的批注</div>' +
+            '<div class="body">' +
+            escapeHtml(String(h.follow.body).trim()) +
+            "</div>" +
+            "</div>"
+        );
+      } else if (h.follow_error) {
+        parts.push(
+          '<div class="note-hl-card follow">' +
+            '<div class="kind">它的批注</div>' +
+            '<div class="body">跟批失败</div></div>'
+        );
+      }
+      return parts.join("");
     }
 
     function renderNotesDetail(bookId, bookMeta, highlights) {
+      notesViewBookId = bookId;
       const root = document.getElementById("notesRoot");
       const title = (bookMeta && bookMeta.title) || "未命名";
       const list = Array.isArray(highlights) ? highlights : [];
@@ -12417,65 +14665,53 @@
       let body;
       if (!list.length) {
         body =
-          '<div class="r-card"><div class="t">暂无划线</div><div class="s">在微信读书划线后，共读中同步即可出现在这里</div></div>';
+          '<div class="r-card"><div class="t">暂无划线</div><div class="s">在微信读书划线后，点进本书会尝试同步</div></div>';
       } else {
         body = groups
           .map((g) => {
             return (
-              '<details class="notes-chap-block">' +
-              '<summary class="notes-chap">' +
+              '<div class="notes-chap-bar">' +
               escapeHtml(g.title) +
-              ' <span class="n">· ' +
+              " · " +
               g.items.length +
-              " 条</span></summary>" +
-              g.items.map(noteCardHtml).join("") +
-              "</details>"
+              " 条</div>" +
+              g.items.map(noteMarkCardsHtml).join("")
             );
           })
           .join("");
       }
-      const foldBtns =
-        groups.length > 1
-          ? '<button type="button" class="export-btn" data-notes-chapters="open">全部展开</button>' +
-            '<button type="button" class="export-btn" data-notes-chapters="close">全部收起</button>'
-          : "";
+      // 不再放「全部笔记」大卡；回列表用小屋顶栏 ←
       root.innerHTML =
-        '<div class="r-card tap" id="notesBack" role="button" tabindex="0">' +
-        '<div class="t">← 全部笔记</div>' +
-        '<div class="s">《' +
+        '<div class="notes-book-head">' +
+        '<div class="t">《' +
         escapeHtml(title) +
-        "》· " +
+        "》</div>" +
+        '<div class="s">' +
         list.length +
         " 条" +
         (groups.length > 1 ? " · " + groups.length + " 章" : "") +
+        " · 顶栏 ← 返回列表</div>" +
         "</div>" +
-        '<div class="export-row">' +
-        foldBtns +
-        '<button type="button" class="export-btn" data-notes-export="' +
-        escapeAttr(bookId) +
-        '" data-format="md">导出 MD</button>' +
-        '<button type="button" class="export-btn" data-notes-export="' +
-        escapeAttr(bookId) +
-        '" data-format="doc">导出 Word</button>' +
-        '<button type="button" class="export-btn" data-notes-export="' +
-        escapeAttr(bookId) +
-        '" data-format="json">导出 JSON</button>' +
-        "</div></div>" +
         body;
-      document.getElementById("notesBack").addEventListener("click", (e) => {
-        if (e.target.closest("[data-notes-export],[data-notes-chapters]")) return;
-        notesBackToList();
-      });
     }
 
     async function openNotesBook(bookId) {
-      const meta = notesBooksCache.find((b) => b.id === bookId) || { id: bookId, title: "…" };
+      const fromNotes = notesBooksCache.find((b) => b.id === bookId);
+      const fromShelf = (booksCache || []).find((b) => b.id === bookId);
+      const meta = Object.assign({}, fromShelf || {}, fromNotes || {}, {
+        id: bookId,
+        title: (fromNotes && fromNotes.title) || (fromShelf && fromShelf.title) || "…",
+      });
+      notesViewBookId = bookId;
       const root = document.getElementById("notesRoot");
       root.innerHTML =
         '<div class="r-card"><div class="t">《' +
         escapeHtml(meta.title || "") +
-        "》</div><div class=\"s\">加载中…</div></div>";
+        "》</div><div class=\"s\">" +
+        (meta.weread_id ? "同步划线中…" : "加载中…") +
+        "</div></div>";
       try {
+        if (meta.weread_id) await syncNotesBookHighlights(bookId);
         const res = await fetch(
           "/api/v1/books/" + encodeURIComponent(bookId) + "/highlights",
           { cache: "no-store" }
@@ -12484,8 +14720,7 @@
         renderNotesDetail(bookId, meta, data.highlights || []);
       } catch (_) {
         root.innerHTML =
-          '<div class="r-card tap" id="notesBack" role="button" tabindex="0"><div class="t">← 返回</div><div class="s">加载失败</div></div>';
-        document.getElementById("notesBack").addEventListener("click", notesBackToList);
+          '<div class="r-card"><div class="t">加载失败</div><div class="s">顶栏 ← 返回列表</div></div>';
       }
     }
 
@@ -12499,9 +14734,20 @@
       notesSearchQ = "";
       root.innerHTML = '<div class="r-card"><div class="t">加载中…</div></div>';
       try {
-        const res = await fetch("/api/v1/notes", { cache: "no-store" });
-        const data = await res.json();
-        renderNotesList(data.books || []);
+        if (!(booksCache && booksCache.length)) {
+          try {
+            await loadBooks();
+          } catch (_) { /* 封面可无文字回退 */ }
+        }
+        let res = await fetch("/api/v1/notes", { cache: "no-store" });
+        let data = await res.json();
+        let books = data.books || [];
+        if (await softSyncEmptyWereadNotes(books)) {
+          res = await fetch("/api/v1/notes", { cache: "no-store" });
+          data = await res.json();
+          books = data.books || [];
+        }
+        renderNotesList(books);
       } catch (_) {
         root.innerHTML =
           '<div class="r-card"><div class="t">读取失败</div><div class="s">网关不可达</div></div>';
@@ -12581,44 +14827,94 @@
       });
     }
 
+    function sessionDisplayMinutes(ms) {
+      return Math.max(0, Math.round((Number(ms) || 0) / 60000));
+    }
+
+    function countActiveDays(list) {
+      const days = new Set();
+      for (const s of list || []) {
+        if (sessionDisplayMinutes(s.duration_ms) <= 0) continue;
+        const t = Number(s.ended_at) || Number(s.started_at) || 0;
+        if (!t) continue;
+        days.add(startOfLocalDayMs(t));
+      }
+      return days.size;
+    }
+
+    function buildDailyRecordRows(list) {
+      const map = new Map();
+      for (const s of list || []) {
+        const t = Number(s.ended_at) || Number(s.started_at) || 0;
+        if (!t) continue;
+        const day = startOfLocalDayMs(t);
+        let slot = map.get(day);
+        if (!slot) {
+          slot = {
+            day,
+            duration_ms: 0,
+            follow_count: 0,
+            highlight_count: 0,
+            books: [],
+          };
+          map.set(day, slot);
+        }
+        slot.duration_ms += Number(s.duration_ms) || 0;
+        slot.follow_count += Number(s.follow_count) || 0;
+        slot.highlight_count += Number(s.highlight_count) || 0;
+        const title = s.book_title || "未命名";
+        if (slot.books.indexOf(title) < 0) slot.books.push(title);
+      }
+      return Array.from(map.values())
+        .filter((s) => sessionDisplayMinutes(s.duration_ms) > 0)
+        .sort((a, b) => b.day - a.day);
+    }
+
+    function formatDayLabel(ts) {
+      const d = new Date(ts || 0);
+      if (!ts || Number.isNaN(d.getTime())) return "—";
+      return d.getMonth() + 1 + "/" + d.getDate();
+    }
+
     function paintRecordsList() {
       const root = document.getElementById("recordsList");
       const list = filterRecordsByPeriod(recordsAllCache, recordsPeriod);
-      if (!list.length) {
+      const days = buildDailyRecordRows(list);
+      if (!days.length) {
         const emptyHint =
           recordsPeriod === "today"
-            ? "今天还没有结束的场次"
+            ? "今天还没有阅读"
             : recordsPeriod === "week"
-              ? "本周还没有结束的场次"
+              ? "本周还没有阅读"
               : recordsPeriod === "month"
-                ? "本月还没有结束的场次"
-                : "还没有场次";
+                ? "本月还没有阅读"
+                : "还没有阅读记录";
         root.innerHTML =
           '<div class="r-card"><div class="t">' +
           emptyHint +
-          '</div><div class="s">结束一场共读后会出现在这里</div></div>';
+          '</div><div class="s">点「结束阅读」入库后会出现在这里</div></div>';
         return;
       }
-      root.innerHTML = list
+      root.innerHTML = days
         .map((s) => {
+          const bookBit =
+            s.books.length === 1
+              ? "《" + escapeHtml(s.books[0]) + "》"
+              : s.books.length + " 本书";
           return (
-            '<div class="r-card tap" data-session="' + escapeAttr(s.id) + '" role="button" tabindex="0">' +
-              '<div class="t">《' + escapeHtml(s.book_title || "未命名") + "》</div>" +
-              '<div class="s">' +
-                escapeHtml(formatSessionWhen(s.ended_at)) +
-                (s.pass_ordinal ? " · " + escapeHtml(passLabel(s.pass_ordinal)) : "") +
-                " · 共读 " +
-                escapeHtml(formatSessionDuration(s.duration_ms)) +
-                (Number(s.weread_read_seconds) > 0
-                  ? " · 微信 " + escapeHtml(formatDuration(s.weread_read_seconds) || "0分钟")
-                  : "") +
-                " · 划线 " +
-                (s.highlight_count || 0) +
-                " · 跟批 " +
-                (s.follow_count || 0) +
-              "</div>" +
-              '<div class="session-detail" hidden>' + summaryHtml(s) + "</div>" +
-            "</div>"
+            '<div class="r-card">' +
+            '<div class="t">' +
+            escapeHtml(formatDayLabel(s.day)) +
+            " · " +
+            bookBit +
+            "</div>" +
+            '<div class="s">共读 ' +
+            escapeHtml(formatSessionDuration(s.duration_ms)) +
+            " · 划线 " +
+            (s.highlight_count || 0) +
+            " · 跟批 " +
+            (s.follow_count || 0) +
+            "</div></div>"
           );
         })
         .join("");
@@ -12630,7 +14926,8 @@
         : "all";
       let bucket = recordsStatsCache && recordsStatsCache[key];
       if (!bucket) bucket = emptyStatBucket();
-      document.getElementById("statSessions").textContent = String(bucket.sessions || 0);
+      const periodList = filterRecordsByPeriod(recordsAllCache, recordsPeriod);
+      document.getElementById("statSessions").textContent = String(countActiveDays(periodList));
       document.getElementById("statDuration").textContent = formatSessionDuration(
         bucket.duration_ms || 0
       ).replace(" ", "");
@@ -12713,6 +15010,14 @@
       if (!labEl || !barsEl) return;
       const list = filterRecordsByPeriod(recordsAllCache, recordsPeriod);
       const slots = buildRecordsChartBuckets(list, recordsPeriod);
+      const emptyMsg =
+        recordsPeriod === "today"
+          ? "今日还没有阅读"
+          : recordsPeriod === "week"
+            ? "本周还没有阅读"
+            : recordsPeriod === "month"
+              ? "本月还没有阅读"
+              : "这段还没有阅读";
       const title =
         recordsPeriod === "today"
           ? "共读时长 · 今日按时段"
@@ -12722,29 +15027,32 @@
               ? "共读时长 · 本月按周"
               : "共读时长 · 近八周";
       labEl.textContent = title;
-      const maxMs = Math.max(0, ...slots.map((s) => s.duration_ms));
-      const any = slots.some((s) => s.sessions > 0 || s.duration_ms > 0);
+      // 展示分钟为 0 视为无阅读（避免 <1 分钟撑满柱却标 0 分）
+      const maxMs = Math.max(
+        0,
+        ...slots.map((s) => (sessionDisplayMinutes(s.duration_ms) > 0 ? s.duration_ms : 0))
+      );
+      const any = slots.some((s) => sessionDisplayMinutes(s.duration_ms) > 0);
       if (!any) {
         barsEl.innerHTML =
-          '<div class="stat-chart-empty" style="flex:1">这段还没有共读时长</div>';
+          '<div class="stat-chart-empty" style="flex:1">' + emptyMsg + "</div>";
         return;
       }
       barsEl.innerHTML = slots
         .map((s) => {
-          const empty = !(s.sessions || s.duration_ms);
-          const pct = maxMs > 0 ? Math.max(empty ? 0 : 6, Math.round((s.duration_ms / maxMs) * 100)) : 0;
+          const mins = sessionDisplayMinutes(s.duration_ms);
+          const empty = mins <= 0;
+          const pct =
+            !empty && maxMs > 0
+              ? Math.max(8, Math.round((s.duration_ms / maxMs) * 100))
+              : 0;
           const tip =
             s.label +
-            " · 场次 " +
-            s.sessions +
             " · " +
             formatSessionDuration(s.duration_ms).replace(" ", "") +
             " · 跟批 " +
             s.follow_count;
-          const nLab =
-            s.duration_ms > 0
-              ? formatSessionDuration(s.duration_ms).replace(/\s/g, "").replace("分钟", "分")
-              : "";
+          const nLab = empty ? "" : mins + "分";
           return (
             '<div class="stat-chart-col' +
             (empty ? " empty" : "") +
@@ -12755,7 +15063,7 @@
             escapeHtml(nLab) +
             "</span>" +
             '<div class="stat-chart-track"><div class="stat-chart-bar" style="height:' +
-            (empty ? 2 : pct) +
+            (empty ? 0 : pct) +
             '%"></div></div>' +
             '<span class="d">' +
             escapeHtml(s.label) +
@@ -12802,8 +15110,6 @@
     function openSummarySheet(summary) {
       pendingSummary = summary;
       document.getElementById("sumBody").innerHTML = summaryHtml(summary);
-      const writeLore = document.getElementById("sumWriteLore");
-      if (writeLore) writeLore.checked = false;
       document.getElementById("summarySheet").classList.add("open");
     }
 
@@ -12847,17 +15153,13 @@
         return;
       }
       try {
-        const writeLore = !!(
-          document.getElementById("sumWriteLore") &&
-          document.getElementById("sumWriteLore").checked
-        );
         const res = await fetch("/api/v1/sessions/end", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             bookId: book.id,
             startedAt: sessionStartedAt || Date.now(),
-            write_lore: writeLore,
+            write_lore: false,
           }),
         });
         const data = await res.json();
@@ -12865,13 +15167,10 @@
           alert(data.message || "结束失败");
           return;
         }
-        if (writeLore && data.pass_lore && data.pass_lore.text) {
-          /* 已写入该书本刷；设定全局栏不再同步 */
-        } else if (writeLore && data.lore_summary != null) {
-          /* 兼容旧网关 */
-        }
         closeSummarySheet();
         sessionStartedAt = null;
+        readingPhase = "idle";
+        coreadBookId = null;
         followPaused = false;
         loreLight = false;
         followMode = "immersive";
@@ -12879,6 +15178,7 @@
         budgetTokens = 0;
         tokensUsed = 0;
         updateFollowUi();
+        updateReadActButtons();
         stopHighlightPoll();
         showTab("records");
         showView("cabin");
@@ -12889,22 +15189,87 @@
     }
 
     function leaveCoreadToShelf() {
+      if (readingPhase === "reading" && autoPauseTimer) {
+        patchSessionTiming("pause");
+        readingPhase = "paused";
+        updateFollowUi();
+      }
       stopHighlightPoll();
       stopIdleReadTimer();
-      idleLogCache = [];
       closeSheet();
       closeSummarySheet();
-      sessionStartedAt = null;
+      showTab("shelf");
+      showView("cabin");
+      updateOfflineBanner();
+    }
+
+    function patchSessionTimingSync(timing) {
+      return fetch("/api/v1/sessions/open", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timing }),
+      }).catch(() => {});
+    }
+
+    async function startOrResumeReading() {
+      if (!activeBook()) return;
+      await patchSessionTimingSync("resume");
+      readingPhase = "reading";
+      updateFollowUi();
+      updateReadActButtons();
+      if (!browserOffline()) {
+        startHighlightPoll();
+        syncAndLoadHighlights({ retry: true });
+      }
+    }
+
+    function pauseReadingTimer() {
+      if (readingPhase !== "reading") return;
+      patchSessionTiming("pause");
+      readingPhase = "paused";
+      updateFollowUi();
+      updateReadActButtons();
+    }
+
+    function applyOpenSessionPayload(data) {
+      const bid = (data.open && data.open.book_id) || coreadBookId;
+      if (bid) coreadBookId = bid;
+      sessionStartedAt = Date.now();
       followPaused = false;
       loreLight = false;
       followMode = "immersive";
       followTone = "";
       budgetTokens = 0;
       tokensUsed = 0;
-      updateFollowUi();
-      showTab("shelf");
-      showView("cabin");
-      updateOfflineBanner();
+      timelineScope = "session";
+      if (data.open && data.open.started_at) sessionStartedAt = data.open.started_at;
+      if (data.open) {
+        followPaused = !!data.open.follow_paused;
+        loreLight = !!data.open.lore_light;
+        followMode = data.open.follow_mode || "immersive";
+        followTone = data.open.follow_tone || "";
+        budgetTokens = Number(data.open.budget_tokens) || 0;
+        tokensUsed = Number(data.open.tokens_used) || 0;
+        sessionPassOrdinal = Number(data.open.pass_ordinal) || sessionPassOrdinal || 1;
+        idleLogCache = Array.isArray(data.open.idle_log) ? data.open.idle_log : [];
+        applySessionDialogue(data.open);
+        if (data.open.book_id) {
+          booksCache.forEach((b) => {
+            b.in_progress = b.id === data.open.book_id;
+          });
+        }
+        if (data.open.pass_ordinal) {
+          const b = booksCache.find((x) => x.id === data.open.book_id);
+          if (b) {
+            b.active_pass = data.open.pass_ordinal;
+            if (!Array.isArray(b.passes) || !b.passes.includes(b.active_pass)) {
+              b.passes = Array.isArray(b.passes)
+                ? b.passes.concat([b.active_pass])
+                : [b.active_pass];
+            }
+          }
+        }
+      }
     }
 
     function formatClockNow() {
@@ -12916,7 +15281,9 @@
     function updateCoreadClock() {
       const el = document.getElementById("crClock");
       if (!el) return;
-      el.textContent = showClock ? formatClockNow() : "";
+      // 共读顶栏不再显示时钟
+      el.textContent = "";
+      el.hidden = true;
     }
 
     function startClockTick() {
@@ -12979,36 +15346,31 @@
       const btn = document.getElementById("sheetPause");
       const loreInject = document.getElementById("sheetLoreInject");
       const modeLabel = FOLLOW_MODE_LABEL[followMode] || followMode;
-      const bud = budgetHint();
-      const spend = spendHint();
-      const spendBit = spend ? " · " + spend : "";
-      const scope = scopeLabel();
-      const loreBit = loreLight ? " · 未带设定" : " · 带设定";
+      const phaseBit =
+        readingPhase === "reading"
+          ? "阅读中"
+          : readingPhase === "paused"
+            ? "已暂停计时"
+            : "未开始";
+      const filterBit = timelineMsgFilterLabel();
       updateDoorLockVal();
+      updateReadActButtons();
       if (loreInject) loreInject.checked = !loreLight;
       if (doorLocked) {
         filter.classList.add("paused");
-        text.textContent = "已锁门 · " + scope + " · 划线仍同步" + spendBit;
+        text.textContent = "已锁门 · " + filterBit + " · 划线仍同步";
         btn.textContent = "暂停跟批";
       } else if (followPaused) {
         filter.classList.add("paused");
-        text.textContent =
-          "已暂停跟批 · " + scope + " · " + modeLabel + loreBit + spendBit;
+        text.textContent = "已暂停跟批 · " + filterBit + " · " + phaseBit;
         btn.textContent = "继续跟批";
       } else if (budgetExhaustedLocal()) {
         filter.classList.add("paused");
-        text.textContent =
-          "额度用尽 · " + scope + " · " + modeLabel + loreBit + spendBit;
+        text.textContent = "额度用尽 · " + filterBit + " · " + modeLabel;
         btn.textContent = "暂停跟批";
       } else {
         filter.classList.remove("paused");
-        const tail = bud || spend || "薄荷巧克力皮";
-        text.textContent =
-          scope +
-          " · " +
-          modeLabel +
-          loreBit +
-          (spend && bud ? spendBit + " · " + bud : " · " + tail);
+        text.textContent = filterBit + " · " + phaseBit + " · " + modeLabel;
         btn.textContent = "暂停跟批";
       }
     }
@@ -13328,6 +15690,10 @@
       if (!bid || enterCoreadBusy) return;
       enterCoreadBusy = true;
       enterCoreadRetryId = null;
+      coreadBookId = bid;
+      booksCache.forEach((b) => {
+        b.in_progress = b.id === bid;
+      });
 
       fetch("/api/v1/sessions/start", {
         method: "POST",
@@ -13345,64 +15711,24 @@
           return data;
         })
         .then((data) => {
-          sessionStartedAt = Date.now();
-          followPaused = false;
-          loreLight = false;
-          followMode = "immersive";
-          followTone = "";
           immerseMode = false;
           followPanelOpen = false;
           followFabBadge = false;
           followSeenFp = "";
           bodyCache = null;
-          idleLogCache = [];
           stopIdleReadTimer();
-          budgetTokens = 0;
-          tokensUsed = 0;
-          timelineScope = "session";
           const openBook =
             booksCache.find((b) => b.id === bid) || activeBook();
           sessionPassOrdinal =
             Number(openBook && openBook.active_pass) || 1;
-
-          if (data.open && data.open.started_at) {
-            sessionStartedAt = data.open.started_at;
-          }
-          if (data.open) {
-            followPaused = !!data.open.follow_paused;
-            loreLight = !!data.open.lore_light;
-            followMode = data.open.follow_mode || "immersive";
-            followTone = data.open.follow_tone || "";
-            budgetTokens = Number(data.open.budget_tokens) || 0;
-            tokensUsed = Number(data.open.tokens_used) || 0;
-            sessionPassOrdinal =
-              Number(data.open.pass_ordinal) || sessionPassOrdinal || 1;
-            idleLogCache = Array.isArray(data.open.idle_log)
-              ? data.open.idle_log
-              : [];
-            applySessionDialogue(data.open);
-            if (data.open.book_id) {
-              booksCache.forEach((b) => {
-                b.in_progress = b.id === data.open.book_id;
-              });
-            }
-            if (data.open.pass_ordinal) {
-              const b = booksCache.find((x) => x.id === data.open.book_id);
-              if (b) {
-                b.active_pass = data.open.pass_ordinal;
-                if (
-                  !Array.isArray(b.passes) ||
-                  !b.passes.includes(b.active_pass)
-                ) {
-                  b.passes = Array.isArray(b.passes)
-                    ? b.passes.concat([b.active_pass])
-                    : [b.active_pass];
-                }
-              }
-            }
-          }
+          applyOpenSessionPayload(data);
+          // 进界面不计时：无累计才「开始阅读」；有过本场时长才「继续」（勿用 resumed，否则重进必跳过开始）
+          const hadMs = Number(data.open && data.open.active_ms) || 0;
+          readingPhase = hadMs > 0 ? "paused" : "idle";
+          if (data.open && data.open.active_since) patchSessionTiming("pause");
 
           updateFollowUi();
+          updateReadActButtons();
           updateImmerseUi();
           showView("coread");
           updateCoreadTitle();
@@ -13416,7 +15742,12 @@
           if (bookHasBody()) ensureBodyLoaded();
         })
         .then(() => loadOpenChats())
-        .then(() => syncAndLoadHighlights({ retry: true, scroll: "bottom" }))
+        .then(() =>
+          syncAndLoadHighlights({
+            retry: readingAllowsFollow(),
+            scroll: "bottom",
+          })
+        )
         .then(() => flushOfflineQueue())
         .then(startHighlightPoll)
         .catch((e) => {
@@ -13550,9 +15881,18 @@
       document.getElementById("recordsExportSheet").classList.remove("open");
     }
 
-    function openFormatExportSheet(kind) {
+    function openFormatExportSheet(kind, bookId) {
       const panel = document.getElementById("recordsExportSheetPanel");
-      const title = kind === "notes" ? "导出笔记" : "导出记录";
+      const notesBook = kind === "notes" && bookId ? bookId : null;
+      const title = notesBook
+        ? "导出本书笔记"
+        : kind === "notes"
+          ? "导出笔记"
+          : "导出记录";
+      const jsonBtn =
+        kind === "notes"
+          ? '<button type="button" data-exp-fmt="json">JSON</button>'
+          : "";
       fillSheetPanel(
         panel,
         '<div class="sum-head">' +
@@ -13560,6 +15900,7 @@
           "</div>" +
           '<button type="button" data-exp-fmt="md">Markdown</button>' +
           '<button type="button" data-exp-fmt="doc">Word</button>' +
+          jsonBtn +
           '<button type="button" class="cancel" id="recordsExportSheetCancel">取消</button>'
       );
       panel.querySelectorAll("[data-exp-fmt]").forEach((btn) => {
@@ -13567,6 +15908,14 @@
           const fmt = btn.getAttribute("data-exp-fmt") || "md";
           closeRecordsExportSheet();
           if (kind === "notes") {
+            if (notesBook) {
+              window.location.href =
+                "/api/v1/books/" +
+                encodeURIComponent(notesBook) +
+                "/notes/export?format=" +
+                encodeURIComponent(fmt);
+              return;
+            }
             window.location.href = "/api/v1/notes/export?format=" + encodeURIComponent(fmt);
             return;
           }
@@ -13642,7 +15991,7 @@
     }
 
     document.getElementById("swipeHint").addEventListener("click", enterHome);
-    document.getElementById("btnStandby").addEventListener("click", () => showView("home"));
+    document.getElementById("btnStandby").addEventListener("click", handleCabinBack);
     document.getElementById("homeDesk").addEventListener("click", onHomeAppClick);
     document.getElementById("homeDock").addEventListener("click", onHomeAppClick);
     const btnHomeCapsule = document.getElementById("btnHomeCapsule");
@@ -13715,7 +16064,7 @@
     if (window.ChatApp) {
       ChatApp.mount({
         showView,
-        getPeerName: () => (hutDialogue && hutDialogue.name_bot) || "家机",
+        getPeerName: () => (hutDialogue && hutDialogue.name_bot) || "沈言之",
         getAvatarYou: () => hutAvatarUser || "/assets/cafe/avatar-you.png",
         getAvatarBot: () => hutAvatarBot || "/assets/cafe/avatar-bot.png",
         getNameUser: () =>
@@ -13727,6 +16076,7 @@
           if (hutDialogue) hutDialogue.name_bot = n;
           const inp = document.getElementById("inNameBot");
           if (inp) inp.value = n;
+          paintHomePeerAvatars();
         },
         onAvatarChanged: (who, url) => {
           const u = normalizeAvatarLocal(
@@ -13743,6 +16093,7 @@
             if (hutDialogue) hutDialogue.avatar_bot = u;
           }
           paintHutAvatarPicks();
+          paintHomePeerAvatars();
         },
         onYouProfileChanged: (patch) => {
           const p = patch || {};
@@ -13763,6 +16114,7 @@
             hutNickUser = String(p.nick_user || "").trim().slice(0, 32);
           }
           paintHutAvatarPicks();
+          paintHomePeerAvatars();
         },
         onPeekPhoneWait,
         onPeekPhoneBrowse,
@@ -13845,20 +16197,43 @@
     document.getElementById("bodyViewSheet").addEventListener("click", (e) => {
       if (e.target.id === "bodyViewSheet") closeBodyViewSheet();
     });
-    document.getElementById("shelfRoot").addEventListener("click", (e) => {
+    (function bindShelfBookSheet() {
+      const sheet = document.getElementById("shelfBookSheet");
+      const closeBtn = document.getElementById("btnShelfBookClose");
+      if (closeBtn) closeBtn.addEventListener("click", () => closeShelfBookSheet());
+      if (sheet) {
+        sheet.addEventListener("click", (e) => {
+          if (e.target.id === "shelfBookSheet") closeShelfBookSheet();
+        });
+      }
+    })();
+    function handleShelfBookActions(e) {
+      const moreBtn = e.target.closest("[data-shelf-more]");
+      if (moreBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const body = moreBtn.parentElement && moreBtn.parentElement.querySelector(".shelf-more-body");
+        if (body) {
+          const open = body.hasAttribute("hidden");
+          if (open) body.removeAttribute("hidden");
+          else body.setAttribute("hidden", "");
+          moreBtn.textContent = open ? "收起" : "更多";
+        }
+        return true;
+      }
       const importBtn = e.target.closest("[data-import-body]");
       if (importBtn) {
         e.preventDefault();
         e.stopPropagation();
         openBodyFilePicker(importBtn.getAttribute("data-import-body"));
-        return;
+        return true;
       }
       const viewBtn = e.target.closest("[data-view-body]");
       if (viewBtn) {
         e.preventDefault();
         e.stopPropagation();
         openBodyView(viewBtn.getAttribute("data-view-body"));
-        return;
+        return true;
       }
       const renameBtn = e.target.closest("[data-rename-local]");
       if (renameBtn) {
@@ -13868,11 +16243,11 @@
         const book = booksCache.find((b) => b.id === bid);
         const cur = (book && book.title) || "";
         const next = window.prompt("新书名", cur);
-        if (next == null) return;
+        if (next == null) return true;
         const title = String(next).trim();
         if (!title) {
           window.alert("书名不能为空");
-          return;
+          return true;
         }
         fetch("/api/v1/books/" + encodeURIComponent(bid), {
           method: "PATCH",
@@ -13892,7 +16267,7 @@
             }
           })
           .catch(() => window.alert("改名请求失败"));
-        return;
+        return true;
       }
       const deleteBtn = e.target.closest("[data-delete-local]");
       if (deleteBtn) {
@@ -13906,12 +16281,13 @@
             title +
             "》？\n\n正文、划线与想法会一并删掉，且不可恢复。"
         );
-        if (!ok) return;
+        if (!ok) return true;
         fetch("/api/v1/books/" + encodeURIComponent(bid), { method: "DELETE" })
           .then((r) => r.json())
           .then((data) => {
             if (data.ok) {
               booksCache = booksCache.filter((b) => b.id !== bid);
+              closeShelfBookSheet();
               renderShelf(booksCache);
               updateStandbyContinue();
             } else {
@@ -13919,7 +16295,7 @@
             }
           })
           .catch(() => window.alert("删除请求失败"));
-        return;
+        return true;
       }
       const nextBtn = e.target.closest("[data-next-pass]");
       if (nextBtn) {
@@ -13939,7 +16315,7 @@
             passLabel(next) +
             "。\n\n新刷次会切到当前，旧刷内容仍在。\n确定开下一刷？"
         );
-        if (!ok) return;
+        if (!ok) return true;
         fetch("/api/v1/books/" + encodeURIComponent(bid) + "/passes/next", { method: "POST" })
           .then((r) => r.json())
           .then((data) => {
@@ -13952,7 +16328,7 @@
             }
           })
           .catch(() => {});
-        return;
+        return true;
       }
       const passBtn = e.target.closest("[data-set-pass]");
       if (passBtn) {
@@ -13973,16 +16349,41 @@
               else booksCache.push(data.book);
               renderShelf(booksCache);
               updateStandbyContinue();
-              // PRD T2：点刷次进对应对话
+              closeShelfBookSheet();
               enterCoread(bid);
             }
           })
           .catch(() => {});
-        return;
+        return true;
       }
       const card = e.target.closest("[data-action=coread]");
-      if (card) enterCoread(card.getAttribute("data-book-id") || undefined);
+      if (card) {
+        closeShelfBookSheet();
+        enterCoread(card.getAttribute("data-book-id") || undefined);
+        return true;
+      }
+      return false;
+    }
+    document.getElementById("shelfRoot").addEventListener("click", (e) => {
+      const openTile = e.target.closest("[data-open-book]");
+      if (openTile) {
+        e.preventDefault();
+        openShelfBookSheet(openTile.getAttribute("data-open-book"));
+        return;
+      }
+      handleShelfBookActions(e);
     });
+    window.addEventListener("resize", () => {
+      if (document.getElementById("tab-shelf")?.classList.contains("active")) {
+        sizeShelfGrid();
+      }
+    });
+    const shelfBookBody = document.getElementById("shelfBookBody");
+    if (shelfBookBody) {
+      shelfBookBody.addEventListener("click", (e) => {
+        handleShelfBookActions(e);
+      });
+    }
     document.getElementById("btnSaveSettings").addEventListener("click", saveSettings);
     (function bindTtsPreview() {
       const btn = document.getElementById("btnTtsPreview");
@@ -14167,7 +16568,8 @@
     document.getElementById("loreImportSheet").addEventListener("click", (e) => {
       if (e.target.id === "loreImportSheet") closeLoreImportSheet();
     });
-    document.getElementById("loreFile").addEventListener("change", (e) => {
+    const loreFileEl = document.getElementById("loreFile");
+    if (loreFileEl) loreFileEl.addEventListener("change", (e) => {
       const f = e.target.files && e.target.files[0];
       importLoreFromFile(f);
       e.target.value = "";
@@ -14185,7 +16587,24 @@
       btn.addEventListener("click", () => showTab(btn.dataset.tab));
     });
 
-    document.getElementById("btnMore").addEventListener("click", openSheet);
+    // ··· 本场菜单已撤；开始/暂停/结束在顶栏右侧
+    const btnMoreEl = document.getElementById("btnMore");
+    if (btnMoreEl) {
+      btnMoreEl.hidden = true;
+      btnMoreEl.setAttribute("aria-hidden", "true");
+    }
+    document.getElementById("btnStartRead").addEventListener("click", () => {
+      startOrResumeReading();
+    });
+    document.getElementById("btnPauseRead").addEventListener("click", () => {
+      pauseReadingTimer();
+    });
+    document.getElementById("btnEndRead").addEventListener("click", () => {
+      endSession();
+    });
+    document.getElementById("crFilter").addEventListener("click", () => {
+      cycleTimelineMsgFilter();
+    });
     document.getElementById("btnChapters").addEventListener("click", openChapterSheet);
     document.getElementById("chapterSheetClose").addEventListener("click", closeChapterSheet);
     document.getElementById("chapterSheet").addEventListener("click", (e) => {
@@ -14436,8 +16855,8 @@
       else expandBackup();
     }
     function jumpToPhoneBackup() {
-      showView("phone-settings");
-      expandBackup();
+      /* 舱内设定不再跳桌面；保留函数名兼容旧调用 */
+      expandCabinBackup();
     }
     async function onBackupFileChosen(file) {
       pendingBackup = null;
@@ -14533,13 +16952,21 @@
         toggleBackup();
       }
     });
-    document.getElementById("rowBackupJump").addEventListener("click", jumpToPhoneBackup);
+    document.getElementById("rowBackupJump").addEventListener("click", toggleCabinBackup);
     document.getElementById("rowBackupJump").addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        jumpToPhoneBackup();
+        toggleCabinBackup();
       }
     });
+    document.getElementById("btnCabinBackupJson").addEventListener("click", () => exportBackup("json"));
+    document.getElementById("btnCabinBackupZip").addEventListener("click", () => exportBackup("zip"));
+    document.getElementById("btnCloseCabinBackup").addEventListener("click", collapseCabinBackup);
+    document.getElementById("cabinBackupPanel").addEventListener("click", (e) => e.stopPropagation());
+    document.getElementById("rowCoreadPrefs").addEventListener("click", toggleCoreadPrefs);
+    document.getElementById("btnSaveCoreadPrefs").addEventListener("click", saveCoreadPrefs);
+    document.getElementById("btnCloseCoreadPrefs").addEventListener("click", collapseCoreadPrefs);
+    document.getElementById("coreadPrefsPanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("btnBackupJson").addEventListener("click", (e) => {
       e.stopPropagation();
       exportBackup("json");
@@ -14562,7 +16989,6 @@
     });
     document.getElementById("backupPanel").addEventListener("click", (e) => e.stopPropagation());
     document.getElementById("sheetBudget").addEventListener("click", openBudgetSheet);
-    document.getElementById("sheetPassLore").addEventListener("click", openPassLoreSheet);
     document.getElementById("sheetTimeline").addEventListener("click", openTimelineSheet);
     document.getElementById("sheetImmerse").addEventListener("click", () => {
       closeSheet();
@@ -14700,35 +17126,7 @@
     document.getElementById("sumConfirm").addEventListener("click", confirmEndSession);
     document.getElementById("sumCancel").addEventListener("click", closeSummarySheet);
     document.getElementById("summarySheet").addEventListener("click", (e) => {
-      if (e.target.id === "summarySheet") {
-        closeSummarySheet();
-        return;
-      }
-      const openBtn = e.target.closest("[data-sum-export-open]");
-      if (openBtn) {
-        e.preventDefault();
-        const id = openBtn.getAttribute("data-sum-export-open");
-        if (!id) {
-          alert("确认结束后，可在「记录」里导出本场");
-          return;
-        }
-        const wrap = openBtn.closest(".sum-export-wrap");
-        const pick = wrap && wrap.querySelector(".sum-export-pick");
-        if (pick) pick.hidden = !pick.hidden;
-        return;
-      }
-      const exp = e.target.closest("[data-export]");
-      if (exp) {
-        e.preventDefault();
-        const id = exp.getAttribute("data-export");
-        const format = exp.getAttribute("data-format") || "md";
-        if (!id) return;
-        window.location.href =
-          "/api/v1/sessions/" +
-          encodeURIComponent(id) +
-          "/export?format=" +
-          encodeURIComponent(format);
-      }
+      if (e.target.id === "summarySheet") closeSummarySheet();
     });
     document.getElementById("btnRecordsExport").addEventListener("click", openRecordsExportSheet);
     document.getElementById("recordsExportSheet").addEventListener("click", (e) => {
@@ -14782,7 +17180,7 @@
       }
     });
     document.getElementById("btnNotesExport").addEventListener("click", () => {
-      openFormatExportSheet("notes");
+      openFormatExportSheet("notes", notesViewBookId || undefined);
     });
     document.getElementById("notesRoot").addEventListener("click", (e) => {
       const fold = e.target.closest("[data-notes-chapters]");
@@ -14796,19 +17194,6 @@
           .forEach((d) => {
             d.open = open;
           });
-        return;
-      }
-      const exp = e.target.closest("[data-notes-export]");
-      if (exp) {
-        e.preventDefault();
-        e.stopPropagation();
-        const id = exp.getAttribute("data-notes-export");
-        const format = exp.getAttribute("data-format") || "md";
-        window.location.href =
-          "/api/v1/books/" +
-          encodeURIComponent(id) +
-          "/notes/export?format=" +
-          encodeURIComponent(format);
         return;
       }
       const card = e.target.closest("[data-notes-book]");
@@ -15817,157 +18202,8 @@
     }
     document.getElementById("plusSummarize").addEventListener("click", summarizeRecentChat);
 
-    function setPassLoreMsg(text, kind) {
-      const el = document.getElementById("passLoreMsg");
-      if (!el) return;
-      el.textContent = text || "";
-      el.className = "pass-lore-msg" + (kind ? " " + kind : "");
-    }
-
-    function closePassLoreSheet() {
-      document.getElementById("passLoreSheet").classList.remove("open");
-    }
-
-    async function openPassLoreSheet() {
-      closePlusSheet();
-      closeSheet();
-      const book = activeBook();
-      if (!book || !book.id) {
-        setPassLoreMsg("请先进入共读", "bad");
-        return;
-      }
-      const pass = sessionPassOrdinal || book.active_pass || 1;
-      const title = document.getElementById("passLoreTitle");
-      const sub = document.getElementById("passLoreSub");
-      if (title) {
-        title.textContent = "本刷摘要 · " + passLabel(pass);
-      }
-      if (sub) {
-        sub.textContent =
-          "《" +
-          (book.title || "未命名") +
-          "》· AI 生成草稿 → 你润色 → 保存后跟批才带上";
-      }
-      setPassLoreMsg("");
-      const ta = document.getElementById("passLoreText");
-      if (ta) ta.value = "";
-      document.getElementById("passLoreSheet").classList.add("open");
-      try {
-        const res = await fetch(
-          "/api/v1/books/" +
-            encodeURIComponent(book.id) +
-            "/pass-lore?pass=" +
-            encodeURIComponent(pass),
-          { cache: "no-store" }
-        );
-        const data = await res.json();
-        if (res.ok && data.ok && ta) {
-          ta.value = data.text || "";
-          setPassLoreMsg(
-            data.text
-              ? "已载入 " + (data.chars || 0) + " 字（未改前）"
-              : "本刷尚无摘要，可生成草稿"
-          );
-        } else {
-          setPassLoreMsg(data.message || "读取失败", "bad");
-        }
-      } catch (_) {
-        setPassLoreMsg("读取失败", "bad");
-      }
-    }
-
-    async function generatePassLoreDraftUi() {
-      const book = activeBook();
-      const ta = document.getElementById("passLoreText");
-      const btn = document.getElementById("passLoreGenerate");
-      if (!book || !book.id || !ta) return;
-      if (doorLocked) {
-        setPassLoreMsg("已锁门", "bad");
-        return;
-      }
-      if (budgetExhaustedLocal()) {
-        setPassLoreMsg("额度用尽", "bad");
-        return;
-      }
-      const pass = sessionPassOrdinal || book.active_pass || 1;
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "生成中…";
-      }
-      setPassLoreMsg("正在生成草稿…");
-      try {
-        const res = await fetch(
-          "/api/v1/books/" +
-            encodeURIComponent(book.id) +
-            "/pass-lore/generate",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              pass,
-              think: thinkEnabled(),
-              model: activeModel() || undefined,
-            }),
-          }
-        );
-        const data = await res.json();
-        if (typeof data.tokens_used === "number") tokensUsed = data.tokens_used;
-        if (typeof data.budget_tokens === "number") budgetTokens = data.budget_tokens;
-        updateFollowUi();
-        if (!res.ok || !data.ok) {
-          setPassLoreMsg(data.message || "生成失败", "bad");
-          return;
-        }
-        ta.value = data.draft || "";
-        setPassLoreMsg(
-          "草稿已填入（未保存）· 摘录 " +
-            (data.source_highlights || 0) +
-            " 条 · 请润色后点保存",
-          "ok"
-        );
-      } catch (_) {
-        setPassLoreMsg("生成请求失败", "bad");
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = "生成草稿";
-        }
-      }
-    }
-
-    async function savePassLoreUi() {
-      const book = activeBook();
-      const ta = document.getElementById("passLoreText");
-      if (!book || !book.id || !ta) return;
-      const pass = sessionPassOrdinal || book.active_pass || 1;
-      setPassLoreMsg("保存中…");
-      try {
-        const res = await fetch(
-          "/api/v1/books/" + encodeURIComponent(book.id) + "/pass-lore",
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ pass, text: ta.value }),
-          }
-        );
-        const data = await res.json();
-        if (!res.ok || !data.ok) {
-          setPassLoreMsg(data.message || "保存失败", "bad");
-          return;
-        }
-        ta.value = data.text || "";
-        setPassLoreMsg("已保存 " + (data.chars || 0) + " 字 · 跟批将带上本刷摘要", "ok");
-      } catch (_) {
-        setPassLoreMsg("保存失败", "bad");
-      }
-    }
-
-    document.getElementById("passLoreClose").addEventListener("click", closePassLoreSheet);
-    document.getElementById("passLoreSheet").addEventListener("click", (e) => {
-      if (e.target.id === "passLoreSheet") closePassLoreSheet();
-    });
-    document.getElementById("passLoreGenerate").addEventListener("click", generatePassLoreDraftUi);
-    document.getElementById("passLoreSave").addEventListener("click", savePassLoreUi);
+    function closePassLoreSheet() { /* 本刷摘要已下线 */ }
+    function openPassLoreSheet() { /* 本刷摘要已下线 */ }
 
     document.getElementById("plusIdleRead").addEventListener("click", openIdleReadSheet);
     document.getElementById("idleReadClose").addEventListener("click", closeIdleReadSheet);
@@ -16333,18 +18569,30 @@
     document.addEventListener("visibilitychange", () => {
       if (!coreadOpen()) return;
       if (document.visibilityState === "hidden") {
-        patchSessionTiming("pause");
+        if (readingPhase === "reading" && autoPauseTimer) {
+          patchSessionTiming("pause");
+          readingPhase = "paused";
+          updateFollowUi();
+        }
         stopHighlightPoll();
         stopIdleReadTimer();
       } else {
-        patchSessionTiming("resume");
         updateOfflineBanner();
-        if (!browserOffline()) startHighlightPoll();
-        scheduleIdleRead();
+        updateReadActButtons();
+        if (readingPhase === "reading" && !browserOffline()) {
+          patchSessionTiming("resume");
+          startHighlightPoll();
+          scheduleIdleRead();
+        } else if (readingAllowsFollow() && !browserOffline()) {
+          startHighlightPoll();
+        }
       }
     });
     window.addEventListener("pagehide", () => {
-      if (coreadOpen()) patchSessionTiming("pause");
+      if (coreadOpen() && readingPhase === "reading" && autoPauseTimer) {
+        patchSessionTiming("pause");
+        readingPhase = "paused";
+      }
     });
 
     let touchY = null;

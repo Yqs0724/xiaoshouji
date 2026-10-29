@@ -1,31 +1,23 @@
 {
   "keys": [
     {
-      "id": "4038b4f2-4435-4f43-93b9-691d4aaf78c7",
+      "id": "b0345667-cb28-4b92-94fb-0d288284d68d",
       "label": "剧场",
       "value": "ARIA",
-      "updated_at": 1793079428492
+      "updated_at": 1793107489872
     },
     {
-      "id": "e7f88937-1eba-4c45-8031-3ca3b66bf2e6",
+      "id": "ebd3e838-de6d-4461-8603-b70986dba1bd",
       "label": "你的零花",
       "value": "ME",
-      "updated_at": 1793079428496
+      "updated_at": 1793107489875
     },
     {
-      "id": "2e92afbd-333d-46e2-ae1d-d19c352306bd",
+      "id": "52839a94-8582-451b-9df0-8de49be8c169",
       "label": "家机零花",
-      "value": "DONTLOOK",
-      "updated_at": 1793079428497
+      "value": "CASH",
+      "updated_at": 1793107489877
     }
   ],
-  "notes": [
-    {
-      "id": "02890418-79bd-4437-ae86-bfc5a83f5df3",
-      "title": "1",
-      "body": "1",
-      "pinned": false,
-      "updated_at": 1793015408293
-    }
-  ]
+  "notes": []
 }

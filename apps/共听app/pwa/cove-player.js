@@ -174,15 +174,19 @@
       a.getAttribute("src") === path ||
       a.getAttribute("src") === abs;
     const allowToggle = !(opts && opts.toggle === false);
-    if (allowToggle && same && !a.paused) {
+    const forceRestart = !!(opts && opts.forceRestart);
+    if (allowToggle && same && !a.paused && !forceRestart) {
       a.pause();
       announceTakeover({ playing: false });
       emit("state", snapshot());
       return { toggled: true, audio: a };
     }
-    if (!same) {
+    if (!same || forceRestart) {
       a.pause();
       a.src = path;
+      try {
+        a.currentTime = 0;
+      } catch (_) {}
     }
     announceTakeover({ playing: true });
     emit("local-play", snapshot());

@@ -73,6 +73,10 @@ const DEFAULTS = {
   avatar_bot: "/assets/cafe/avatar-bot.png",
   /** 共读顶栏是否显示时钟 */
   show_clock: true,
+  /** 共读时间线消息滤镜：both | marks | follows */
+  timeline_msg_filter: "both",
+  /** 离开共读界面时自动暂停计时（跟批不停） */
+  auto_pause_timer: true,
   /** @deprecated 已并入 annivs；读盘时迁入后清空 */
   meet_date: "",
   /** 纪念日列表（含原相识日）；桌面钉 pin_anniv_id 从中选一条 */
@@ -583,6 +587,11 @@ function readSettings() {
     avatar_user: normalizeAvatar(file.avatar_user, DEFAULTS.avatar_user),
     avatar_bot: normalizeAvatar(file.avatar_bot, DEFAULTS.avatar_bot),
     show_clock: file.show_clock !== false,
+    timeline_msg_filter: (() => {
+      const v = String(file.timeline_msg_filter || "both").trim();
+      return v === "marks" || v === "follows" ? v : "both";
+    })(),
+    auto_pause_timer: file.auto_pause_timer !== false,
     ...(() => {
       const a = resolveAnnivState(file);
       return {
@@ -891,6 +900,19 @@ function patchSettings(patch) {
       file.show_clock = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
     } else {
       file.show_clock = !!v;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "timeline_msg_filter")) {
+    const v = String(patch.timeline_msg_filter || "both").trim();
+    file.timeline_msg_filter = v === "marks" || v === "follows" ? v : "both";
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "auto_pause_timer")) {
+    const v = patch.auto_pause_timer;
+    if (typeof v === "boolean") file.auto_pause_timer = v;
+    else if (typeof v === "string") {
+      file.auto_pause_timer = ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+    } else {
+      file.auto_pause_timer = !!v;
     }
   }
   /* 旧 PATCH meet_date → 并入纪念日「相识日」 */

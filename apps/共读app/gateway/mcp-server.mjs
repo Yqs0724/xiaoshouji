@@ -436,7 +436,7 @@ function createServer() {
     "end_coread",
     {
       description:
-        "结束当前共读本场，写入摘要卡（与 PWA「结束本场」同一数据）。write_lore 默认 false；true 时追加本场要点到该书·本刷摘要（非设定全局栏）。",
+        "结束当前共读本场，写入统计卡（与 PWA「结束阅读」同一数据）。本刷摘要已下线，write_lore 忽略。",
       inputSchema: {
         book_id: z
           .string()
@@ -445,22 +445,16 @@ function createServer() {
         write_lore: z
           .boolean()
           .optional()
-          .describe("是否追加到该书本刷摘要；默认 false"),
+          .describe("已忽略；本刷摘要已下线"),
       },
     },
-    async ({ book_id, write_lore }) => {
+    async ({ book_id }) => {
       try {
         const session = endSession(book_id || undefined);
-        let pass_lore;
-        if (write_lore) {
-          pass_lore = appendSessionToPassLore(session);
-        }
         return jsonText({
           ok: true,
           session: sessionCard(session),
-          lore_written: !!pass_lore,
-          pass_lore,
-          lore_summary: pass_lore ? pass_lore.text : undefined,
+          lore_written: false,
           message: `已结束《${session.book_title}》`,
         });
       } catch (e) {

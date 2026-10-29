@@ -133,6 +133,29 @@ function resolveUserStickerPath(fileName) {
   return filePath;
 }
 
+function removeUserSticker(id) {
+  const key = String(id || "").trim();
+  if (!USER_ID_RE.test(key)) {
+    const err = new Error("只能删除自建贴纸");
+    err.code = "sticker_not_custom";
+    throw err;
+  }
+  const list = readUserStickers();
+  const hit = list.find((s) => s.id === key);
+  if (!hit) {
+    const err = new Error("贴纸不存在");
+    err.code = "sticker_missing";
+    throw err;
+  }
+  const next = list.filter((s) => s.id !== key);
+  writeUserStickers(next);
+  try {
+    const abs = path.normalize(path.join(USER_DIR, hit.file));
+    if (abs.startsWith(USER_DIR + path.sep) && fs.existsSync(abs)) fs.unlinkSync(abs);
+  } catch (_) {}
+  return { ok: true, deleted: key };
+}
+
 if (require.main === module) {
   const all = listAllStickers();
   console.assert(all.length >= 1);
@@ -148,6 +171,7 @@ module.exports = {
   isStickerId,
   randomSticker,
   addUserSticker,
+  removeUserSticker,
   resolveUserStickerPath,
   STICKER_MAX_BYTES,
 };

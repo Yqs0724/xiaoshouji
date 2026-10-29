@@ -90,7 +90,7 @@ function listNearbyEvents(now = new Date()) {
  * H5：掷骰后的优先级链。
  * @param {{ force?: boolean, forceKind?: 'moments'|'cal_sticky'|'poke', roll?: number }} opts
  */
-function runPresenceDiceTick(opts = {}) {
+async function runPresenceDiceTick(opts = {}) {
   const { readSettings } = require("../../共读app/gateway/settings");
   const settings = readSettings();
   const force = !!opts.force;
@@ -229,12 +229,14 @@ function runPresenceDiceTick(opts = {}) {
       }
     }
 
-    /* 3) 主动开口（复用 poke） */
+    /* 3) 主动开口（复用 poke；现按人设 LLM，失败回落模板） */
     if (!forceKind || forceKind === "poke") {
       const { pokeDaily, withPeer, DEFAULT_PEER_ID, unreadCount } = require(
         "./daily-chat"
       );
-      const poked = withPeer(DEFAULT_PEER_ID, () => pokeDaily({}));
+      const poked = await withPeer(DEFAULT_PEER_ID, () =>
+        pokeDaily({ skipLlm: !!opts.skipLlm })
+      );
       if (!poked.poked) {
         writeState({ last_tick_at: Date.now() });
         return { ok: true, skipped: "poke_cap", chance, roll };
@@ -525,13 +527,15 @@ async function askCore({ decision, model, chatCompletion }) {
   const settings = readSettings();
   const resolved = resolveAppPersona("chat", settings);
   const card = String((resolved && resolved.persona_card) || "").trim();
+  const nameBot = String(settings.name_bot || "").trim() || "沈言之";
   let system =
-    "你是同居室友「家机」。现在是你主动找对方说话（对方没有新发消息）。" +
-    "语气像室友短信：一两句口语，短、轻松。不要提监控、截图或系统字样。不要长篇。" +
+    "你是「" +
+    nameBot +
+    "」。现在是你主动找对方说话（对方没有新发消息）。" +
+    "语气贴合人设与关系：一两句口语，短。不要提监控、截图或系统字样。不要长篇。" +
     "禁止输出 JSON、代码块或 wake/call_core 字段；只输出要发给对方的一句人话。";
   if (card) system += "\n人设（请遵守，勿整段复述）：\n" + card.slice(0, 2000);
-  const nameBot = String(settings.name_bot || "").trim();
-  if (nameBot) system += "\n你的显示名：" + nameBot + "。";
+  system += "\n你的显示名：" + nameBot + "。自称用这个名字，勿自称「家机」。";
   try {
     const { maybeSilentPrefetch } = require("./phone-presence");
     const silent = maybeSilentPrefetch(settings);
@@ -795,7 +799,7 @@ async function runPresenceHeartbeat(opts = {}) {
   const force = !!opts.force;
   let dice = null;
   if (force || settings.presence_dice_enabled) {
-    dice = runPresenceDiceTick(opts);
+    dice = await runPresenceDiceTick(opts);
     /* 掷中并落地 → 本拍不再截屏 */
     if (dice && dice.kind) return { ok: true, path: "dice", dice };
   }
@@ -926,12 +930,13 @@ async function selfCheck() {
 
   console.assert(clampChance(0, 0.35) === 0.05);
   console.assert(clampChance(2) === 1);
-  const miss = runPresenceDiceTick({ force: false, roll: 0.99 });
+  const miss = await runPresenceDiceTick({ force: false, roll: 0.99 });
   console.assert(miss.skipped === "disabled" || miss.rolled === false || miss.ok);
-  const pokeDice = runPresenceDiceTick({
+  const pokeDice = await runPresenceDiceTick({
     force: true,
     forceKind: "poke",
     roll: 0,
+    skipLlm: true,
   });
   console.assert(pokeDice.ok && pokeDice.kind === "poke" && pokeDice.message, pokeDice);
   try {
@@ -956,7 +961,7 @@ async function selfCheck() {
   });
   /* 拉开动态间隔，强制走日程链 */
   writeState({ last_moments_at: Date.now() });
-  const calDice = runPresenceDiceTick({
+  const calDice = await runPresenceDiceTick({
     force: true,
     forceKind: "cal_sticky",
     roll: 0,

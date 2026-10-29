@@ -13,6 +13,7 @@ const {
   listStickers,
   listAllStickers,
   getSticker,
+  resolveUserStickerPath,
   isStickerId,
   randomSticker,
 } = require("./stickers");
@@ -126,10 +127,8 @@ function normalizeTopicsMap(raw) {
 }
 
 function defaultPeers() {
-  return [
-    { id: DEFAULT_PEER_ID, name: "家机" },
-    { id: DEMO_PEER_ID, name: "薄巧测试" },
-  ];
+  /* 新仓默认只留家机；薄巧测试改由手动新建，避免干净机被测试号占位 */
+  return [{ id: DEFAULT_PEER_ID, name: "沈言之" }];
 }
 const BODY_MAX = 800;
 const HISTORY = 20;
@@ -224,9 +223,10 @@ function normalizeReactionEmoji(raw) {
 
 /** 人设口吻；工具能力句由 buildToolsSystemHint 按实际工具表拼（关了就不写） */
 const DAILY_SYSTEM_BASE =
-  "你是同居室友「家机」，在小手机日常聊天里回短讯。" +
-  "语气像室友短信：短、口语、轻松。" +
-  "不要长篇剧情连载，不要章节目录，不要扮演系统通知。";
+  "你在小手机日常聊天里回短讯。" +
+  "语气贴合人设与关系：短、口语。" +
+  "不要长篇剧情连载，不要章节目录，不要扮演系统通知。" +
+  "自称用设定显示名，勿自称「家机」除非人设如此。";
 
 /**
  * H2：只描述「当前工具表里有的」能力；关权限的工具不出现在提示词里。
@@ -474,11 +474,9 @@ function migrateStore(raw) {
     peers = defaultPeers();
   } else {
     if (!peers.some((p) => p.id === DEFAULT_PEER_ID)) {
-      peers.unshift({ id: DEFAULT_PEER_ID, name: "家机" });
+      peers.unshift({ id: DEFAULT_PEER_ID, name: "沈言之" });
     }
-    if (!peers.some((p) => p.id === DEMO_PEER_ID)) {
-      peers.push({ id: DEMO_PEER_ID, name: "薄巧测试" });
-    }
+    /* 不再强制补 mint：干净部署 / 用户删测试联系人后应保持 */
     /* 去重保序 */
     const seen = new Set();
     peers = peers.filter((p) => {
@@ -538,10 +536,7 @@ function readStore() {
   }
   const store = migrateStore(raw);
   const needWrite =
-    !raw.version ||
-    !raw.threads ||
-    !Array.isArray(raw.peers) ||
-    !(raw.peers || []).some((p) => p && p.id === DEMO_PEER_ID);
+    !raw.version || !raw.threads || !Array.isArray(raw.peers);
   if (needWrite) writeStore(store);
   return store;
 }
@@ -1731,6 +1726,52 @@ function assertRegenTarget(id) {
 }
 
 /**
+ * 删掉家机回复后：对你最后一条消息再接一轮。
+ * 其后不能再有你的消息，也不能已有家机文字。
+ */
+function assertContinueTarget(id) {
+  const sid = String(id || "");
+  const messages = listMessages().messages;
+  const idx = messages.findIndex((m) => m.id === sid);
+  if (idx < 0) {
+    const err = new Error("消息不存在");
+    err.code = "not_found";
+    throw err;
+  }
+  const msg = messages[idx];
+  if (msg.from !== "you") {
+    const err = new Error("只能对你自己的消息重新接话");
+    err.code = "not_continue_target";
+    throw err;
+  }
+  if (msg.recalled) {
+    const err = new Error("已撤回的消息不能重新接话");
+    err.code = "not_continue_target";
+    throw err;
+  }
+  const kind = msg.kind || "text";
+  if (kind === "tool" || kind === "call" || kind === "pat") {
+    const err = new Error("这类消息不能重新接话");
+    err.code = "not_continue_target";
+    throw err;
+  }
+  for (let i = idx + 1; i < messages.length; i++) {
+    const m = messages[i];
+    if (m.from === "you") {
+      const err = new Error("这条后面已有新对话，不能重新接话");
+      err.code = "not_latest";
+      throw err;
+    }
+    if (m.from === "bot" && m.kind === "text") {
+      const err = new Error("后面已有家机回复，请重生那条或先删除");
+      err.code = "not_latest";
+      throw err;
+    }
+  }
+  return { messages, idx, msg };
+}
+
+/**
  * 撤回落库。opts.from = "you"|"bot"（默认 you）。
  * 家机撤回时附带你侧 miss/peek（H1.28）。
  */
@@ -2133,10 +2174,7 @@ function mediaIdFromUrl(url) {
   return MEDIA_ID_RE.test(s) ? s : "";
 }
 
-/** 给视觉模型用的 data URL；过大则 null（仍可文字带 url） */
-function chatMediaDataUrl(urlOrId) {
-  const id = mediaIdFromUrl(urlOrId);
-  const filePath = resolveChatMediaPath(id);
+function dataUrlFromFile(filePath, mimeHint) {
   if (!filePath) return null;
   let buf;
   try {
@@ -2145,16 +2183,42 @@ function chatMediaDataUrl(urlOrId) {
     return null;
   }
   if (!buf || !buf.length || buf.length > 900000) return null;
-  const ext = path.extname(id).toLowerCase();
+  const ext = path.extname(filePath).toLowerCase();
   const mime =
-    ext === ".png"
+    mimeHint ||
+    (ext === ".png"
       ? "image/png"
       : ext === ".webp"
         ? "image/webp"
         : ext === ".gif"
           ? "image/gif"
-          : "image/jpeg";
+          : "image/jpeg");
   return "data:" + mime + ";base64," + buf.toString("base64");
+}
+
+/** 给视觉模型用的 data URL；过大则 null（仍可文字带 url） */
+function chatMediaDataUrl(urlOrId) {
+  const id = mediaIdFromUrl(urlOrId);
+  const filePath = resolveChatMediaPath(id);
+  return dataUrlFromFile(filePath);
+}
+
+/** 贴纸原图路径（自建或内置 assets） */
+function stickerFilePath(stickerId) {
+  const st = getSticker(stickerId);
+  if (!st) return null;
+  if (st.custom && st.file) return resolveUserStickerPath(st.file);
+  const src = String(st.src || "");
+  const m = src.match(/^\/assets\/(.+)$/);
+  if (!m) return null;
+  const root = path.join(__dirname, "..", "..", "..", "assets");
+  const fp = path.normalize(path.join(root, m[1].replace(/\//g, path.sep)));
+  if (!fp.startsWith(root + path.sep)) return null;
+  return fs.existsSync(fp) ? fp : null;
+}
+
+function stickerDataUrl(stickerId) {
+  return dataUrlFromFile(stickerFilePath(stickerId));
 }
 
 /** 当前线程你侧近期图片，时间正序，pick=1…n。跳过自检 1×1 废图。 */
@@ -2225,6 +2289,27 @@ function userImagePriorContent(m, pickById, visionLeft) {
       : "[图片]";
   if (visionLeft && visionLeft.n > 0) {
     const dataUrl = chatMediaDataUrl(url);
+    if (dataUrl) {
+      visionLeft.n -= 1;
+      return [
+        { type: "text", text: label },
+        { type: "image_url", image_url: { url: dataUrl } },
+      ];
+    }
+  }
+  return label;
+}
+
+/** 贴纸进视觉：看图认气氛，禁止只凭上文猜成「生气」 */
+function userStickerPriorContent(m, visionLeft) {
+  const st = getSticker(m && m.body);
+  const lab = (st && st.label) || String((m && m.body) || "表情");
+  const label =
+    "[贴纸:" +
+    lab +
+    "] 请直接看图理解表情含义（撒娇/卖萌/开心/生气等），不要只凭上文情绪瞎猜。";
+  if (visionLeft && visionLeft.n > 0) {
+    const dataUrl = stickerDataUrl(m && m.body);
     if (dataUrl) {
       visionLeft.n -= 1;
       return [
@@ -2408,7 +2493,74 @@ const POKE_LINES = [
 
 const POKE_MAX_PER_DAY = 5;
 
-function pokeDaily(opts) {
+/** 解锁/骰子开口：优先按人设 LLM；失败才回落固定句 */
+async function composePokeLine() {
+  try {
+    const {
+      readSettings,
+      resolveAppPersona,
+    } = require("../../共读app/gateway/settings");
+    const { chatCompletion, parseThinkBody } = require("../../共读app/gateway/llm");
+    const settings = readSettings();
+    if (
+      !String(settings.llm_base || "").trim() ||
+      !String(settings.llm_key || "").trim() ||
+      !String(settings.llm_model || "").trim()
+    ) {
+      return "";
+    }
+    const resolved = resolveAppPersona("chat", settings);
+    const card = String((resolved && resolved.persona_card) || "").trim();
+    const nameBot = String(settings.name_bot || "").trim() || "沈言之";
+    let system =
+      "你是「" +
+      nameBot +
+      "」。对方刚打开小手机，你主动发一条短讯。" +
+      "一两句口语，像真人发微信，必须贴合人设口吻与关系。" +
+      "不要提系统、解锁、监控、AI。禁止 JSON/代码块；只输出短讯正文。";
+    if (card) {
+      system += "\n人设（遵守，勿整段复述）：\n" + card.slice(0, 2000);
+    } else {
+      system +=
+        "\n（人设卡为空：用克制亲近的同居语气，避免万能鸡汤套话。）";
+    }
+    let recent = "";
+    try {
+      const msgs = (listMessages().messages || []).slice(-6);
+      recent = msgs
+        .map((m) => {
+          const who = m && m.from === "you" ? "你" : nameBot;
+          return who + "：" + String((m && m.body) || "").slice(0, 80);
+        })
+        .filter((line) => !/：$/.test(line))
+        .join("\n");
+    } catch (_) {}
+    const user =
+      "写一条自然的主动短讯。" +
+      (recent ? "\n近期对话（勿复述）：\n" + recent : "");
+    const out = await chatCompletion({
+      system,
+      user,
+      think: false,
+      replyKind: "chat",
+    });
+    const parsed = parseThinkBody((out && out.content) || "", false);
+    let body = String((parsed && parsed.body) || out.content || "")
+      .trim()
+      .replace(/^["「『]+|["」』]+$/g, "");
+    body = body
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)[0] || "";
+    if (body.length > 100) body = body.slice(0, 100);
+    if (body.length < 2) return "";
+    return body;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function pokeDaily(opts) {
   const day = normalizePokeDay(opts && opts.day);
   const all = readAll();
   const countToday = all.last_poke_day === day ? all.poke_count || 0 : 0;
@@ -2421,13 +2573,18 @@ function pokeDaily(opts) {
     const { readSettings } = require("../../共读app/gateway/settings");
     if (readSettings().call_proactive_enabled) callChance = 0.35;
   } catch (_) {}
-  if (Math.random() < callChance) {
+  const forcedLine =
+    opts && opts.line != null ? String(opts.line).trim() : "";
+  const skipLlm = !!(opts && opts.skipLlm);
+  if (!forcedLine && Math.random() < callChance) {
     /* 偶发来电（inbound）；M4 主动来电开时更勤 */
     message = startChatCall(Math.random() < 0.35 ? "video" : "voice", "in").message;
-  } else if (Math.random() < 0.28) {
+  } else if (!forcedLine && Math.random() < 0.28) {
     message = appendMessage("bot", randomSticker().id, "sticker");
   } else {
-    const line = POKE_LINES[Math.floor(Math.random() * POKE_LINES.length)];
+    let line = forcedLine;
+    if (!line && !skipLlm) line = await composePokeLine();
+    if (!line) line = POKE_LINES[Math.floor(Math.random() * POKE_LINES.length)];
     message = appendMessage("bot", line);
   }
   const after = readAll();
@@ -4426,6 +4583,11 @@ function buildChatPrior(hist, youOrNull, excludeId) {
         role: "user",
         content: userImagePriorContent(m, pickById, visionLeft),
       });
+    } else if (m.kind === "sticker") {
+      prior.push({
+        role: "user",
+        content: userStickerPriorContent(m, visionLeft),
+      });
     } else {
       prior.push({ role: "user", content: llmContent(m) });
     }
@@ -4438,6 +4600,11 @@ function buildChatPrior(hist, youOrNull, excludeId) {
       prior.push({
         role: "user",
         content: userImagePriorContent(youOrNull, pickById, visionLeft),
+      });
+    } else if (youOrNull.kind === "sticker") {
+      prior.push({
+        role: "user",
+        content: userStickerPriorContent(youOrNull, visionLeft),
       });
     } else {
       prior.push({ role: "user", content: llmContent(youOrNull) });
@@ -4546,11 +4713,11 @@ async function streamBotReply(write, priorIn, opts) {
       displayName =
         String(peer.name || "").trim() ||
         String(settings.name_bot || "").trim() ||
-        "家机";
+        "沈言之";
       system +=
-        "\n你是用户的家机伴侣，名字是「" +
+        "\n你是用户的伴侣，名字是「" +
         displayName +
-        "」。自称用这个名字，不要叫自己「熊」或其它旧名（除非人设写明）。";
+        "」。自称用这个名字，不要叫自己「家机」「熊」或其它旧名（除非人设写明）。";
     } else if (peer && peer.id !== DEFAULT_PEER_ID) {
       system +=
         "\n当前会话对象：「" +
@@ -5175,6 +5342,74 @@ async function streamBotReply(write, priorIn, opts) {
 }
 
 /**
+ * 对已有「你」消息再跑一轮接话（不重复落你侧气泡）。
+ * SSE 与正常发消息相同：bot_start → … → bot_done（新 id）→ done。
+ */
+async function continueFromYouMessageStream(id, emit) {
+  const write = async (obj) => {
+    if (typeof emit !== "function") return;
+    await Promise.resolve(emit(obj));
+  };
+  const { msg: you } = assertContinueTarget(id);
+
+  if ((you && you.blocked_send) || youBlockedPeer()) {
+    const messages = listMessages().messages;
+    await write({
+      type: "done",
+      ok: true,
+      message: you,
+      bot_message: null,
+      skipped: true,
+      reason: "you_blocked",
+      messages,
+    });
+    return {
+      ok: true,
+      message: you,
+      bot_message: null,
+      skipped: true,
+      reason: "you_blocked",
+      messages,
+    };
+  }
+  try {
+    const readIds = markYouMessagesBotRead(you && you.ts);
+    if (readIds.length) {
+      await write({ type: "bot_read", ids: readIds, upto_ts: you && you.ts });
+    }
+  } catch (_) {}
+  if (peerBlocksYou()) {
+    const obs = observeTextForMessage(you);
+    const soft = maybeSoftUnblockFromText(obs || (you && you.body) || "");
+    if (!soft) {
+      const messages = listMessages().messages;
+      await write({
+        type: "done",
+        ok: true,
+        message: you,
+        bot_message: null,
+        skipped: true,
+        reason: "blocks_you",
+        blocks_you: true,
+        messages,
+      });
+      return {
+        ok: true,
+        message: you,
+        bot_message: null,
+        skipped: true,
+        reason: "blocks_you",
+        messages,
+      };
+    }
+  }
+
+  return exclusiveBotReply(() =>
+    runBotReplyStream(write, you, { skipObserve: true })
+  );
+}
+
+/**
  * 同气泡重生：SSE bot_start → … → bot_done（同一 id）→ done；失败不删旧版。
  */
 async function regenerateMessageStream(id, emit) {
@@ -5404,11 +5639,11 @@ if (require.main === module) {
   const pokeDay = "2099-01-02";
   const pokeIds = [];
   for (let r = 1; r <= POKE_MAX_PER_DAY; r++) {
-    const poked = pokeDaily({ day: pokeDay });
+    const poked = await pokeDaily({ day: pokeDay, skipLlm: true });
     console.assert(poked.poked === true && poked.message && poked.message.from === "bot");
     pokeIds.push(poked.message.id);
   }
-  console.assert(pokeDaily({ day: pokeDay }).poked === false);
+  console.assert((await pokeDaily({ day: pokeDay, skipLlm: true })).poked === false);
   try {
     createMessage({ body: "   " });
     throw new Error("expected bad_chat_body");
@@ -5555,6 +5790,12 @@ if (require.main === module) {
   } catch (e) {
     throw e;
   }
+  try {
+    assertContinueTarget(vYou.message.id);
+    throw new Error("expected not_latest with bot after");
+  } catch (e) {
+    if (e.code !== "not_latest") throw e;
+  }
   const older = appendMessage("bot", "更新的一条");
   try {
     assertRegenTarget(vBot.id);
@@ -5572,10 +5813,18 @@ if (require.main === module) {
   console.assert(listMessages().messages.some((m) => m.id === vBot.id));
   console.assert(recallExpired(Date.now() - RECALL_MAX_AGE_MS - 1000) === true);
   console.assert(recallExpired(Date.now() - 1000) === false);
+  const contYou = createMessage({ body: "continue-selfcheck-" + Date.now() });
+  assertContinueTarget(contYou.message.id);
   const recalled = recallMessage(vYou.message.id);
   console.assert(recalled.ok && recalled.message && recalled.message.recalled);
   console.assert(recalled.message.recall_body);
   console.assert(/撤回了：/.test(llmContent(recalled.message)));
+  try {
+    assertContinueTarget(vYou.message.id);
+    throw new Error("expected not_continue_target for recalled");
+  } catch (e) {
+    if (e.code !== "not_continue_target") throw e;
+  }
   console.assert(messageSearchText(recalled.message) === "");
   console.assert(recalled.snap && recalled.snap.body);
   console.assert(decideRecallSight({ body: "秘密", kind: "text" }, "miss").mode === "miss");
@@ -5813,6 +6062,7 @@ module.exports = {
   pickGroupSpeakers,
   recallMessageWithReplyStream,
   regenerateMessageStream,
+  continueFromYouMessageStream,
   setMessageVariant,
   deleteMessage,
   recallMessage,
@@ -5824,6 +6074,7 @@ module.exports = {
   maybeBotVoice,
   appendVariantToMessage,
   assertRegenTarget,
+  assertContinueTarget,
   appendMessage,
   appendBotMusic,
   appendToolMessage,

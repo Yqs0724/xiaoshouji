@@ -69,6 +69,7 @@ public class WebViewActivity extends AppCompatActivity {
                     }
                 });
         web.setWebChromeClient(new WebChromeClient());
+        web.addJavascriptInterface(new ShellBridge(this), "AriadneShell");
 
         getOnBackPressedDispatcher()
                 .addCallback(

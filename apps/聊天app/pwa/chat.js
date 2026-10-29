@@ -6,7 +6,7 @@
   let deps = {
     showView: function () {},
     getPeerName: function () {
-      return "家机";
+      return "沈言之";
     },
     getAvatarYou: function () {
       return "/assets/cafe/avatar-you.png";
@@ -2911,12 +2911,14 @@
     if (!file) return;
     setChatErr("");
     try {
+      // fetch headers must be Latin-1; encode Chinese label (server decodeURIComponent)
+      const ct = /^image\/[\w.+-]+$/i.test(file.type || "") ? file.type : "application/octet-stream";
       const res = await fetch("/api/v1/chat/stickers", {
         method: "POST",
         credentials: "same-origin",
         headers: {
-          "Content-Type": file.type || "application/octet-stream",
-          "X-Sticker-Label": "自建",
+          "Content-Type": ct,
+          "X-Sticker-Label": encodeURIComponent("自建"),
         },
         body: file,
       });
@@ -2932,6 +2934,25 @@
       setPanels("sticker");
     } catch (e) {
       setChatErr((e && e.message) || "贴纸上传失败");
+    }
+  }
+
+  async function deleteUserSticker(id) {
+    const key = String(id || "").trim();
+    if (!key) return;
+    if (!window.confirm("删除这张自建贴纸？")) return;
+    try {
+      const res = await fetch(
+        "/api/v1/chat/stickers/" + encodeURIComponent(key),
+        { method: "DELETE", credentials: "same-origin" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || "删除失败");
+      await fetchStickers(true);
+      await paintStickerPanel();
+      shellToast("已删除");
+    } catch (e) {
+      shellToast((e && e.message) || "删除失败");
     }
   }
 
@@ -2956,12 +2977,50 @@
     for (const s of pack) {
       const b = document.createElement("button");
       b.type = "button";
-      b.title = s.label || s.id;
+      b.title = s.custom
+        ? (s.label || s.id) + " · 长按删除"
+        : s.label || s.id;
       const img = document.createElement("img");
       img.src = s.src;
       img.alt = s.label || s.id;
       b.append(img);
-      b.addEventListener("click", () => sendSticker(s.id));
+      if (s.custom) {
+        let holdTimer = null;
+        let held = false;
+        const clearHold = () => {
+          if (holdTimer) {
+            clearTimeout(holdTimer);
+            holdTimer = null;
+          }
+        };
+        b.addEventListener("click", (ev) => {
+          if (held) {
+            held = false;
+            ev.preventDefault();
+            return;
+          }
+          sendSticker(s.id);
+        });
+        b.addEventListener("pointerdown", () => {
+          held = false;
+          clearHold();
+          holdTimer = setTimeout(() => {
+            holdTimer = null;
+            held = true;
+            deleteUserSticker(s.id);
+          }, 520);
+        });
+        b.addEventListener("pointerup", clearHold);
+        b.addEventListener("pointerleave", clearHold);
+        b.addEventListener("pointercancel", clearHold);
+        b.addEventListener("contextmenu", (ev) => {
+          ev.preventDefault();
+          held = true;
+          deleteUserSticker(s.id);
+        });
+      } else {
+        b.addEventListener("click", () => sendSticker(s.id));
+      }
       panel.append(b);
     }
   }
@@ -3802,8 +3861,29 @@
     });
     const peer = document.getElementById("chatPeerName");
     if (peer && !peer.classList.contains("is-typing")) peer.textContent = name;
+    const callPeer = document.getElementById("chatCallPeer");
+    if (callPeer) callPeer.textContent = name;
     const av = document.getElementById("chatProfileAv");
     if (av) av.src = peerAvatarOf(activePeerId);
+  }
+
+  /** 设定里改了 name_bot：清掉过期备注「家机」，同步 daily 真名并刷新壳上的字 */
+  async function syncBotDisplayName(name) {
+    const n = String(name || "").trim().slice(0, 32);
+    if (!n) return;
+    const note = readNote("daily");
+    if (note === "家机" || note === "熊") writeNote("daily", "");
+    try {
+      await fetch("/api/v1/chat/peers/daily", {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: n }),
+      });
+    } catch (_) {}
+    const hit = (peersCache || []).find((p) => p && p.id === "daily");
+    if (hit) hit.name = n;
+    refreshPeerLabels();
   }
   function paintSessBadges() {
     /* 角标在 refreshSessionList 里按行画 */
@@ -3872,14 +3952,31 @@
     } catch (_) {}
   }
   function shellToast(msg) {
+    const text = String(msg || "").trim();
+    if (!text) return;
+    /* 桌面/锁屏时聊天页未 active，#chatShellToast 看不见 → 走壳级推送 */
+    if (!chatViewActive()) {
+      if (typeof window.phonePushToast === "function") {
+        window.phonePushToast(text);
+        return;
+      }
+      if (typeof window.shellToastLite === "function") {
+        window.shellToastLite(text);
+        return;
+      }
+    }
     const el = document.getElementById("chatShellToast");
     if (!el) {
+      if (typeof window.phonePushToast === "function") {
+        window.phonePushToast(text);
+        return;
+      }
       try {
-        console.info("[chat]", msg);
+        console.info("[chat]", text);
       } catch (_) {}
       return;
     }
-    el.textContent = msg;
+    el.textContent = text;
     el.hidden = false;
     clearTimeout(shellToastTimer);
     shellToastTimer = setTimeout(() => {
@@ -4615,8 +4712,10 @@
    */
   function pushTieredNotify(kind, title, body, onGo) {
     if (!notifyEnabled(kind)) return;
-    const lab = kind === "moments" ? "朋友圈" : "AI 主动";
+    const lab = kind === "moments" ? "朋友圈" : "聊天";
+    const line = String(body || title || lab).slice(0, 80);
     const hidden = typeof document !== "undefined" && document.hidden;
+    ensureNotifyPermission();
     if (hidden && typeof Notification === "function" && Notification.permission === "granted") {
       try {
         const n = new Notification(String(title || lab).slice(0, 60), {
@@ -4636,10 +4735,21 @@
       } catch (_) {}
     }
     if (chatViewActive() && !(kind === "moments" && currentChatTab() === "moments")) {
-      showSysBanner(lab, String(body || title || "").slice(0, 80), onGo);
+      showSysBanner(lab, line, onGo);
       return;
     }
-    if (!chatViewActive()) shellToast(String(body || title || "").slice(0, 60));
+    /* 桌面 / 锁屏：壳级消息弹窗（带头像，可点进聊天） */
+    if (typeof window.phoneAlertShow === "function") {
+      window.phoneAlertShow({
+        kind: lab,
+        title: String(title || peerDisplayName("daily") || "家机").slice(0, 40),
+        body: line,
+        avatar: peerAvatarOf("daily"),
+        onOpen: typeof onGo === "function" ? onGo : null,
+      });
+      return;
+    }
+    shellToast(line);
   }
 
   function currentChatTab() {
@@ -5343,7 +5453,9 @@
   function bindLongPress(el, onHold) {
     if (!el || typeof onHold !== "function") return;
     let holdTimer = null;
+    let blockTimer = null;
     let armed = false;
+    let blocking = false;
     let sx = 0;
     let sy = 0;
     const clear = () => {
@@ -5351,26 +5463,80 @@
         clearTimeout(holdTimer);
         holdTimer = null;
       }
+      if (blockTimer) {
+        clearTimeout(blockTimer);
+        blockTimer = null;
+      }
+      blocking = false;
     };
-    el.addEventListener("pointerdown", (e) => {
-      if (e.button != null && e.button !== 0) return;
+    const armHold = (x, y) => {
+      holdTimer = null;
+      blocking = true;
+      armed = true;
+      try {
+        const sel = window.getSelection && window.getSelection();
+        if (sel && sel.removeAllRanges) sel.removeAllRanges();
+      } catch (_) {}
+      onHold(x, y);
+    };
+    const startAt = (x, y) => {
       clear();
       armed = false;
-      sx = e.clientX;
-      sy = e.clientY;
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        armed = true;
-        onHold(e.clientX || sx, e.clientY || sy);
-      }, 520);
+      sx = x;
+      sy = y;
+      /* 先于系统长按菜单（约 500ms）开始挡默认手势 */
+      blockTimer = setTimeout(() => {
+        blockTimer = null;
+        blocking = true;
+      }, 280);
+      holdTimer = setTimeout(() => armHold(x, y), 420);
+    };
+    el.addEventListener(
+      "touchstart",
+      (e) => {
+        if (!e.touches || e.touches.length !== 1) return;
+        startAt(e.touches[0].clientX, e.touches[0].clientY);
+      },
+      { passive: true }
+    );
+    el.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!holdTimer && !blocking) return;
+        const t = e.touches && e.touches[0];
+        if (!t) return;
+        if (Math.abs(t.clientX - sx) > 12 || Math.abs(t.clientY - sy) > 12) {
+          clear();
+          return;
+        }
+        if (blocking) e.preventDefault();
+      },
+      { passive: false }
+    );
+    el.addEventListener("touchend", clear, { passive: true });
+    el.addEventListener("touchcancel", clear, { passive: true });
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "touch") return;
+      if (e.button != null && e.button !== 0) return;
+      startAt(e.clientX, e.clientY);
     });
     el.addEventListener("pointermove", (e) => {
-      if (!holdTimer) return;
+      if (e.pointerType === "touch") return;
+      if (!holdTimer && !blocking) return;
       if (Math.abs(e.clientX - sx) > 12 || Math.abs(e.clientY - sy) > 12) clear();
     });
-    el.addEventListener("pointerup", clear);
-    el.addEventListener("pointerleave", clear);
-    el.addEventListener("pointercancel", clear);
+    el.addEventListener("pointerup", (e) => {
+      if (e.pointerType === "touch") return;
+      clear();
+    });
+    el.addEventListener("pointerleave", (e) => {
+      if (e.pointerType === "touch") return;
+      clear();
+    });
+    el.addEventListener("pointercancel", (e) => {
+      if (e.pointerType === "touch") return;
+      clear();
+    });
     el.addEventListener(
       "click",
       (e) => {
@@ -5381,7 +5547,10 @@
       },
       true
     );
-    el.addEventListener("contextmenu", (e) => e.preventDefault());
+    el.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
   }
   function bindBubbleCtx(bubble, msg) {
     if (!bubble || !msg) return;
@@ -5863,7 +6032,16 @@
     }
   }
   function canRegenRow(row) {
-    if (!row || row.dataset.kind !== "text" || !row.classList.contains("them")) return false;
+    if (!row) return false;
+    const kind = row.dataset.kind || "text";
+    const isBotText = row.classList.contains("them") && kind === "text";
+    const isYou =
+      row.classList.contains("me") &&
+      kind !== "tool" &&
+      kind !== "call" &&
+      kind !== "pat";
+    if (!isBotText && !isYou) return false;
+    if (row.dataset.recalled === "1") return false;
     let n = row.nextElementSibling;
     while (n) {
       if (n.classList && n.classList.contains("wx-row")) {
@@ -5947,9 +6125,10 @@
     const row = box && box.querySelector('.wx-row[data-msg-id="' + String(id).replace(/"/g, "") + '"]');
     const bubble = row && row.querySelector(".bubble");
     if (!bubble || !canRegenRow(row)) {
-      shellToast("\u53ea\u80fd\u91cd\u751f\u6700\u65b0\u4e00\u6761\u5bb6\u673a\u6587\u5b57");
+      shellToast("只能重生最新一条可接话消息");
       return;
     }
+    const continueYou = row.classList.contains("me");
     regenBusy = true;
     setComposerBusy(true);
     setChatErr("");
@@ -5967,6 +6146,20 @@
           headers: { Accept: "text/event-stream" },
         }
       );
+      if (continueYou) {
+        if (!res.ok && !(String(res.headers.get("content-type") || "").includes("event-stream"))) {
+          let data = {};
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = {};
+          }
+          throw new Error(data.message || data.error || "重新生成失败");
+        }
+        await readChatSse(res, makeChatStream(box));
+        if (chatViewActive()) await markChatRead();
+        return;
+      }
       const ctype = String(res.headers.get("content-type") || "");
       if (!res.ok && !ctype.includes("event-stream")) {
         let data = {};
@@ -7047,6 +7240,7 @@
   }
 
   /* ========== Prefs / bg / clear ========== */
+  let moodCapTip = "";
   function paintMoodCap(data) {
     const cap = document.getElementById("chatMoodCap");
     const prefLab = document.getElementById("chatPrefMoodLab");
@@ -7064,7 +7258,6 @@
         : null;
     const vaTip =
       v != null && a != null ? "V " + v + " · A " + a : "";
-    /* title：分层说明，避免「副标别扭、悬停爱你」被当成互相矛盾 */
     const tipParts = [];
     if (label) tipParts.push("现在：" + label);
     if (core && core !== label) tipParts.push("底色：" + core);
@@ -7073,6 +7266,7 @@
     }
     if (vaTip) tipParts.push(vaTip);
     const tip = tipParts.join(" · ");
+    moodCapTip = tip;
     if (prefLab) {
       prefLab.textContent = label
         ? label + (vaTip ? " · " + vaTip : "")
@@ -7084,10 +7278,11 @@
       cap.hidden = true;
       cap.textContent = "";
       cap.removeAttribute("title");
+      moodCapTip = "";
       return;
     }
     cap.hidden = false;
-    /* 副标 = publicLabel（综合/新鲜 ambient）；悬停看分层详情 */
+    /* 副标 = publicLabel；点按/长按弹出分层详情（手机无 title） */
     cap.textContent = label;
     if (tip) cap.title = tip;
     else cap.removeAttribute("title");
@@ -7108,6 +7303,10 @@
       (v != null && v > 0.25)
     )
       cap.classList.add("is-up");
+  }
+  function showMoodCapDetail() {
+    if (moodCapTip) shellToast(moodCapTip);
+    else shellToast("暂无心情详情");
   }
   async function refreshMoodUi() {
     try {
@@ -7402,11 +7601,6 @@
   }
 
   let meAvatarDraft = "";
-  const ME_AV_PRESETS = [
-    { src: "/assets/cafe/avatar-you.png", label: "猫" },
-    { src: "/assets/cafe/avatar-bot.png", label: "熊" },
-    { src: "/assets/cafe/decor-bear.png", label: "摆件熊" },
-  ];
   function displayYouName() {
     const nick = String(
       (typeof deps.getNickUser === "function" && deps.getNickUser()) || ""
@@ -7437,39 +7631,21 @@
       (typeof deps.getNickUser === "function" && deps.getNickUser()) || ""
     ).trim();
   }
-  function paintMeAvPresets(selected) {
-    const box = document.getElementById("chatMeAvPresets");
-    if (!box) return;
-    const list = ME_AV_PRESETS.slice();
-    if (selected && !list.some((a) => a.src === selected)) {
-      list.unshift({ src: selected, label: "当前" });
-    }
-    box.replaceChildren();
-    for (const a of list) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.title = a.label;
-      if (a.src === selected) btn.classList.add("on");
-      const img = document.createElement("img");
-      img.src = a.src;
-      img.alt = a.label;
-      btn.append(img);
-      btn.addEventListener("click", () => {
-        meAvatarDraft = a.src;
-        const av = document.getElementById("chatMeProfileAv");
-        if (av) av.src = a.src;
-        paintMeAvPresets(a.src);
-      });
-      box.append(btn);
-    }
+  function hideMeAvActs() {
+    const acts = document.getElementById("chatMeAvActs");
+    if (acts) acts.hidden = true;
+  }
+  function showMeAvActs() {
+    const acts = document.getElementById("chatMeAvActs");
+    if (acts) acts.hidden = false;
   }
   async function openMeProfilePage() {
     const el = document.getElementById("chatOvMeProfile");
     if (!el) return;
+    hideMeAvActs();
     meAvatarDraft = deps.getAvatarYou() || "/assets/cafe/avatar-you.png";
     const av = document.getElementById("chatMeProfileAv");
     if (av) av.src = meAvatarDraft;
-    paintMeAvPresets(meAvatarDraft);
     const title = document.getElementById("chatMeProfileTitle");
     if (title) title.textContent = displayYouName();
     const nickInp = document.getElementById("chatMeNickInput");
@@ -7484,7 +7660,6 @@
       meAvatarDraft =
         String(data.avatar_user || "").trim() || meAvatarDraft;
       if (av) av.src = meAvatarDraft;
-      paintMeAvPresets(meAvatarDraft);
       if (nickInp) nickInp.value = String(data.nick_user || "");
       if (nameInp) nameInp.value = String(data.name_user || "你");
       if (title) {
@@ -10688,6 +10863,9 @@
   }
 
   function hideCallModal() {
+    try {
+      if (typeof window.phoneAlertHide === "function") window.phoneAlertHide();
+    } catch (_) {}
     const modal = document.getElementById("chatCallModal");
     if (modal) {
       modal.hidden = true;
@@ -10784,15 +10962,42 @@
       ringTimer: null,
       missTimer: null,
     };
-    if (o.surface) {
+    const inboundInvite =
+      o.surface &&
+      callSession.dir !== "out" &&
+      callSession.phase === "invite";
+    const awayForCall = inboundInvite && !chatViewActive();
+    if (o.surface && !awayForCall) {
       bringCallSurface();
       /* 气泡刷出来；callSession 已占坑，resumeInbound 不会再弹一层 */
       refreshChatThread();
+    } else if (o.surface) {
+      refreshChatThread();
     }
     const modal = document.getElementById("chatCallModal");
-    if (modal) modal.hidden = false;
+    if (modal && !awayForCall) modal.hidden = false;
     primeSpeechSynth();
     syncCallModal();
+    if (awayForCall && typeof window.phoneCallAlert === "function") {
+      window.phoneCallAlert({
+        media: callSession.media,
+        title: peerDisplayName("daily") || "家机",
+        body:
+          callSession.media === "video"
+            ? "邀请你视频通话"
+            : "邀请你语音通话",
+        avatar: peerAvatarOf("daily"),
+        onAccept: () => {
+          bringCallSurface();
+          if (modal) modal.hidden = false;
+          syncCallModal();
+          answerCallSession();
+        },
+        onDecline: () => {
+          hangCall();
+        },
+      });
+    }
     if (callSession.dir === "out" && callSession.phase === "invite") {
       schedulePeerDecision();
     }
@@ -10804,6 +11009,9 @@
         clearCallTimers();
         stopCallRing();
         hideCallModal();
+        try {
+          if (typeof window.phoneAlertHide === "function") window.phoneAlertHide();
+        } catch (_) {}
         callSession = null;
         if (id) {
           fetch(
@@ -11222,8 +11430,32 @@
     if (meSave) meSave.addEventListener("click", () => saveMeProfilePage());
     const meAvPick = document.getElementById("btnChatMeAvPick");
     const meAvFile = document.getElementById("chatMeAvFile");
-    if (meAvPick && meAvFile) {
-      meAvPick.addEventListener("click", () => meAvFile.click());
+    const meAvView = document.getElementById("btnChatMeAvView");
+    const meAvChange = document.getElementById("btnChatMeAvChange");
+    const meAvActsClose = document.getElementById("btnChatMeAvActsClose");
+    if (meAvPick) {
+      meAvPick.addEventListener("click", () => showMeAvActs());
+    }
+    if (meAvView) {
+      meAvView.addEventListener("click", () => {
+        hideMeAvActs();
+        const url =
+          meAvatarDraft ||
+          deps.getAvatarYou() ||
+          "/assets/cafe/avatar-you.png";
+        openPicViewer([url], 0);
+      });
+    }
+    if (meAvChange && meAvFile) {
+      meAvChange.addEventListener("click", () => {
+        hideMeAvActs();
+        meAvFile.click();
+      });
+    }
+    if (meAvActsClose) {
+      meAvActsClose.addEventListener("click", () => hideMeAvActs());
+    }
+    if (meAvFile) {
       meAvFile.addEventListener("change", async () => {
         const f = meAvFile.files && meAvFile.files[0];
         meAvFile.value = "";
@@ -11233,7 +11465,7 @@
           meAvatarDraft = url;
           const av = document.getElementById("chatMeProfileAv");
           if (av) av.src = url;
-          paintMeAvPresets(url);
+          shellToast("头像已选 · 点保存生效");
         } catch (err) {
           shellToast((err && err.message) || "上传失败");
         }
@@ -11933,6 +12165,30 @@
     }
     const more = document.getElementById("btnChatPeerMore");
     if (more) more.addEventListener("click", () => openPeerPage());
+    const moodCap = document.getElementById("chatMoodCap");
+    if (moodCap) {
+      moodCap.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        showMoodCapDetail();
+      });
+      let moodHold = null;
+      moodCap.addEventListener("pointerdown", () => {
+        moodHold = setTimeout(() => {
+          moodHold = null;
+          showMoodCapDetail();
+        }, 420);
+      });
+      const clearMoodHold = () => {
+        if (moodHold) {
+          clearTimeout(moodHold);
+          moodHold = null;
+        }
+      };
+      moodCap.addEventListener("pointerup", clearMoodHold);
+      moodCap.addEventListener("pointerleave", clearMoodHold);
+      moodCap.addEventListener("pointercancel", clearMoodHold);
+    }
     const quoteClear = document.getElementById("btnChatQuoteClear");
     if (quoteClear) quoteClear.addEventListener("click", () => clearPendingQuote());
     const newMsg = document.getElementById("chatNewMsg");
@@ -12400,6 +12656,7 @@
     showSessionList: showSessionList,
     clearPeekHighlights: clearPeekHighlights,
     runPeekScan: runPeekScan,
+    syncBotDisplayName: syncBotDisplayName,
     dailyDisplayName: function () {
       return peerDisplayName("daily") || peerTrueName("daily") || "";
     },

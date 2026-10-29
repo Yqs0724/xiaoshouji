@@ -68,8 +68,20 @@
   const ASSET = "/assets/colisten/";
 
   function toast(msg) {
+    const text = String(msg || "").trim();
+    if (!text) return;
     try {
-      if (typeof global.shellToast === "function") global.shellToast(msg);
+      if (typeof global.shellToast === "function") {
+        global.shellToast(text);
+        return;
+      }
+      if (typeof global.shellToastLite === "function") {
+        global.shellToastLite(text);
+        return;
+      }
+      if (typeof global.phonePushToast === "function") {
+        global.phonePushToast(text);
+      }
     } catch (_) {}
   }
 
@@ -127,7 +139,7 @@
   const SVG_PLAY_NEXT =
     '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M5 4.2v15.6l11.2-7.8L5 4.2z"/><rect fill="currentColor" x="17.6" y="4.2" width="2.4" height="15.6" rx="0.7"/></svg>';
 
-  /** 找层曲目行：封面 + 文案 + 下一首 +「＋加入歌单」；点行加入歌单，长按立即播 */
+  /** 找层曲目行：封面 + 文案 + 下一首 +「＋加入歌单」；点行立即播 */
   function makeSongRow(song, opts) {
     const o = opts || {};
     const row = document.createElement("div");
@@ -152,27 +164,19 @@
     sub.className = "sub";
     sub.textContent = o.sub || (song && song.artist) || "—";
     meta.append(title, sub);
-    let holdTimer = null;
-    const clearHold = () => {
-      if (holdTimer) {
-        clearTimeout(holdTimer);
-        holdTimer = null;
-      }
-    };
     const doAdd =
       typeof o.onAdd === "function"
         ? () => o.onAdd(song)
         : () => openAddToPlaylist(song);
-    meta.addEventListener("click", doAdd);
-    meta.addEventListener("pointerdown", () => {
-      holdTimer = setTimeout(() => {
-        holdTimer = null;
-        if (typeof o.onPlay === "function") o.onPlay(song);
-      }, 550);
-    });
-    meta.addEventListener("pointerup", clearHold);
-    meta.addEventListener("pointerleave", clearHold);
-    meta.addEventListener("pointercancel", clearHold);
+    const doPlay = () => {
+      if (typeof o.onPlay === "function") o.onPlay(song);
+      else {
+        playNeteaseTrack(song, { openPlayer: true }).catch((e) =>
+          toast((e && e.message) || "播放失败")
+        );
+      }
+    };
+    meta.addEventListener("click", doPlay);
     const acts = document.createElement("div");
     acts.className = "cl-song-acts";
     const next = document.createElement("button");
@@ -899,19 +903,29 @@
       const data = await res.json().catch(() => ({}));
       const q = Array.isArray(data.queue) ? data.queue : [];
       if (!q.length) return false;
-      let idx = queueCursor + 1;
-      if (idx < 0) {
-        idx = q.findIndex(
-          (s) => String(s.id) === String(liveTrack && liveTrack.id)
-        );
-        idx = idx < 0 ? 0 : idx + 1;
+      let cur = -1;
+      if (liveTrack && liveTrack.id != null) {
+        cur = q.findIndex((s) => String(s.id) === String(liveTrack.id));
       }
+      if (cur < 0 && queueCursor >= 0 && queueCursor < q.length) {
+        cur = queueCursor;
+      }
+      let idx = cur + 1;
       /* 顺序播：末首播完回到队首继续 */
       if (idx >= q.length) idx = 0;
       queueCursor = idx;
-      await playNeteaseTrack(q[idx], { fromQueue: true });
+      const onlySame =
+        q.length === 1 &&
+        liveTrack &&
+        String(q[0].id) === String(liveTrack.id);
+      await playNeteaseTrack(q[idx], {
+        fromQueue: true,
+        forceRestart: true,
+      });
+      if (onlySame) toast("队列只有这一首 · 从头再播");
       return true;
-    } catch (_) {
+    } catch (e) {
+      toast((e && e.message) || "切歌失败");
       return false;
     }
   }
@@ -1048,7 +1062,6 @@
     const artist = document.getElementById("colistenMiniArtist");
     const art = document.getElementById("colistenMiniArt");
     const img = document.getElementById("colistenMiniCoverImg");
-    const playBtn = document.getElementById("btnColistenMiniPlay");
     if (!liveTrack) {
       const cove = peekCoveLiveTrack();
       if (cove) liveTrack = cove;
@@ -1059,10 +1072,17 @@
     const who = (track && track.artist) || "点这里进播放页";
     if (title) title.textContent = name;
     if (artist) artist.textContent = who;
-    const cover = track && (track.cover || track.picUrl);
-    if (art) art.classList.toggle("has-art", !!cover);
+    const cover = String(
+      (track && (track.cover || track.picUrl)) || ""
+    ).trim();
+    let coverSrc = "";
+    if (cover && /^https?:\/\//i.test(cover)) coverSrc = cover;
+    else if (cover && !cover.includes("://") && !cover.startsWith("/")) {
+      coverSrc = ASSET + cover;
+    } else if (cover.startsWith("/")) coverSrc = cover;
+    if (art) art.classList.toggle("has-art", !!coverSrc);
     if (img) {
-      if (cover) img.src = cover;
+      if (coverSrc) img.src = coverSrc;
       else img.removeAttribute("src");
     }
     const playing = !!(liveAudio && !liveAudio.paused);
@@ -1216,11 +1236,15 @@
           owner: "colisten",
           volume: musicVolume,
           toggle: false,
+          forceRestart: true,
         });
       } else {
         const a = ensureLiveAudio();
         a.pause();
         a.src = path;
+        try {
+          a.currentTime = 0;
+        } catch (_) {}
         await a.play();
       }
       setPlayIcon(true);
@@ -1792,6 +1816,7 @@
           : "点「＋」→ 点歌，或输入「点歌 晴天」";
       }
     }
+    paintMini();
     const box = document.getElementById("colistenPropose");
     const ptxt = document.getElementById("colistenProposeText");
     if (box) {
@@ -3204,6 +3229,16 @@
 
   async function control(action) {
     try {
+      if (action === "next") {
+        ensureLiveAudio();
+        const ok = await playNextInQueue();
+        if (!ok) toast("队列没有下一首 · 回歌单库整单入队");
+        return;
+      }
+      if (action === "prev") {
+        toast("上一首暂未接队列回溯 · 点队列里选歌");
+        return;
+      }
       if (liveTrack) {
         const a = ensureLiveAudio();
         if (action === "play") {
@@ -3240,23 +3275,16 @@
           postCoveEvent("pause", liveTrack);
           return;
         }
-        if (action === "next") {
-          const ok = await playNextInQueue();
-          if (!ok) toast("队列没有下一首 · 回歌单库整单入队");
-          return;
-        }
-        if (action === "prev") {
-          toast("上一首暂未接队列回溯 · 点队列里选歌");
-          return;
-        }
       }
       if (action === "play" || action === "pause") {
         toast("还没点真歌 · 点「＋」→ 点歌");
       }
       paintSession(await postJson("/api/v1/listen/control", { action: action }));
     } catch (e) {
+      const msg = (e && e.message) || "播控失败";
       const hint = document.getElementById("colistenPlayerHint");
-      if (hint) hint.textContent = (e && e.message) || "播控失败";
+      if (hint) hint.textContent = msg;
+      toast(msg);
     }
   }
 
@@ -3850,5 +3878,17 @@
     collapse: collapse,
     expand: expand,
     loadAuth: loadAuth,
+    control: control,
+    cyclePlayMode: cyclePlayMode,
+    getShadePlayer: function () {
+      const t = liveTrack || peekCoveLiveTrack();
+      return {
+        title: t ? String(t.name || t.title || "").trim() : "",
+        artist: t ? String(t.artist || "").trim() : "",
+        cover: t ? String(t.cover || t.picUrl || "").trim() : "",
+        mode: playMode || "seq",
+        playing: !!(liveAudio && !liveAudio.paused),
+      };
+    },
   };
 })(typeof window !== "undefined" ? window : globalThis);

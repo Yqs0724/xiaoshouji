@@ -6,10 +6,8 @@ const {
   assertDoorOpen,
   effectiveDialogue,
   appendDialogueHints,
-  appendLoreToSystem,
 } = require("./settings");
 const { getOpenSession, budgetExhausted, addOpenTokensUsed } = require("./sessions");
-const { loreTextForInject } = require("./pass-lore");
 
 function saveHighlightPatch(bookId, highlightId, patch) {
   const all = readAll();
@@ -120,13 +118,8 @@ function applyFollowVariant(follow, index) {
 }
 
 function applySessionLore(system, highlight, open, loreSummary) {
-  if (open && open.lore_light) {
-    return (
-      system +
-      "\n本场设定：少提设定。不要注入/主动提及剧情摘要背景，多贴原文与当下感受；不要主动续写长线剧情。"
-    );
-  }
-  return appendLoreToSystem(system, loreSummary);
+  // 本刷摘要已下线：跟批不再注入剧情/本刷摘要
+  return String(system || "");
 }
 
 function appendFollowTone(system, tone) {
@@ -142,13 +135,7 @@ function buildOpenFollowSystem(book, open, highlight) {
     includeCard: !!dlg.persona_card_in_follow,
   });
   system = appendDialogueHints(system, dlg);
-  const pass =
-    (sess && Number(sess.pass_ordinal)) ||
-    (book && Number(book.active_pass)) ||
-    1;
-  const lore =
-    book && book.id ? loreTextForInject(book.id, pass) : "";
-  system = applySessionLore(system, highlight || { text: "", idea: "" }, sess, lore);
+  system = applySessionLore(system, highlight || { text: "", idea: "" }, sess, "");
   system = appendFollowTone(system, sess && sess.follow_tone);
   try {
     const { readSettings } = require("./settings");
@@ -572,9 +559,9 @@ if (require.main === module) {
   );
   console.assert(down.join("\n").includes("先前跟批") && down.join("\n").includes("太说教"), down);
   const light = applySessionLore("base", { text: "线粒体" }, { lore_light: true }, "长剧情");
-  console.assert(light.includes("少提设定") && !light.includes("长剧情") && !light.includes("相关设定"), light);
+  console.assert(light === "base", light);
   const full = applySessionLore("base", { text: "线粒体与内共生" }, { lore_light: false }, "长剧情");
-  console.assert(full.includes("长剧情") || full.includes("剧情摘要"), full);
+  console.assert(full === "base", full);
   console.assert(appendFollowTone("base", "short") === "base");
   console.assert(appendFollowTone("base", "ask") === "base");
   console.assert(appendFollowTone("base", "empathy") === "base");
